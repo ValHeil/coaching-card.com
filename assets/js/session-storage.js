@@ -293,6 +293,7 @@ const SessionStorage = {
   getBoardName: function(boardId) {
     const boardNames = {
       'board1': 'Problem-Lösung',
+      'boardTest': 'TestBoard',
       'board2': 'Kartenset 2',
       'board3': 'Freies Feld'
     };
@@ -303,6 +304,7 @@ const SessionStorage = {
   getBoardImage: function(boardId) {
     const boardImages = {
       'board1': '/assets/images/boards/board1.jpg',
+      'boardTest': '/assets/images/boards/board1.jpg',
       'board2': '/assets/images/boards/board2.jpg',
       'board3': '/assets/images/boards/board3.jpg'
     };

@@ -215,12 +215,14 @@ document.addEventListener('DOMContentLoaded', function() {
   // Focus Note Texte nach Board-Typ
   const focusNoteTexts = {
     'board1': "Welche Probleme sind im Alltag?",
+    'boardTest': "Welche Probleme sind im Alltag?",
     'board2': "Welchen Stress gibt es bei welchen Situationen?"
   };
 
   // Kartenrückenfarben nach Board-Typ
   const cardBackColors = {
     'board1': "#ff0000", // Rot
+    'boardTest': "#ff0000", // Rot wie board1
     'board2': "#0000ff"  // Blau
   };
 
@@ -398,77 +400,102 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Ablageplätze für Karten erstellen
   const createCardPlaceholders = () => {
-    if (boardType === 'board1') {
+    if (boardType === 'board1' || boardType === 'boardTest') {
       // 1. Header-Bereich erstellen
       const headerArea = document.createElement('div');
       headerArea.className = 'board-header-area';
     
       // 1.1 Info-Box
       const infoBox = document.createElement('div');
-     infoBox.className = 'board-info-box';
+      infoBox.className = 'board-info-box';
       infoBox.textContent = 'Fester Platz für Problem-Lösung';
     
-     // 1.2 Beschreibungs-Box
+      // 1.2 Beschreibungs-Box
       const descriptionBox = document.createElement('div');
       descriptionBox.className = 'board-description-box';
-      descriptionBox.innerHTML = `
-        <h3>Problem-Lösung</h3>
-        <p>Das Lösen eines Problems beginnt mit dem ersten Schritt und gutem HinterFRAGEN.</p>
+      if (boardType === 'boardTest') {
+        descriptionBox.innerHTML = `
+          <h3>Hier steht das Problem</h3>
+          <p>Hier steht die Ausführung des Problems</p>
+        `;
+      } else {
+        descriptionBox.innerHTML = `
+          <h3>Problem-Lösung</h3>
+          <p>Das Lösen eines Problems beginnt mit dem ersten Schritt und gutem HinterFRAGEN.</p>
+        `;
+      }
+    
+      // 1.3 Focus Note Area - jetzt mit integriertem Text
+      const focusNoteArea = document.createElement('div');
+      focusNoteArea.className = 'focus-note-area';
+      focusNoteArea.innerHTML = `
+        <h2 class="area-main-title">Focus Note</h2>
+        <div class="focus-note-content">
+          <div id="focus-note-display" class="focus-note-display">Schreiben sie hier die Focus Note der Sitzung rein</div>
+          <div id="focus-note-editable" class="notiz-content" contenteditable="true" style="display: none;">Schreiben sie hier die Focus Note der Sitzung rein</div>
+        </div>
       `;
+      focusNoteArea.id = 'focus-note-area';
     
-     // 1.3 Focus Note Area - jetzt mit integriertem Text
-     const focusNoteArea = document.createElement('div');
-     focusNoteArea.className = 'focus-note-area';
-     focusNoteArea.innerHTML = `
-       <h2 class="area-main-title">Focus Note</h2>
-       <div class="focus-note-content">
-         <div id="focus-note-display" class="focus-note-display">Schreiben sie hier die Focus Note der Sitzung rein</div>
-         <div id="focus-note-editable" class="notiz-content" contenteditable="true" style="display: none;">Schreiben sie hier die Focus Note der Sitzung rein</div>
-       </div>
-     `;
-     focusNoteArea.id = 'focus-note-area';
-    
-     // 1.4 Notizzettel Box im Post-It Stil (abziehbar)
+      // 1.4 Notizzettel Box im Post-It Stil (abziehbar)
       const notizzettelBox = document.createElement('div');
       notizzettelBox.className = 'notizzettel-box';
       notizzettelBox.textContent = ''; // Kein Text im Stapel
       notizzettelBox.addEventListener('mousedown', startDragNewNote);
 
     
-     // Header-Elemente hinzufügen
-     headerArea.appendChild(infoBox);
-     headerArea.appendChild(descriptionBox);
-     headerArea.appendChild(focusNoteArea);
-     headerArea.appendChild(notizzettelBox);
+      // Header-Elemente hinzufügen
+      headerArea.appendChild(infoBox);
+      headerArea.appendChild(descriptionBox);
+      headerArea.appendChild(focusNoteArea);
+      headerArea.appendChild(notizzettelBox);
     
       // 2. Hauptbereich für Karten erstellen
       const mainArea = document.createElement('div');
       mainArea.className = 'board-main-area';
     
-     // 2.1 Drei Bereiche für die Karten - jetzt kleiner und formattiert für Spielkarten
-     const problemArea = document.createElement('div');
-     problemArea.className = 'card-placeholder-area problem-area';
-     problemArea.innerHTML = `
-       <h2 class="area-main-title">Problem</h2>
-       <h3 class="area-subtitle">Wie machen Sie Ihr Problem?</h3>
-     `;
-     problemArea.id = 'problem-area';
-     
-     const secretWinArea = document.createElement('div');
-     secretWinArea.className = 'card-placeholder-area secretWin-area';
-     secretWinArea.innerHTML = `
-       <h2 class="area-main-title">Geheimer Gewinn</h2>
-       <h3 class="area-subtitle">Was ist das Gute am jetzigen Zustand?</h3>
-     `;
-     secretWinArea.id = 'secretWin-area';
-     
-     const firstStepArea = document.createElement('div');
-     firstStepArea.className = 'card-placeholder-area firstStep-area';
-     firstStepArea.innerHTML = `
-       <h2 class="area-main-title">Erster Schritt</h2>
-       <h3 class="area-subtitle">Welches Verhalten ist ein guter Einstieg zur Lösung?</h3>
-     `;
-     firstStepArea.id = 'firstStep-area';
+      // 2.1 Drei Bereiche für die Karten - jetzt kleiner und formattiert für Spielkarten
+      const problemArea = document.createElement('div');
+      problemArea.className = 'card-placeholder-area problem-area';
+      if (boardType === 'boardTest') {
+        problemArea.innerHTML = `
+          <h2 class="area-main-title">Feld1</h2>
+        `;
+      } else {
+        problemArea.innerHTML = `
+          <h2 class="area-main-title">Problem</h2>
+          <h3 class="area-subtitle">Wie machen Sie Ihr Problem?</h3>
+        `;
+      }
+      problemArea.id = 'problem-area';
+      
+      const secretWinArea = document.createElement('div');
+      secretWinArea.className = 'card-placeholder-area secretWin-area';
+      if (boardType === 'boardTest') {
+        secretWinArea.innerHTML = `
+          <h2 class="area-main-title">Feld2</h2>
+        `;
+      } else {
+        secretWinArea.innerHTML = `
+          <h2 class="area-main-title">Geheimer Gewinn</h2>
+          <h3 class="area-subtitle">Was ist das Gute am jetzigen Zustand?</h3>
+        `;
+      }
+      secretWinArea.id = 'secretWin-area';
+      
+      const firstStepArea = document.createElement('div');
+      firstStepArea.className = 'card-placeholder-area firstStep-area';
+      if (boardType === 'boardTest') {
+        firstStepArea.innerHTML = `
+          <h2 class="area-main-title">Feld3</h2>
+        `;
+      } else {
+        firstStepArea.innerHTML = `
+          <h2 class="area-main-title">Erster Schritt</h2>
+          <h3 class="area-subtitle">Welches Verhalten ist ein guter Einstieg zur Lösung?</h3>
+        `;
+      }
+      firstStepArea.id = 'firstStep-area';
     
       // Hauptbereich-Elemente hinzufügen
       mainArea.appendChild(problemArea);
@@ -630,7 +657,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Karten erstellen und als Stapel anordnen
   const createCards = () => {
-    if (boardType === 'board1') {
+    if (boardType === 'board1' || boardType === 'boardTest') {
       // Referenz zum "Fester Platz für Problem-Lösung"
       const infoBox = document.querySelector('.board-info-box');
       if (!infoBox) return;
@@ -649,7 +676,7 @@ document.addEventListener('DOMContentLoaded', function() {
       cards = [];
       
       // Karten für den Stapel erstellen
-      const deckPath = '/assets/cards/deck1';
+      const deckPath = (boardType === 'boardTest') ? '/assets/cards/test_deck' : '/assets/cards/deck1';
       cards = [];
 
       detectCardCount(deckPath).then((totalCards) => {
@@ -662,7 +689,7 @@ document.addEventListener('DOMContentLoaded', function() {
       for (let i = 1; i <= totalCards; i++) {
       const card = document.createElement('div');
       card.className = 'card';
-      card.id = card-`${i}`;
+      card.id = `card-${i}`;
       card.dataset.cardId = i;
 
       const offset = (i - 1) * 0.5;
@@ -906,7 +933,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Focus Note erstellen
   const createFocusNote = () => {
-    if (boardType === 'board1') {
+    if (boardType === 'board1' || boardType === 'boardTest') {
       // Bei Board1 platzieren wir die Focus Note im vorgesehenen Bereich
       const focusNoteArea = document.getElementById('focus-note-area');
       if (focusNoteArea) {
