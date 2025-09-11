@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kartenset Sitzung - SichtWeisen</title>
+  
+  <!-- CSS-Dateien einbinden -->
+  <link rel="stylesheet" href="/assets/css/board.css">
+  <link rel="stylesheet" href="/assets/css/board-styles.css">
+
+  
+  <!-- Favicon und App-Icons -->
+  <link rel="icon" href="/assets/images/favicon.ico">
+</head>
+<body>
+  <div class="board-container">
+    <div class="board-title-container">
+      <h1 id="board-title">Sitzungsname</h1>
+      <span id="board-type">Boardtyp</span>
+    </div>
+
+    <div id="error-container" class="error-message hidden">
+      <p id="error-message"></p>
+    </div>
+
+    <main id="session-board" class="board-area">
+      <!-- Hier werden die Karten und Platzhalter dynamisch eingefügt -->
+      <div id="cards-container" class="cards-container"></div>
+      <div id="notes-container" class="notes-container"></div>
+    </main>
+
+    <footer class="board-footer">
+      <button id="end-session-btn" class="end-session-btn">Sitzung beenden</button>
+    </footer>
+  </div>
+
+  <!-- Sound-Effekte -->
+  <audio id="shuffle-sound" src="/assets/sounds/shuffle.mp3" preload="auto"></audio>
+  <audio id="card-flip-sound" src="/assets/sounds/card-flip.mp3" preload="auto"></audio>
+
+  <!-- JavaScript einbinden -->
+  <script src="/assets/js/board-interaction.js"></script>
+  
+</body>
+</html>
