@@ -1,0 +1,848 @@
+﻿/* Allgemeine Seiten-Struktur */
+:root {
+  --card-w: clamp(180px, 20vw, 320px);
+  --card-h: calc(var(--card-w) * 260 / 295);
+  --note-size: clamp(120px, 12vw, 200px);
+}
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Playfair Display', serif;
+  background-color: #f9ecd2;
+}
+
+.board-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden; /* Verhindert Scrollen am Hauptcontainer */
+}
+
+.board-area {
+  flex-grow: 1;
+  overflow: auto; /* ErmÃ¶glicht Scrollen im Board-Bereich bei Bedarf */
+  display: flex;
+  flex-direction: column; /* Stellt sicher, dass Inhalte vertikal angeordnet sind */
+}
+
+/* Zentraler Titel */
+.board-title-container {
+  text-align: center;
+  padding: 15px 0;
+}
+
+.board-title-container h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: normal;
+}
+
+.board-title-container span {
+  font-size: 18px;
+  color: #666;
+}
+
+/* Spezifische Stile fÃ¼r Board1 (Problem-LÃ¶sung) */
+.board-type-board1 {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 40px;
+}
+
+/* Header-Bereich mit Infotexten und Focus Note */
+.board-header-area {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1.5fr 1fr;
+  gap: 25px;
+  margin-bottom: 40px;
+  /* Keine feste HÃ¶he â€“ Inhalte sollen Platz bekommen */
+  height: auto;
+}
+
+/* Falls Kinder-Boxen intern Flex enthalten: erlauben zu schrumpfen */
+.board-header-area > * {
+  min-height: 0;
+}
+
+/* Drei Hauptbereiche fÃ¼r die Karten (Problem-LÃ¶sung) */
+.board-main-area {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 30px;
+  height: auto;
+  min-height: 400px; /* MinimalhÃ¶he */
+  flex-grow: 1; /* Damit dieser Bereich den verfÃ¼gbaren Platz nutzt */
+  margin-bottom: 30px;
+}
+
+/* Board1 Info-Box (linke Seite) */
+.board-info-box {
+  background-color: #ff9999;
+  border: 2px solid #ff6666;
+  border-radius: 25px;
+  padding: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-weight: bold;
+  font-size: 20px;
+  color: #333;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  min-height: clamp(160px, 22vh, 260px);
+}
+
+/* Board1 Beschreibungs-Box (Problem-LÃ¶sung) */
+.board-description-box {
+  background-color: #9fe2bf;
+  border: 2px solid #7dcca5;
+  border-radius: 25px;
+  padding: 25px;
+  color: #333;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  min-height: clamp(120px, 16vh, 180px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.board-description-box h3 {
+  margin-top: 0;
+  font-weight: bold;
+  margin-bottom: 15px;
+  font-size: 22px;
+  text-align: center;
+  color: #2a6850;
+}
+
+.board-description-box p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* Focus Note Bereich (Mitte rechts) */
+.focus-note-area {
+  background-color: #9fe2bf;
+  border: 2px solid #7dcca5;
+  border-radius: 25px;
+  padding: 25px;
+  color: #333;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  min-height: clamp(120px, 16vh, 180px);
+  position: relative;
+}
+
+.focus-note-content {
+  width: 100%;
+  height: auto;
+  min-height: 100px;
+  margin-top: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#focus-note-editable {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 5px;
+  background-color: rgba(255, 255, 255, 0.9);
+  font-family: 'Playfair Display', serif;
+  font-size: 20px;
+  line-height: 1.5;
+  outline: none;
+  color: #333;
+  font-weight: bold;
+  text-align: center; /* Zentrierung des Texts */
+}
+
+#focus-note-editable:focus {
+  box-shadow: 0 0 5px rgba(255, 133, 129, 0.5);
+}
+
+/* Anzeige fÃ¼r die Focus Note */
+.focus-note-display {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px;
+  text-align: center;
+  font-family: 'Playfair Display', serif;
+  font-size: 20px;
+  line-height: 1.5;
+  color: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  font-weight: bold;
+}
+
+.focus-note-display:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.focus-note-display.has-content {
+  font-weight: bold;
+  color: #000000;
+}
+
+/* Verbesserung der Ãœberschrift im Focus Note Bereich */
+.focus-note-area h2 {
+  text-align: center;
+  font-size: 22px;
+  margin-top: 0;
+  margin-bottom: 10px;
+  color: #2a6850;
+  font-weight: bold;
+}
+
+/* Notizzettel Box (Post-It Stil) */
+.notizzettel-box {
+  background-color: #ffff99;
+  border: 1px solid #e6e673;
+  border-radius: 3px;
+  /* Gleiche GrundgrÃ¶ÃŸe wie Karten */
+  width: var(--card-w);
+  height: var(--card-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 2px 5px 10px rgba(0,0,0,0.1);
+  transform: rotate(2deg);
+  position: relative;
+  cursor: grab;
+}
+
+.notizzettel-box::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 20px 20px;
+  border-color: transparent transparent #e6e673 transparent;
+  transform: rotate(0deg);
+  opacity: 0.6;
+}
+
+/* Einzelne Notizzettel, die abgezogen werden kÃ¶nnen */
+.notiz {
+  position: absolute;
+  width: 180px; /* Feste Breite */
+  min-height: 180px; /* MindesthÃ¶he */
+  background-color: #ffff99;
+  border: 1px solid #e6e673;
+  border-radius: 3px;
+  padding: 15px;
+  box-shadow: 2px 5px 10px rgba(0,0,0,0.1);
+  transform: none;
+  isolation: isolate;
+  contain: paint;
+  z-index: 100;
+  cursor: grab;
+}
+
+.notiz::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 20px 20px;
+  border-color: transparent transparent #e6e673 transparent;
+  opacity: 0.6;
+}
+
+.notiz-content {
+  width: 100%;
+  min-height: 150px;
+  outline: none;
+  background: transparent;
+  border: none;
+  font-family: 'Playfair Display', serif; /* Passend zum Rest der Website */
+  font-size: 18px; /* GrÃ¶ÃŸere Schrift fÃ¼r bessere Lesbarkeit */
+  line-height: 1.6;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  padding: 8px; /* Mehr Padding fÃ¼r besseren Abstand zum Rand */
+  color: #333; /* Dunkle Schriftfarbe fÃ¼r besseren Kontrast */
+  letter-spacing: 0.5px; /* Leicht erhÃ¶hter Buchstabenabstand fÃ¼r bessere Lesbarkeit */
+}
+
+/* AufzÃ¤hlungspunkte etwas anpassen */
+.notiz-content ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+/* SchriftgrÃ¶ÃŸe fÃ¼r Bulletpoints anpassen */
+.notiz-content ul li {
+  font-size: 18px;
+  margin-bottom: 5px;
+}
+
+.notiz-content:focus {
+  outline: none;
+}
+
+.notiz-content[contenteditable="true"] {
+  cursor: text;
+  caret-color: black; /* Macht den Cursor deutlich sichtbar */
+  min-height: 20px; /* Stellt sicher, dass auch bei leerem Inhalt etwas zum Klicken da ist */
+  padding: 8px; /* konsistent mit Auto-Grow Berechnung */
+}
+
+/* Verbessertes Blinkverhalten fÃ¼r den Cursor */
+@keyframes blink-caret {
+  from, to { caret-color: transparent }
+  50% { caret-color: black }
+}
+
+.notiz-content[contenteditable="true"]:focus {
+  outline: none;
+  border: none;
+  box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0.5);
+}
+
+/* Verbesserte Stile fÃ¼r Notizzettel */
+.notiz-content.editing {
+  /* Beim Bearbeiten keine weiÃŸe Box im Zettel anzeigen */
+  background-color: transparent !important;
+  box-shadow: none !important;
+  padding: 8px; /* konsistent mit normalem Zustand */
+  min-height: 20px;
+  border-radius: 0;
+  cursor: text;
+}
+
+.blinking-cursor {
+  animation: blink-caret 0.75s step-end infinite;
+}
+
+.notiz.is-editing {
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+  /* Rotation/Scale aus, damit Schrift scharf bleibt */
+  transform: none !important;
+  z-index: 9999;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  cursor: text;
+}
+
+.placeholder {
+  color: #999;
+  font-style: italic;
+}
+
+.editing-indicator {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  background-color: #fff;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  font-size: 14px;
+  z-index: 100;
+  cursor: default;
+}
+
+@keyframes blink-caret {
+  from, to { caret-color: transparent }
+  50% { caret-color: black }
+}
+
+/* Hover-Effekt fÃ¼r Notizzettel, um anzuzeigen, dass sie bearbeitbar sind */
+.notiz:not(.is-editing):hover::after {
+  content: "Doppelklick zum Bearbeiten";
+  position: absolute;
+  bottom: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  animation: fadeIn 0.3s ease forwards;
+  z-index: 1000;
+}
+
+@keyframes fadeIn {
+  to { opacity: 1; }
+}
+
+/* Karten-Ablagebereiche */
+.card-placeholder-area {
+  border: 2px dashed #666;
+  border-radius: 15px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  min-height: 300px; /* MinimalhÃ¶he statt feste HÃ¶he */
+  height: auto; /* Automatische HÃ¶he */
+  flex-grow: 1; /* WÃ¤chst mit verfÃ¼gbarem Platz */
+  background-color: rgba(255,255,255,0.4);
+}
+
+.card-placeholder-area h3 {
+  text-align: center;
+  margin-top: 0;
+  margin-bottom: 20px;
+  font-size: 18px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #ccc;
+}
+
+.area-main-title {
+  text-align: center;
+  font-size: 22px;
+  margin-top: 0;
+  margin-bottom: 10px;
+  color: #333;
+  font-weight: bold;
+}
+
+.area-subtitle {
+  text-align: center;
+  font-size: 16px;
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #555;
+  font-weight: normal;
+}
+
+/* Focus Note im Focus Note Bereich */
+.focus-note-area .focus-note {
+  background-color: #9fe2bf; /* Gleiche Farbe wie der Hintergrund */
+  box-shadow: none;
+  border: none;
+  width: 100%;
+  height: auto;
+}
+
+.focus-note-area .focus-note .note-content {
+  font-size: 16px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+/* Button zum Beenden der Sitzung */
+.end-session-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background-color: #ff6666;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 24px;
+  font-weight: bold;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  transition: all 0.3s ease;
+}
+
+.end-session-btn:hover {
+  background-color: #ff4d4d;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+}
+
+.board-footer {
+  padding: 15px;
+  text-align: right;
+}
+
+
+/* Basisstil fÃ¼r den MÃ¼lleimer */
+.trash-container {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  width: 60px;
+  height: 60px;
+  background-color: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+/* Mülleimer-Symbol (Unicode, robust gegen Encoding-Probleme) */
+.trash-container::before {
+  content: "\\01F5D1"; /* Unicode: 🗑 */
+  display: block;
+  font-family: "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;
+  font-size: 30px;
+  line-height: 1;
+}
+
+/* Hover-Effekt */
+.trash-container:hover {
+  background-color: #ffeeee;
+  transform: scale(1.1);
+  box-shadow: 0 2px 15px rgba(255, 0, 0, 0.2);
+}
+
+/* Drag-Over-Effekt */
+.trash-container.drag-over {
+  background-color: #ffcccc;
+  transform: scale(1.2);
+  box-shadow: 0 0 20px rgba(255, 0, 0, 0.4);
+}
+
+/* LÃ¶schmodus-Stil */
+.trash-container.deletion-mode {
+  background-color: #ffcccc;
+  transform: scale(1.2);
+  box-shadow: 0 0 20px rgba(255, 0, 0, 0.4);
+}
+
+/* Animation beim LÃ¶schen */
+.trash-container.note-deleted {
+  animation: delete-flash 0.5s ease;
+}
+
+@keyframes delete-flash {
+  0% { background-color: rgba(255, 255, 255, 0.9); }
+  50% { background-color: rgba(255, 0, 0, 0.7); }
+  100% { background-color: rgba(255, 255, 255, 0.9); }
+}
+
+/* KÃ¼rzerer Tooltip fÃ¼r den MÃ¼lleimer */
+.trash-container::after {
+  content: "Ziehen oder Klicken zum LÃ¶schen";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+  margin-bottom: 5px;
+}
+
+.trash-container:hover::after {
+  opacity: 1;
+}
+
+/* Stil fÃ¼r Notizzettel wÃ¤hrend des Ziehens */
+.notiz.being-dragged {
+  opacity: 1 !important;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3) !important;
+  transition: none !important; /* Keine Ãœbergangseffekte wÃ¤hrend des Ziehens */
+  cursor: grabbing !important;
+  z-index: 10000 !important;
+}
+
+/* Stil fÃ¼r Notizzettel im LÃ¶schmodus */
+.notiz.deletable {
+  cursor: pointer !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.notiz.deletable:hover {
+  transform: scale(1.05) !important;
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.5) !important;
+}
+
+/* Tooltip fÃ¼r wichtige Benachrichtigungen */
+.trash-tooltip {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 5px;
+  z-index: 10000;
+  font-size: 16px;
+  display: none;
+  animation: tooltip-fade 0.3s ease;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+  text-align: center;
+}
+
+@keyframes tooltip-fade {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* FÃ¼r kleinere Desktops und Tablets im Querformat */
+@media (max-width: 1200px) {
+  .board-header-area {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    height: auto;
+    max-height: none;
+  }
+  
+  .board-info-box, .board-description-box, .focus-note-area, .notizzettel-box {
+    min-height: 120px;
+  }
+}
+
+/* FÃ¼r Tablets im Hochformat */
+@media (max-width: 768px) {
+  .board-main-area {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(3, 1fr);
+  }
+  
+  .card-placeholder-area {
+    min-height: 250px;
+    margin-bottom: 20px;
+  }
+  
+  .board-type-board1 {
+    padding: 15px;
+  }
+}
+
+/* FÃ¼r MobilgerÃ¤te */
+@media (max-width: 480px) {
+  .board-header-area {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(4, auto);
+    gap: 15px;
+  }
+  
+  .board-title-container h1 {
+    font-size: 22px;
+  }
+  
+  .board-title-container span {
+    font-size: 14px;
+  }
+  
+  .card-placeholder-area h3 {
+    font-size: 16px;
+  }
+}
+
+/* Anpassungen fÃ¼r verschiedene BildschirmgrÃ¶ÃŸen */
+@media (min-width: 1400px) {
+  .board-description-box h3 {
+    font-size: 26px;
+    margin-bottom: 20px;
+  }
+  
+  .board-description-box p {
+    font-size: 18px;
+    line-height: 1.7;
+  }
+}
+
+@media (max-width: 768px) {
+  .board-description-box {
+    padding: 20px;
+    min-height: 120px;
+  }
+  
+  .board-description-box h3 {
+    font-size: 20px;
+    margin-bottom: 10px;
+  }
+  
+  .board-description-box p {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+}
+
+.custom-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  backdrop-filter: blur(3px);
+}
+
+.custom-dialog.visible {
+  opacity: 1;
+}
+
+.dialog-content {
+  background-color: white;
+  width: 90%;
+  max-width: 450px;
+  border-radius: 12px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  transform: translateY(20px);
+  transition: transform 0.3s ease;
+  animation: dialog-appear 0.3s forwards;
+}
+
+@keyframes dialog-appear {
+  to {
+    transform: translateY(0);
+  }
+}
+
+.dialog-header {
+  padding: 20px;
+  border-bottom: 1px solid #eee;
+  background-color: #f8f8f8;
+}
+
+.dialog-header h3 {
+  margin: 0;
+  font-size: 22px;
+  color: #333;
+  font-weight: 600;
+}
+
+.dialog-body {
+  padding: 25px 20px;
+}
+
+.dialog-body p {
+  margin: 0 0 15px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #333;
+}
+
+.dialog-warning {
+  color: #d9534f;
+  font-weight: 500;
+}
+
+.dialog-footer {
+  padding: 15px 20px;
+  background-color: #f8f8f8;
+  border-top: 1px solid #eee;
+  display: flex;
+  justify-content: flex-end;
+  gap: 15px;
+}
+
+.dialog-button {
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.cancel-button {
+  background-color: #f1f1f1;
+  color: #333;
+}
+
+.cancel-button:hover {
+  background-color: #e0e0e0;
+}
+
+.confirm-button {
+  background-color: #ff6666;
+  color: white;
+}
+
+.confirm-button:hover {
+  background-color: #ff4d4d;
+  transform: translateY(-2px);
+  box-shadow: 0 3px 8px rgba(255, 102, 102, 0.3);
+}
+
+.confirm-button:active {
+  transform: translateY(0);
+}
+
+/* Responsive Anpassungen */
+@media (max-width: 500px) {
+  .dialog-content {
+    width: 95%;
+  }
+  
+  .dialog-footer {
+    flex-direction: column-reverse;
+  }
+
+  .dialog-button {
+    width: 100%;
+    padding: 12px;
+  }
+}
+
+/* Override for trash icon rendering to fix mojibake */
+.trash-container::before {
+  content: "\01F5D1" !important; /* Unicode trash bin */
+  display: block;
+  font-family: "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;
+  font-size: 30px;
+  line-height: 1;
+}
+
+/* === Notizzettel: responsive + auto-sizing overrides === */
+/* Notiz wächst wie Karte und kann manuell skaliert werden */
+.notiz {
+  box-sizing: border-box;
+  min-width: var(--card-w);
+  min-height: var(--card-h);
+  width: max-content;
+  height: max-content;
+  display: inline-block;
+  resize: both;           /* manueller Resize */
+  overflow: visible;      /* keine Scrollbalken; Notiz wächst */
+  max-width: 80vw;        /* Sicherheit, nicht aus dem Viewport */
+  max-height: 70vh;
+}
+
+.notiz-content {
+  box-sizing: border-box;
+  display: inline-block;
+  width: 100% !important;            /* nutzt verfügbare Breite der Notiz */
+  white-space: normal !important;    /* überall umbrechen */
+  overflow: visible !important;      /* Container darf wachsen */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+
+
+
+
+
+

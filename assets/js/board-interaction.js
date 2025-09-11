@@ -1,0 +1,3051 @@
+// board-interaction.js - Funktionen für das interaktive Board
+
+// In der board-interaction.js müssen Sie diese Funktion aufrufen
+function initializeParticipantJoin() {
+  if (window.addParticipantNamePromptStyles) {
+    window.addParticipantNamePromptStyles();
+  }
+}
+
+function handleSessionJoin() {
+  // URL-Parameter auslesen
+  const urlParams = new URLSearchParams(window.location.search);
+  const sessionId = urlParams.get('id');
+  const isJoining = urlParams.get('join') === 'true';
+  
+  if (!sessionId) {
+    showError("Ungültiger Link: Keine Sitzungs-ID gefunden.");
+    return false;
+  }
+  
+  // Sitzungsdaten laden
+  const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
+  const session = sessions.find(s => s.id === sessionId);
+  
+  if (!session) {
+    showError("Die angeforderte Sitzung existiert nicht.");
+    return false;
+  }
+  
+  // Wenn es ein Beitritt ist (über einen Teilnehmerlink)
+  if (isJoining) {
+    return handleParticipantJoin(session);
+  }
+  
+  // Normale Sitzungsöffnung (eigene Sitzung)
+  return true;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Elemente auswählen
+  const boardTitle = document.getElementById('board-title');
+  const boardTypeElement  = document.getElementById('board-type');
+  const cardsContainer = document.getElementById('cards-container');
+  const notesContainer = document.getElementById('notes-container');
+  const participantsContainer = document.getElementById('participants-container');
+  const shuffleCardsBtn = document.getElementById('shuffle-cards-btn');
+  const newNoteBtn = document.getElementById('new-note-btn');
+  const closeSessionBtn = document.getElementById('close-session-btn');
+  const cardFilter = document.getElementById('card-filter');
+  const errorContainer = document.getElementById('error-container');
+  const errorMessage = document.getElementById('error-message');
+  const shuffleSound = document.getElementById('shuffle-sound');
+  const cardFlipSound = document.getElementById('card-flip-sound');
+  
+
+  // Session-ID aus der URL extrahieren
+  const urlParams = new URLSearchParams(window.location.search);
+  const sessionId = urlParams.get('id');
+
+  // Sitzungsdaten und Board-Typ
+  let sessionData = null;
+  let boardType = null;
+  let cards = [];
+  let notes = [];
+  let participants = [];
+
+  // Maximal zulässige Notizgröße dynamisch relativ zum Viewport
+  function getMaxNoteSize() {
+    return {
+      width: Math.min(Math.floor(window.innerWidth * 0.80), 900),
+      height: Math.min(Math.floor(window.innerHeight * 0.70), 700)
+    };
+  }
+
+  // Kleine Debounce-Hilfe fürs Speichern
+  function debounce(fn, delay) {
+    let t;
+    return function() {
+      const ctx = this, args = arguments;
+      clearTimeout(t);
+      t = setTimeout(function(){ fn.apply(ctx, args); }, delay);
+    };
+  }
+  const debouncedSave = debounce(() => {
+    if (typeof saveCurrentBoardState === 'function') {
+      saveCurrentBoardState();
+    }
+  }, 400);
+
+  // Beobachtet Größenänderungen eines Notizzettels und speichert/clamped diese
+  function attachNoteResizeObserver(noteEl) {
+    try {
+      if (!noteEl || !('ResizeObserver' in window)) return;
+      if (noteEl._resizeObserverAttached) return;
+
+      const ro = new ResizeObserver((entries) => {
+        // Wenn AutoGrow gerade rechnet, hier NICHT eingreifen (verhindert Flackern)
+        if (noteEl._autoGrowInProgress) return;
+        const max = getMaxNoteSize();
+        let changed = false;
+        entries.forEach(entry => {
+          const rect = entry.contentRect || entry.target.getBoundingClientRect();
+          // Nur clampen, wenn über Max – sonst nichts schreiben (verhindert Jitter)
+          if (rect.width > max.width) {
+            entry.target.style.width = max.width + 'px';
+            changed = true;
+          }
+          if (rect.height > max.height) {
+            entry.target.style.height = max.height + 'px';
+            changed = true;
+          }
+        });
+        if (changed) debouncedSave();
+      });
+      ro.observe(noteEl);
+      noteEl._resizeObserverAttached = true;
+    } catch (e) {
+      console.warn('ResizeObserver nicht verfügbar oder Fehler:', e);
+    }
+  }
+
+  // Lässt eine Notiz ohne Scrollbalken mit dem Inhalt wachsen.
+  // Breite wächst zuerst bis zur Maximalbreite; danach erhöht sich die Höhe.
+  function attachNoteAutoGrow(noteEl) {
+    try {
+      if (!noteEl || noteEl._autoGrowAttached) return;
+      const content = noteEl.querySelector('.notiz-content, .note-content');
+      if (!content) return;
+
+      function px(n) { return isNaN(n) ? 0 : n; }
+
+      function recalc() {
+        const max = getMaxNoteSize();
+        const cs = getComputedStyle(noteEl);
+        const padX = px(parseFloat(cs.paddingLeft)) + px(parseFloat(cs.paddingRight))
+                   + px(parseFloat(cs.borderLeftWidth)) + px(parseFloat(cs.borderRightWidth));
+        const padY = px(parseFloat(cs.paddingTop)) + px(parseFloat(cs.paddingBottom))
+                   + px(parseFloat(cs.borderTopWidth)) + px(parseFloat(cs.borderBottomWidth));
+
+        // Min-Größen aus CSS berücksichtigen
+        const minW = Math.max(0, px(parseFloat(cs.minWidth)) || 0);
+        const minH = Math.max(0, px(parseFloat(cs.minHeight)) || 0);
+
+        noteEl._autoGrowInProgress = true;
+
+        // Zuerst horizontale Wunschbreite ermitteln (ohne Umbruch)
+        const prevWhiteSpace = content.style.whiteSpace;
+        const prevWidthStyle = content.style.width;
+        content.style.whiteSpace = 'nowrap';
+        content.style.width = 'max-content';
+
+        // temporär auf auto setzen, um natürliche Größe zu ermitteln
+        noteEl.style.width = 'auto';
+        noteEl.style.height = 'auto';
+
+        // Zielbreite: Inhalt + Rahmen, zwischen min und max
+        let targetW = Math.ceil(content.scrollWidth + padX);
+        targetW = Math.max(targetW, minW);
+        if (targetW > max.width) {
+          targetW = max.width;
+          content.style.whiteSpace = 'normal'; // danach in die Höhe wachsen
+          content.style.wordBreak = 'break-word';
+          content.style.overflowWrap = 'anywhere';
+        }
+
+        // Setzen, nur wenn wirklich geändert (verhindert ResizeObserver-Jitter)
+        const currentW = Math.ceil(noteEl.getBoundingClientRect().width);
+        if (Math.abs(currentW - targetW) > 1) {
+          noteEl.style.width = targetW + 'px';
+        }
+
+        // Höhe: Inhaltshöhe bei gesetzter Breite
+        let targetH = Math.ceil(content.scrollHeight + padY);
+        targetH = Math.max(targetH, minH);
+        if (targetH > max.height) targetH = max.height;
+        const currentH = Math.ceil(noteEl.getBoundingClientRect().height);
+        if (Math.abs(currentH - targetH) > 1) {
+          noteEl.style.height = targetH + 'px';
+        }
+
+        // Wenn Max-Höhe erreicht, vertikales Scrollen erlauben, sonst sichtbar lassen
+        if (targetH >= max.height - 1) {
+          noteEl.style.overflowY = 'auto';
+        } else {
+          noteEl.style.overflowY = 'visible';
+        }
+
+        // Nach der Messung immer umbruchfähig rendern
+        content.style.width = '100%';
+        content.style.whiteSpace = 'normal';
+        content.style.wordBreak = 'break-word';
+        content.style.overflowWrap = 'anywhere';
+        noteEl._autoGrowInProgress = false;
+
+        debouncedSave();
+      }
+
+      // Speichern, um extern aufrufen zu können (z. B. bei window.resize)
+      noteEl._autoGrowRecalc = recalc;
+
+      // Initial berechnen
+      requestAnimationFrame(recalc);
+
+      // Auf Eingaben reagieren
+      ['input', 'keyup', 'change'].forEach(ev => content.addEventListener(ev, recalc));
+      const mo = new MutationObserver(recalc);
+      mo.observe(content, { childList: true, characterData: true, subtree: true });
+
+      noteEl._autoGrowAttached = true;
+    } catch (e) {
+      console.warn('AutoGrow-Setup fehlgeschlagen:', e);
+    }
+  }
+  
+  // Focus Note Texte nach Board-Typ
+  const focusNoteTexts = {
+    'board1': "Welche Probleme sind im Alltag?",
+    'board2': "Welchen Stress gibt es bei welchen Situationen?"
+  };
+
+  // Kartenrückenfarben nach Board-Typ
+  const cardBackColors = {
+    'board1': "#ff0000", // Rot
+    'board2': "#0000ff"  // Blau
+  };
+
+  // Session laden und Board initialisieren
+  const loadSession = () => {
+    if (!sessionId) {
+      showError("Keine gültige Sitzungs-ID gefunden.");
+      return;
+    }
+
+     // Debug-Ausgaben hinzufügen
+    console.log("[DEBUG] Lade Sitzung:", sessionId);
+
+   // Prüfen, ob es ein Beitritt über einen Link ist
+   const urlParams = new URLSearchParams(window.location.search);
+   const isJoining = urlParams.get('join') === 'true';
+   
+    // Aktuellen Benutzer laden
+    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+    if (!currentUser || !currentUser.id) {
+      window.location.href = '/kartensets/login/';
+      return;
+    }
+   
+   // Nur für neue Sitzungen (nicht für Beitritte) Anmeldung erforderlich
+   if (!isJoining && !currentUser) {
+     // Wenn nicht angemeldet, zur Login-Seite weiterleiten
+     window.location.href = '/kartensets/login/';
+     return;
+   }
+  
+    // Sitzungsdaten aus dem LocalStorage laden
+    const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
+    sessionData = sessions.find(session => session.id === sessionId);
+    if (!sessionData) {
+      showError("Sitzung nicht gefunden.");
+      return;
+    }
+
+    // Überprüfen, ob der Benutzer Zugriff auf diese Sitzung hat
+    const isOwner = sessionData.userId === currentUser.id;
+    const isParticipant = sessionData.participants && 
+      sessionData.participants.some(p => p.id === currentUser.id);
+    
+    if (!isOwner && !isParticipant) {
+      showError("Sie haben keinen Zugriff auf diese Sitzung.");
+      setTimeout(() => {
+        window.location.href = '/kartensets/dashboard/';
+      }, 3000);
+      return;
+    }
+  
+    console.log("[DEBUG] Sitzungsdaten geladen:", sessionData);
+    console.log("[DEBUG] BoardState vorhanden:", !!sessionData.boardState);
+    
+    // UI mit Sitzungsdaten aktualisieren
+    boardTitle.textContent = sessionData.name;
+    boardTypeElement.textContent = sessionData.boardName;
+  
+    // Board-Typ speichern
+    boardType = sessionData.boardId;
+  
+    // Letzten Zugriff aktualisieren
+    updateLastAccess();
+  
+    // Board initialisieren
+    initializeBoard();
+
+    // WICHTIG: Gespeicherten Board-Zustand NACH der Initialisierung laden
+    console.log("[DEBUG] Versuche gespeicherten Board-Zustand zu laden...");
+    const loadResult = loadSavedBoardState();
+    console.log("[DEBUG] Laden des Board-Zustands:", loadResult ? "Erfolgreich" : "Fehlgeschlagen");
+
+    // Passwort-Prompt-Styles hinzufügen
+    if (typeof addPasswordPromptStyles === 'function') {
+      addPasswordPromptStyles();
+    }
+    
+    // Session-Beitritt behandeln
+    handleSessionJoin();
+    
+    // Debug-Funktionen aufrufen
+    setTimeout(debugLocalStorage, 1000);
+  };
+
+  // Letzten Zugriff auf die Sitzung aktualisieren
+  const updateLastAccess = () => {
+    if (!sessionData) return;
+
+    const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
+    const updatedSessions = sessions.map(session => {
+      if (session.id === sessionId) {
+        return {
+          ...session,
+          lastOpened: new Date().toISOString()
+        };
+      }
+      return session;
+    });
+
+    localStorage.setItem('kartensets_sessions', JSON.stringify(updatedSessions));
+  };
+
+  // Board mit Karten und Notizen initialisieren
+  const initializeBoard = () => {
+    // Basiseinstellungen für das Board (Hintergrund etc.) basierend auf dem Board-Typ
+    document.querySelector('.board-area').classList.add(`board-type-${boardType}`);
+
+    // Ablageplätze für Karten erstellen
+    createCardPlaceholders();
+
+    // Focus Note erstellen
+    createFocusNote();
+
+    // Karten erstellen (abhängig vom Board-Typ)
+    createCards();
+
+    // Vorhandene Notizen laden (falls vorhanden)
+    //loadNotes();
+
+    // Teilnehmerliste initialisieren
+    initializeParticipants();
+
+    // Mülleimer hinzufügen
+    addTrashContainer();
+
+        // Add drop handling to allow repositioning cards and notes
+    const boardArea = document.querySelector('.board-area');
+
+    // Enable dropping on the board
+    boardArea.addEventListener('dragover', function(e) {
+      // This preventDefault is CRITICAL - it's what allows dropping
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+
+    // Handle the actual drop
+    boardArea.addEventListener('drop', function(e) {
+      e.preventDefault();
+      
+      // Get the ID of the dragged element
+      const id = e.dataTransfer.getData('text/plain');
+      const draggedElement = document.getElementById(id);
+      
+      if (!draggedElement) return;
+      
+      // Calculate position relative to board
+      const boardRect = boardArea.getBoundingClientRect();
+      const x = Math.round(e.clientX - boardRect.left);
+      const y = Math.round(e.clientY - boardRect.top);
+      
+      // Set new position (centered on cursor)
+      draggedElement.style.left = `${Math.round(x - (draggedElement.offsetWidth / 2))}px`;
+      draggedElement.style.top = `${Math.round(y - (draggedElement.offsetHeight / 2))}px`;
+      
+      // If it's a card from the stack, move it to the board
+      if (draggedElement.classList.contains('card')) {
+        const cardStack = document.getElementById('card-stack');
+        if (cardStack && cardStack.contains(draggedElement)) {
+          cardStack.removeChild(draggedElement);
+          boardArea.appendChild(draggedElement);
+        }
+      }
+      
+      // Save board state after movement
+      saveCurrentBoardState();
+    });
+
+    // Setup Focus Note Editable Field
+    setupFocusNoteEditable();
+
+    // Event-Listener für Aktionen einrichten
+    setupEventListeners();
+  };
+  
+  // Ablageplätze für Karten erstellen
+  const createCardPlaceholders = () => {
+    if (boardType === 'board1') {
+      // 1. Header-Bereich erstellen
+      const headerArea = document.createElement('div');
+      headerArea.className = 'board-header-area';
+    
+      // 1.1 Info-Box
+      const infoBox = document.createElement('div');
+     infoBox.className = 'board-info-box';
+      infoBox.textContent = 'Fester Platz für Problem-Lösung';
+    
+     // 1.2 Beschreibungs-Box
+      const descriptionBox = document.createElement('div');
+      descriptionBox.className = 'board-description-box';
+      descriptionBox.innerHTML = `
+        <h3>Problem-Lösung</h3>
+        <p>Das Lösen eines Problems beginnt mit dem ersten Schritt und gutem HinterFRAGEN.</p>
+      `;
+    
+     // 1.3 Focus Note Area - jetzt mit integriertem Text
+     const focusNoteArea = document.createElement('div');
+     focusNoteArea.className = 'focus-note-area';
+     focusNoteArea.innerHTML = `
+       <h2 class="area-main-title">Focus Note</h2>
+       <div class="focus-note-content">
+         <div id="focus-note-display" class="focus-note-display">Schreiben sie hier die Focus Note der Sitzung rein</div>
+         <div id="focus-note-editable" class="notiz-content" contenteditable="true" style="display: none;">Schreiben sie hier die Focus Note der Sitzung rein</div>
+       </div>
+     `;
+     focusNoteArea.id = 'focus-note-area';
+    
+     // 1.4 Notizzettel Box im Post-It Stil (abziehbar)
+      const notizzettelBox = document.createElement('div');
+      notizzettelBox.className = 'notizzettel-box';
+      notizzettelBox.textContent = ''; // Kein Text im Stapel
+      notizzettelBox.addEventListener('mousedown', startDragNewNote);
+
+    
+     // Header-Elemente hinzufügen
+     headerArea.appendChild(infoBox);
+     headerArea.appendChild(descriptionBox);
+     headerArea.appendChild(focusNoteArea);
+     headerArea.appendChild(notizzettelBox);
+    
+      // 2. Hauptbereich für Karten erstellen
+      const mainArea = document.createElement('div');
+      mainArea.className = 'board-main-area';
+    
+     // 2.1 Drei Bereiche für die Karten - jetzt kleiner und formattiert für Spielkarten
+     const problemArea = document.createElement('div');
+     problemArea.className = 'card-placeholder-area problem-area';
+     problemArea.innerHTML = `
+       <h2 class="area-main-title">Problem</h2>
+       <h3 class="area-subtitle">Wie machen Sie Ihr Problem?</h3>
+     `;
+     problemArea.id = 'problem-area';
+     
+     const secretWinArea = document.createElement('div');
+     secretWinArea.className = 'card-placeholder-area secretWin-area';
+     secretWinArea.innerHTML = `
+       <h2 class="area-main-title">Geheimer Gewinn</h2>
+       <h3 class="area-subtitle">Was ist das Gute am jetzigen Zustand?</h3>
+     `;
+     secretWinArea.id = 'secretWin-area';
+     
+     const firstStepArea = document.createElement('div');
+     firstStepArea.className = 'card-placeholder-area firstStep-area';
+     firstStepArea.innerHTML = `
+       <h2 class="area-main-title">Erster Schritt</h2>
+       <h3 class="area-subtitle">Welches Verhalten ist ein guter Einstieg zur Lösung?</h3>
+     `;
+     firstStepArea.id = 'firstStep-area';
+    
+      // Hauptbereich-Elemente hinzufügen
+      mainArea.appendChild(problemArea);
+      mainArea.appendChild(secretWinArea);
+      mainArea.appendChild(firstStepArea);
+    
+      // Alles zum Board-Bereich hinzufügen
+      const boardArea = document.querySelector('.board-area');
+      boardArea.innerHTML = ''; // Vorhandene Elemente entfernen
+      boardArea.appendChild(headerArea);
+      boardArea.appendChild(mainArea);
+    
+      // Den End-Session Button zum Footer hinzufügen (falls nicht bereits vorhanden)
+      const endSessionBtn = document.querySelector('.end-session-btn');
+      const newEndSessionBtn = document.createElement('button');
+      newEndSessionBtn.className = 'end-session-btn';
+      newEndSessionBtn.textContent = 'Sitzung beenden';
+      
+      document.querySelector('.board-footer').appendChild(newEndSessionBtn);
+      
+      // Direkt nach dem Hinzufügen den Event-Listener setzen:
+      newEndSessionBtn.addEventListener('click', () => {
+        createEndSessionDialog();
+      });
+    
+
+    } else {
+      // Bestehender Code für andere Board-Typen
+      const placeholders = [
+        { id: 'platz1', label: 'Platz 1', left: '20%', top: '70%' },
+        { id: 'platz2', label: 'Platz 2', left: '50%', top: '70%' },
+        { id: 'platz3', label: 'Platz 3', left: '80%', top: '70%' }
+      ];
+      
+      const cardPlaceholdersContainer = document.createElement('div');
+      cardPlaceholdersContainer.id = 'card-placeholders';
+      
+      placeholders.forEach(place => {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'card-placeholder';
+        placeholder.id = place.id;
+        placeholder.textContent = place.label;
+        placeholder.style.left = place.left;
+        placeholder.style.top = place.top;
+        
+        cardPlaceholdersContainer.appendChild(placeholder);
+      });
+      
+      document.querySelector('.board-area').appendChild(cardPlaceholdersContainer);
+    }
+  };
+
+  // Teilnehmerliste initialisieren
+  const initializeParticipants = () => {
+    if (!participantsContainer) return;
+    
+    // Container leeren
+    participantsContainer.innerHTML = '';
+    
+    // Teilnehmer der Sitzung anzeigen
+    const participants = sessionData.participants || [];
+    
+    participants.forEach(participant => {
+      const participantElement = document.createElement('div');
+      participantElement.className = 'participant';
+      participantElement.dataset.participantId = participant.id;
+      
+      // Anzeige je nach Rolle unterschiedlich gestalten
+      const isOwner = participant.role === 'owner';
+      const isCurrentUser = participant.id === SessionStorage.getCurrentUserId();
+      
+      participantElement.innerHTML = `
+        <span class="participant-name ${isOwner ? 'owner' : ''}">
+          ${participant.name} ${isOwner ? '(Ersteller)' : ''} ${isCurrentUser ? '(Sie)' : ''}
+        </span>
+      `;
+      
+      participantsContainer.appendChild(participantElement);
+    });
+  };
+
+  const setupFocusNoteEditable = () => {
+    const focusNoteEditable = document.getElementById('focus-note-editable');
+    const focusNoteDisplay = document.getElementById('focus-note-display');
+    if (!focusNoteEditable || !focusNoteDisplay) return;
+    
+    // Klick auf den angezeigten Text aktiviert das Bearbeitungsfeld
+    focusNoteDisplay.addEventListener('click', function() {
+      // Anzeige ausblenden und Editierfeld einblenden
+      focusNoteDisplay.style.display = 'none';
+      focusNoteEditable.style.display = 'block';
+      
+      // Wenn es der Platzhaltertext ist, leeren
+      if (focusNoteEditable.textContent === 'Schreiben sie hier die Focus Note der Sitzung rein') {
+        focusNoteEditable.textContent = '';
+      }
+      
+      // Fokus auf das Editierfeld setzen
+      focusNoteEditable.focus();
+    });
+    
+    // Bei Fokus den Platzhaltertext sofort entfernen
+    focusNoteEditable.addEventListener('focus', function() {
+      if (this.textContent === 'Schreiben sie hier die Focus Note der Sitzung rein') {
+        this.textContent = '';
+      }
+    });
+    
+    // Wenn der Fokus verloren geht, Editierfeld ausblenden und Anzeige wieder einblenden
+    focusNoteEditable.addEventListener('blur', function() {
+      const text = this.textContent.trim();
+      
+      // Editierfeld ausblenden
+      focusNoteEditable.style.display = 'none';
+      
+      // Anzeige-Text aktualisieren und einblenden
+      if (text === '') {
+        focusNoteDisplay.textContent = 'Schreiben sie hier die Focus Note der Sitzung rein';
+        focusNoteDisplay.classList.remove('has-content');
+      } else {
+        focusNoteDisplay.textContent = text;
+        focusNoteDisplay.classList.add('has-content');
+      }
+      
+      focusNoteDisplay.style.display = 'block';
+
+      saveCurrentBoardState();
+    });
+    
+    // Enter-Taste bestätigt die Eingabe
+    focusNoteEditable.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        this.blur(); // Fokus entfernen, löst das blur-Event aus
+      }
+    });
+  };
+
+  function imageExists(src) {
+    return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = src;
+    });
+  }
+
+  function detectCardCount(basePath, maxProbe = 200) {
+    return new Promise(async (resolve) => {
+    let count = 0;
+    for (let i = 1; i <= maxProbe; i++) {
+    const exists = await imageExists(`${basePath}/card${i}.png`);
+    if (!exists) break;
+    count = i;
+    }
+    resolve(count);
+    });
+  }
+
+  // Karten erstellen und als Stapel anordnen
+  const createCards = () => {
+    if (boardType === 'board1') {
+      // Referenz zum "Fester Platz für Problem-Lösung"
+      const infoBox = document.querySelector('.board-info-box');
+      if (!infoBox) return;
+      
+      // Infobox leeren (Text entfernen)
+      infoBox.textContent = '';
+      infoBox.style.position = 'relative';
+      
+      // Kartenstapel-Container erstellen
+      const cardStack = document.createElement('div');
+      cardStack.className = 'card-stack';
+      cardStack.id = 'card-stack';
+      infoBox.appendChild(cardStack);
+      
+      // Karten-Array zurücksetzen, um sicherzustellen, dass wir mit einer leeren Liste beginnen
+      cards = [];
+      
+      // Karten für den Stapel erstellen
+      const deckPath = '/assets/cards/deck1';
+      cards = [];
+
+      detectCardCount(deckPath).then((totalCards) => {
+      // Falls du unbedingt “-1” willst, dann: totalCards = Math.max(0, totalCards - 1);
+      if (!totalCards || totalCards < 1) {
+      console.warn('Keine Kartenbilder gefunden unter', deckPath);
+      return;
+      }
+
+      for (let i = 1; i <= totalCards; i++) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.id = card-`${i}`;
+      card.dataset.cardId = i;
+
+      const offset = (i - 1) * 0.5;
+      card.style.position = 'absolute';
+      card.style.left = `${offset}px`;
+      card.style.top = `${offset}px`;
+      card.style.zIndex = i;
+
+      card.innerHTML = `
+        <div class="card-front">
+          <img src="${deckPath}/card${i}.png" alt="Karte ${i}" style="width: 100%; height: 100%; object-fit: contain;">
+        </div>
+        <div class="card-back">
+          <div class="card-back-design"></div>
+        </div>
+      `;
+
+      card.addEventListener('dblclick', () => flipCard(card));
+      cardStack.appendChild(card);
+      cards.push(card);
+      makeDraggable(card);
+      }
+
+      setTimeout(() => shuffleCards(), 500);
+
+      // Falls loadSavedBoardState knapp vorher schon lief, hier optional erneut versuchen:
+      if (typeof loadSavedBoardState === 'function') {
+      try { loadSavedBoardState(); } catch (e) { console.warn('Zustand konnte nicht geladen werden:', e); }
+      }
+      });
+    }
+  }
+
+  // Karte zum Stapel zurücklegen
+  function returnCardToStack(card) {
+    if (!card) return;
+  
+    // Karte zum Stapel zurückbewegen
+    const cardStack = document.getElementById('card-stack');
+    const boardArea = document.querySelector('.board-area');
+  
+    if (cardStack) {
+      // Falls die Karte aufgedeckt war, wieder umdrehen
+      if (card.classList.contains('flipped')) {
+        // Kurze Animation für das Umdrehen
+        card.classList.add('flipping');
+        setTimeout(() => {
+          card.classList.remove('flipping');
+          card.classList.remove('flipped');
+        }, 500);
+      }
+      
+      // WICHTIG: Wenn die Karte nicht bereits im Stapel ist, füge sie hinzu
+      if (!cardStack.contains(card)) {
+        console.log(`Karte ${card.id} wird zum Stapel zurückgelegt`);
+        // Vom aktuellen Elternelement entfernen
+        if (card.parentNode) {
+          card.parentNode.removeChild(card);
+        }
+        
+        // Karte UNTEN auf den Stapel legen (als erstes Kind einfügen)
+        if (cardStack.firstChild) {
+          cardStack.insertBefore(card, cardStack.firstChild);
+        } else {
+          cardStack.appendChild(card);
+        }
+      }
+      
+      // Alle Karten im Stapel zählen
+      const stackCards = cardStack.querySelectorAll(':scope > .card');
+      
+      // Alle Karten neu positionieren und Z-Indices aktualisieren
+      stackCards.forEach((stackCard, index) => {
+        const offset = index * 0.5;
+        stackCard.style.left = `${offset}px`;
+        stackCard.style.top = `${offset}px`;
+        stackCard.style.zIndex = index + 1; // Z-Index basierend auf Position im Stapel
+      });
+    }
+    
+    // Board-Zustand speichern
+    if (typeof saveCurrentBoardState === 'function') {
+      saveCurrentBoardState();
+    }
+  }
+
+  // Event-Listener für Tastaturkürzel
+  const setupKeyboardShortcuts = () => {
+    // Variablen zum Verfolgen, ob Maus über Karte/Stapel ist
+    // WICHTIG: Diese müssen global bleiben, damit sie in Eventhändlern verfügbar sind
+    window.isHoveringCard = false;
+    window.hoveredCard = null;
+    
+    // Hover-Tracking für Karten einrichten
+    function setupCardHoverTracking() {
+      console.log("[DEBUG] Richte Hover-Tracking ein...");
+      
+      // Alle vorherigen Event-Listener entfernen
+      document.querySelectorAll('.card').forEach(card => {
+        if (card._mouseenterHandler) {
+          card.removeEventListener('mouseenter', card._mouseenterHandler);
+        }
+        if (card._mouseleaveHandler) {
+          card.removeEventListener('mouseleave', card._mouseleaveHandler);
+        }
+        
+        // Alle Hover-Zustände zurücksetzen
+        card._isHovered = false;
+      });
+      
+      console.log("[DEBUG] Anzahl Karten für Hover-Tracking:", document.querySelectorAll('.card').length);
+      
+      // Neue Event-Listener für alle Karten einrichten
+      document.querySelectorAll('.card').forEach(card => {
+        // Neue Handler-Funktionen erstellen
+        const enterHandler = () => {
+          console.log(`[DEBUG] Maus über Karte ${card.id}`);
+          window.isHoveringCard = true;
+          window.hoveredCard = card;
+          card._isHovered = true;
+        };
+        
+        const leaveHandler = () => {
+          console.log(`[DEBUG] Maus verlässt Karte ${card.id}`);
+          window.isHoveringCard = false;
+          window.hoveredCard = null;
+          card._isHovered = false;
+        };
+        
+        // Handler in der Karte speichern, damit wir sie später entfernen können
+        card._mouseenterHandler = enterHandler;
+        card._mouseleaveHandler = leaveHandler;
+        
+        // Event-Listener hinzufügen
+        card.addEventListener('mouseenter', enterHandler);
+        card.addEventListener('mouseleave', leaveHandler);
+      });
+      
+      // Auch für den Kartenstapel
+      const cardStack = document.getElementById('card-stack');
+      if (cardStack) {
+        // Alten Stack-Hover-Handler entfernen
+        if (cardStack._stackEnterHandler) {
+          cardStack.removeEventListener('mouseenter', cardStack._stackEnterHandler);
+        }
+        if (cardStack._stackLeaveHandler) {
+          cardStack.removeEventListener('mouseleave', cardStack._stackLeaveHandler);
+        }
+        
+        // Neue Handler erstellen
+        const stackEnterHandler = () => {
+          console.log("[DEBUG] Maus über Kartenstapel");
+          window.isHoveringCard = true;
+        };
+        
+        const stackLeaveHandler = () => {
+          console.log("[DEBUG] Maus verlässt Kartenstapel");
+          // Nur zurücksetzen, wenn nicht über einer einzelnen Karte
+          if (!window.hoveredCard) {
+            window.isHoveringCard = false;
+          }
+        };
+        
+        // Handler speichern
+        cardStack._stackEnterHandler = stackEnterHandler;
+        cardStack._stackLeaveHandler = stackLeaveHandler;
+        
+        // Neue Event-Listener hinzufügen
+        cardStack.addEventListener('mouseenter', stackEnterHandler);
+        cardStack.addEventListener('mouseleave', stackLeaveHandler);
+        
+        console.log("[DEBUG] Hover-Tracking für Kartenstapel eingerichtet");
+      }
+      
+      console.log("[DEBUG] Hover-Tracking Setup abgeschlossen");
+    }
+    
+    // Initial einrichten
+    setupCardHoverTracking();
+    
+    // Bei Änderung des Board-Status (neue Karten) Tracking erneuern
+    document.addEventListener('boardStateUpdated', setupCardHoverTracking);
+    
+    // Debug-Ausgabe hinzufügen, um den Status zu überwachen
+    setInterval(() => {
+      if (window.isHoveringCard) {
+        console.log(`[DEBUG] Hover-Status: ${window.isHoveringCard}, Karte: ${window.hoveredCard ? window.hoveredCard.id : 'Stapel'}`);
+      }
+    }, 5000); // Alle 5 Sekunden, nur zu Debug-Zwecken
+    
+    document.addEventListener('keydown', (e) => {
+    // Nur blockieren, wenn der Nutzer gerade wirklich in einem Eingabefeld tippt
+    const isInTextInput =
+    (e.target && e.target.isContentEditable) ||
+    (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'));
+
+    if (isInTextInput) return;
+
+    const key = (e.key || '').toLowerCase();
+    // F: Karte umdrehen (bevorzugt die aktuell gehoverte, sonst Top-Karte)
+    if (key === 'f') {
+    const targetCard = window.hoveredCard || findTopCard();
+    if (targetCard) {
+    console.log('F-Taste gedrückt - Karte umdrehen');
+    flipCard(targetCard);
+    }
+    }
+    // M: Mischen (immer erlauben, kein Hover erforderlich)
+    if (key === 'm') {
+    console.log('M-Taste gedrückt - Karten mischen');
+    shuffleCards();
+    }
+    // B: Karte zurück zum Stapel (bevorzugt gehoverte, sonst Top-Karte)
+    if (key === 'b') {
+    const targetCard = window.hoveredCard || findTopCard();
+    if (targetCard) {
+    console.log('B-Taste gedrückt - Karte zurück zum Stapel');
+    returnCardToStack(targetCard);
+    }
+    }
+    });
+  };
+
+  // Hilfsfunktion, um die oberste Karte zu finden
+  const findTopCard = () => {
+    if (cards.length === 0) return null;
+    
+    let topCard = cards[0];
+    let highestZIndex = parseInt(getComputedStyle(cards[0]).zIndex, 10);
+    
+    for (let i = 1; i < cards.length; i++) {
+      const zIndex = parseInt(getComputedStyle(cards[i]).zIndex, 10);
+      if (zIndex > highestZIndex) {
+        highestZIndex = zIndex;
+        topCard = cards[i];
+      }
+    }
+    
+    return topCard;
+  };
+
+  // Focus Note erstellen
+  const createFocusNote = () => {
+    if (boardType === 'board1') {
+      // Bei Board1 platzieren wir die Focus Note im vorgesehenen Bereich
+      const focusNoteArea = document.getElementById('focus-note-area');
+      if (focusNoteArea) {
+        // Wir müssen nichts tun, da der Text bereits in createCardPlaceholders gesetzt wurde
+        // Der Text ist bereits in der focus-note-content enthalten
+      }
+    } else {
+      // Bestehender Code für andere Board-Typen
+      const focusNote = document.createElement('div');
+      focusNote.className = 'note focus-note';
+      focusNote.style.top = '30%';
+      focusNote.style.left = '50%';
+      focusNote.style.transform = 'translate(-50%, -50%)';
+      focusNote.style.backgroundColor = '#9FE2BF'; // Türkis/Mint Farbe
+      
+      focusNote.innerHTML = `
+        <div class="note-content" contenteditable="false">
+          ${focusNoteTexts[boardType] || "Fokus der Sitzung"}
+        </div>
+        <div class="note-actions">
+          <button class="note-color-btn" title="Farbe ändern">🎨</button>
+        </div>
+      `;
+      
+      notesContainer.appendChild(focusNote);
+      // Resize/AutoGrow für Focus-Note
+      attachNoteResizeObserver(focusNote);
+      attachNoteAutoGrow(focusNote);
+      
+      // Event-Listener für Farbe ändern
+      focusNote.querySelector('.note-color-btn').addEventListener('click', (e) => {
+        const colors = ['#9FE2BF', '#FFD700', '#FF7F50', '#CCCCFF', '#FFF8DC'];
+        const currentColor = focusNote.style.backgroundColor;
+        const currentIndex = colors.indexOf(currentColor);
+        const nextIndex = (currentIndex + 1) % colors.length;
+        focusNote.style.backgroundColor = colors[nextIndex];
+      });
+      
+      // Drag-and-Drop für die Notiz aktivieren
+      makeDraggable(focusNote);
+    }
+  };  
+    
+  // Funktion zum Starten des Ziehens eines neuen Notizzettels
+  function startDragNewNote(e) {
+    // Nur mit linker Maustaste
+    if (e.button !== 0) return;
+    
+    e.preventDefault();
+    console.log("Erstelle neue Notiz...");
+    
+    const notizId = 'note-' + Date.now();
+    console.log("Neue Notiz-ID:", notizId);
+    
+    const notiz = document.createElement('div');
+    notiz.className = 'notiz';
+    notiz.id = notizId;
+    
+    // WICHTIG: Notiz sofort als draggable markieren für Drag-and-Drop
+    notiz.setAttribute('draggable', 'true');
+    
+    // Zufällige leichte Rotation für natürlicheren Look
+    const rotation = Math.random() * 6 - 3; // -3 bis +3 Grad
+    notiz.style.setProperty('--rotation', `${rotation}deg`);
+    
+    // Position am Mauszeiger
+    notiz.style.left = `${e.clientX - 90}px`;
+    notiz.style.top = `${e.clientY - 90}px`;
+    notiz.style.zIndex = getHighestZIndex() + 1;
+    
+    // Inhalt mit leerem editierbarem Textfeld
+    notiz.innerHTML = `
+      <div class="notiz-content" contenteditable="false"></div>
+    `;
+    
+    // Notizzettel zum DOM hinzufügen
+    document.body.appendChild(notiz);
+    attachNoteResizeObserver(notiz);
+    attachNoteAutoGrow(notiz);
+    
+    // WICHTIG: Drag-Funktionalität hinzufügen
+    enhanceDraggableNote(notiz);
+    
+    // Event-Listener für das Ziehen des neuen Notizzettels
+    const moveHandler = (moveEvent) => {
+      notiz.style.left = `${moveEvent.clientX - 90}px`;
+      notiz.style.top = `${moveEvent.clientY - 90}px`;
+    };
+    
+    const upHandler = () => {
+      document.removeEventListener('mousemove', moveHandler);
+      document.removeEventListener('mouseup', upHandler);
+      
+      // Doppelklick-Handler für Bearbeitung
+      setupNoteEditingHandlers(notiz);
+      
+      // Den Notizzettel dem notes-Array hinzufügen
+      if (typeof notes !== 'undefined') {
+        notes.push(notiz);
+      }
+      
+      // Speichern des Board-Zustands nach dem Erstellen einer neuen Notiz
+      if (typeof saveCurrentBoardState === 'function') {
+        saveCurrentBoardState();
+      }
+    };
+    
+    document.addEventListener('mousemove', moveHandler);
+    document.addEventListener('mouseup', upHandler);
+  }
+
+    // Hilfsfunktion, um den höchsten z-index zu finden
+    function getHighestZIndex() {
+      const elements = document.getElementsByClassName('notiz');
+      let highest = 100; // Basiswert
+      
+      for (let i = 0; i < elements.length; i++) {
+        const zIndex = parseInt(window.getComputedStyle(elements[i]).zIndex, 10);
+        if (!isNaN(zIndex) && zIndex > highest) {
+          highest = zIndex;
+        }
+      }
+      
+      return highest;
+    }
+
+  // Einrichten der Bearbeitungs-Handler für eine Notiz
+  function setupNoteEditingHandlers(notiz) {
+    const content = notiz.querySelector('.notiz-content');
+    
+    // Doppelklick zum Bearbeiten
+    notiz.addEventListener('dblclick', (e) => {
+      // Content-Element auf editierbar setzen
+      content.setAttribute('contenteditable', 'true');
+      
+      // Visuelle Rückmeldung hinzufügen
+      content.classList.add('editing');
+      
+      // Optional: Cursor-Animation hinzufügen
+      content.classList.add('blinking-cursor');
+      
+      // Einen temporären Platzhaltertext hinzufügen, wenn leer
+      if (content.textContent.trim() === '') {
+        content.innerHTML = '<span class="placeholder">Hier tippen...</span>';
+        
+        // Platzhalter entfernen, sobald der Benutzer zu tippen beginnt
+        const handleFirstInput = () => {
+          const placeholder = content.querySelector('.placeholder');
+          if (placeholder) {
+            placeholder.remove();
+          }
+          content.removeEventListener('input', handleFirstInput);
+        };
+        
+        content.addEventListener('input', handleFirstInput);
+      }
+      
+      // Dem Notizzettel eine Klasse hinzufügen, um zu zeigen, dass er bearbeitet wird
+      notiz.classList.add('is-editing');
+      
+      // Einen visuellen Indikator für den Bearbeitungsmodus hinzufügen
+      if (!notiz.querySelector('.editing-indicator')) {
+        const indicator = document.createElement('div');
+        indicator.className = 'editing-indicator';
+        indicator.innerHTML = '✏️';
+        indicator.title = 'Bearbeitungsmodus - Klicken Sie außerhalb, um zu speichern';
+        notiz.appendChild(indicator);
+      }
+      
+      // Fokus auf das Textfeld setzen
+      content.focus();
+      
+      // Wenn der Inhalt bereits Text enthält, den Cursor ans Ende setzen
+      if (content.textContent.trim() !== '') {
+        const range = document.createRange();
+        const selection = window.getSelection();
+        range.selectNodeContents(content);
+        range.collapse(false); // false = am Ende
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      
+      e.stopPropagation(); // Verhindert das Bubbling zum Elternelement
+    });
+    
+    // Event-Listener für Tastendrücke im Textfeld
+    content.addEventListener('keydown', (keyEvent) => {
+      // Wenn das Textfeld leer ist und der erste Buchstabe eingegeben wird
+      if (content.textContent.trim() === '' && 
+          keyEvent.key.length === 1 && 
+          !keyEvent.ctrlKey && 
+          !keyEvent.altKey && 
+          !keyEvent.metaKey) {
+        // Verhindere die Standard-Eingabe
+        keyEvent.preventDefault();
+        
+        // Füge einen Bulletpoint und dann den Buchstaben ein
+        document.execCommand('insertText', false, '• ' + keyEvent.key);
+      }
+      // Wenn Enter gedrückt wird
+      else if (keyEvent.key === 'Enter') {
+        keyEvent.preventDefault();
+        
+        // Füge einen neuen Bulletpoint ein
+        document.execCommand('insertText', false, '\n• ');
+      }
+    });
+    
+    // Bearbeitung beenden, wenn außerhalb geklickt wird
+    document.addEventListener('click', (e) => {
+      if (!notiz.contains(e.target) && content.getAttribute('contenteditable') === 'true') {
+        content.setAttribute('contenteditable', 'false');
+        
+        // Visuelle Rückmeldung entfernen
+        content.classList.remove('editing');
+        content.classList.remove('blinking-cursor');
+        notiz.classList.remove('is-editing');
+        
+        // Bearbeitungsindikator entfernen
+        const indicator = notiz.querySelector('.editing-indicator');
+        if (indicator) {
+          indicator.remove();
+        }
+        
+        // Wenn der Inhalt nach dem Bearbeiten leer ist, entferne den Notizzettel
+        if (content.textContent.trim() === '') {
+          notiz.remove();
+          notes = notes.filter(n => n !== notiz);
+        } else{
+          saveCurrentBoardState();
+        }
+      }
+    });
+  }
+
+  function enhanceDraggableNote(note) {
+    if (!note) return;
+    
+    // Entferne das alte draggable-Attribut und die alten Event-Listener
+    note.removeAttribute('draggable');
+    note.removeEventListener('dragstart', note._dragStart);
+    note.removeEventListener('dragend', note._dragEnd);
+    
+    // Einrichtung für benutzerdefinierte Drag-Funktionalität
+    let isDragging = false;
+    let isDraggingForTrash = false;
+    let offsetX, offsetY;
+    let initialX, initialY;
+    let trashItem = document.querySelector('.trash-container');
+    let mouseDownTime = 0;
+    let hasMoved = false;
+    
+    note.addEventListener('mousedown', function(e) {
+      // Nur mit linker Maustaste
+      if (e.button !== 0) return;
+      
+      // Wenn im Bearbeitungsmodus oder im Löschmodus, nicht ziehen
+      if (e.target.isContentEditable) return;
+      const trashCan = document.querySelector('.trash-container');
+      if (trashCan && trashCan.classList.contains('deletion-mode')) return;
+      
+      // Speichere die Zeit des mousedown Events um später zu erkennen,
+      // ob es ein Doppelklick war oder ein Drag
+      mouseDownTime = Date.now();
+      hasMoved = false;
+      
+      // WICHTIG: NICHT e.stopPropagation() aufrufen, damit
+      // der Doppelklick durchkommt!
+      e.preventDefault(); // Nur preventDefault ist OK
+      
+      // Exakten Offset vom Klickpunkt zur Notizecke berechnen
+      const rect = note.getBoundingClientRect();
+      offsetX = e.clientX - rect.left;
+      offsetY = e.clientY - rect.top;
+      
+      // Startposition speichern für möglichen Mülleimer-Check später
+      initialX = rect.left;
+      initialY = rect.top;
+      
+      // Notiz nach vorne bringen
+      note.style.zIndex = getHighestZIndex() + 1;
+      
+      // Ziehen noch NICHT starten - warten, ob es ein Doppelklick ist
+      
+      // Event-Listener zum Dokument hinzufügen
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+    
+    function onMouseMove(e) {
+      // Erst wenn etwas Bewegung stattgefunden hat, das Dragging starten
+      if (!hasMoved) {
+        hasMoved = true;
+        isDragging = true;
+        // Jetzt erst visuelles Feedback hinzufügen
+        note.classList.add('being-dragged');
+      }
+      
+      if (!isDragging) return;
+      e.preventDefault();
+      
+      // Neue Position relativ zum Elternelement berechnen
+      const parentRect = note.parentNode.getBoundingClientRect();
+      // Positionen auf ganze Pixel runden, um subpixeliges Rendering zu vermeiden
+      const newX = Math.round(e.clientX - parentRect.left - offsetX);
+      const newY = Math.round(e.clientY - parentRect.top - offsetY);
+      
+      // Neue Position setzen
+      note.style.position = 'absolute';
+      note.style.left = newX + 'px';
+      note.style.top = newY + 'px';
+      
+      // Prüfen, ob die Notiz über dem Mülleimer ist
+      if (trashItem) {
+        const trashRect = trashItem.getBoundingClientRect();
+        const noteRect = note.getBoundingClientRect();
+        
+        // Wenn über dem Mülleimer
+        if (noteRect.right > trashRect.left && 
+            noteRect.left < trashRect.right &&
+            noteRect.bottom > trashRect.top && 
+            noteRect.top < trashRect.bottom) {
+          
+          if (!isDraggingForTrash) {
+            // Visuelles Feedback für den Mülleimer
+            trashItem.classList.add('drag-over');
+            trashItem.style.transform = 'scale(1.2)';
+            trashItem.style.backgroundColor = '#ffcccc';
+            isDraggingForTrash = true;
+          }
+        } else if (isDraggingForTrash) {
+          // Visuelles Feedback entfernen
+          trashItem.classList.remove('drag-over');
+          trashItem.style.transform = '';
+          trashItem.style.backgroundColor = '';
+          isDraggingForTrash = false;
+        }
+      }
+    }
+    
+    function onMouseUp(e) {
+      // Wenn nicht wirklich gezogen wurde und wenig Zeit vergangen ist,
+      // könnte es Teil eines Doppelklicks sein, also nichts machen
+      const clickDuration = Date.now() - mouseDownTime;
+      
+      // Event-Listener entfernen
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      
+      // Wenn nicht bewegt (kein Drag) und kurze Zeit (könnte Teil eines Doppelklicks sein)
+      if (!hasMoved && clickDuration < 300) {
+        note.classList.remove('being-dragged');
+        isDragging = false;
+        return; // Nichts tun, könnte ein Doppelklick sein
+      }
+      
+      if (!isDragging) return;
+      
+      // Ziehen beenden
+      isDragging = false;
+      note.classList.remove('being-dragged');
+      
+      // Prüfen, ob über dem Mülleimer losgelassen
+      if (isDraggingForTrash && trashItem) {
+        // Visuelles Feedback für Mülleimer zurücksetzen
+        trashItem.classList.remove('drag-over');
+        trashItem.style.transform = '';
+        trashItem.style.backgroundColor = '';
+        
+        // Animation für das Löschen und Löschen der Notiz
+        note.style.transition = 'all 0.3s ease';
+        note.style.transform = 'scale(0.1) rotate(5deg)';
+        note.style.opacity = '0';
+        
+        setTimeout(() => {
+          note.remove();
+          
+          // Array aktualisieren, falls vorhanden
+          if (typeof notes !== 'undefined' && Array.isArray(notes)) {
+            notes = notes.filter(n => {
+              if (n instanceof Element) {
+                return n.id !== note.id;
+              } else if (n && n.id) {
+                return n.id !== note.id;
+              }
+              return true;
+            });
+          }
+          
+          console.log("Notiz erfolgreich gelöscht!");
+          
+          // Feedback-Effekt für Mülleimer
+          trashItem.classList.add('note-deleted');
+          setTimeout(() => {
+            trashItem.classList.remove('note-deleted');
+          }, 500);
+          
+          // Board-Zustand speichern
+          if (typeof saveCurrentBoardState === 'function') {
+            saveCurrentBoardState();
+          }
+        }, 300);
+        
+        isDraggingForTrash = false;
+        return;
+      }
+      
+      // Board-Zustand nach dem Verschieben speichern
+      if (typeof saveCurrentBoardState === 'function') {
+        saveCurrentBoardState();
+      }
+    }
+    
+    // Stil für die Notizzettel anpassen
+    note.style.cursor = 'grab';
+  }
+
+  const addTrashContainer = () => {
+    console.log("Erstelle Mülleimer...");
+    
+    // Zuerst alle vorhandenen Mülleimer entfernen
+    document.querySelectorAll('.trash-container').forEach(trash => {
+      console.log("Entferne alten Mülleimer");
+      trash.remove();
+    });
+    
+    // Neuen Mülleimer erstellen
+    const trashContainer = document.createElement('div');
+    trashContainer.className = 'trash-container';
+    trashContainer.style.zIndex = '9999';
+    trashContainer.title = 'Notizzettel hier ablegen zum Löschen';
+    
+    // Alternative Löschmethode: Direktes Anklicken des Mülleimers
+    trashContainer.addEventListener('click', function() {
+      const deletionMode = this.classList.toggle('deletion-mode');
+      
+      if (deletionMode) {
+        // Visuelles Feedback, dass der Löschmodus aktiv ist
+        this.style.backgroundColor = '#ffcccc';
+        this.style.transform = 'scale(1.2)';
+        this.title = 'Klicke auf einen Notizzettel zum Löschen';
+        
+        // Benachrichtigung anzeigen
+        showTooltip("Klicke auf einen Notizzettel zum Löschen");
+        
+        // Klick-Handler für alle Notizzettel
+        document.querySelectorAll('.notiz').forEach(notiz => {
+          notiz.classList.add('deletable');
+          notiz.addEventListener('click', deleteNoteOnClick);
+        });
+      } else {
+        // Löschmodus beenden
+        this.style.backgroundColor = '';
+        this.style.transform = '';
+        this.title = 'Notizzettel hier ablegen zum Löschen';
+        
+        // Benachrichtigung entfernen
+        hideTooltip();
+        
+        // Klick-Handler entfernen
+        document.querySelectorAll('.notiz').forEach(notiz => {
+          notiz.classList.remove('deletable');
+          notiz.removeEventListener('click', deleteNoteOnClick);
+        });
+      }
+    });
+    
+    // Hilfsfunktion zum Löschen eines Notizzettels per Klick
+    function deleteNoteOnClick(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const notiz = this;
+      console.log("Lösche Notiz per Klick:", notiz.id);
+      
+      // Animation zum Verschwinden
+      notiz.style.transition = 'all 0.3s ease';
+      notiz.style.transform = 'scale(0.1) rotate(5deg)';
+      notiz.style.opacity = '0';
+      
+      // Nach Animation entfernen
+      setTimeout(() => {
+        notiz.remove();
+        
+        // Array aktualisieren
+        if (typeof notes !== 'undefined' && Array.isArray(notes)) {
+          notes = notes.filter(note => {
+            if (note instanceof Element) {
+              return note.id !== notiz.id;
+            } else if (note && note.id) {
+              return note.id !== notiz.id;
+            }
+            return true;
+          });
+        }
+        
+        console.log("Notiz erfolgreich gelöscht!");
+        
+        // Aktuellen Board-Zustand speichern
+        if (typeof saveCurrentBoardState === 'function') {
+          saveCurrentBoardState();
+        }
+      }, 300);
+      
+      // Feedback-Effekt für Mülleimer
+      const trash = document.querySelector('.trash-container');
+      if (trash) {
+        trash.classList.add('note-deleted');
+        setTimeout(() => {
+          trash.classList.remove('note-deleted');
+        }, 500);
+      }
+    }
+    
+    // Hilfsfunktion zum Anzeigen einer Tooltip-Nachricht
+    function showTooltip(message) {
+      let tooltip = document.getElementById('trash-tooltip');
+      if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.id = 'trash-tooltip';
+        tooltip.className = 'trash-tooltip';
+        document.body.appendChild(tooltip);
+      }
+      
+      tooltip.textContent = message;
+      tooltip.style.display = 'block';
+      
+      // Nach 3 Sekunden ausblenden
+      setTimeout(() => {
+        hideTooltip();
+      }, 3000);
+    }
+    
+    // Hilfsfunktion zum Ausblenden des Tooltips
+    function hideTooltip() {
+      const tooltip = document.getElementById('trash-tooltip');
+      if (tooltip) {
+        tooltip.style.display = 'none';
+      }
+    }
+    
+    // *** VERBESSERTE DRAG & DROP FUNKTIONALITÄT ***
+    
+    // WICHTIG: Präventiv alle drop/dragover/dragleave-Event-Listener entfernen
+    trashContainer.removeEventListener('dragover', dragOverHandler);
+    trashContainer.removeEventListener('dragleave', dragLeaveHandler);
+    trashContainer.removeEventListener('drop', dropHandler);
+    
+    // Neue Event-Handler-Funktionen definieren
+    function dragOverHandler(e) {
+      // ABSOLUT NOTWENDIG: Verhindert Standard-Browser-Verhalten
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // Visuelles Feedback - "Große" Animation für bessere UX
+      this.classList.add('drag-over');
+      this.style.transform = 'scale(1.2)';
+      this.style.backgroundColor = '#ffcccc';
+    }
+    
+    function dragLeaveHandler(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // Visuelles Feedback entfernen
+      this.classList.remove('drag-over');
+      this.style.transform = '';
+      this.style.backgroundColor = '';
+    }
+    
+    function dropHandler(e) {
+      // WICHTIG: Verhindert Standard-Browser-Verhalten
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // Visuelles Feedback entfernen
+      this.classList.remove('drag-over');
+      this.style.transform = '';
+      this.style.backgroundColor = '';
+      
+      console.log("Drop auf Mülleimer erkannt");
+      
+      try {
+        // Sicherstellen, dass dataTransfer existiert
+        if (!e.dataTransfer) {
+          console.error("Kein dataTransfer im Event");
+          return;
+        }
+        
+        // Daten extrahieren
+        const noteId = e.dataTransfer.getData('text/plain');
+        console.log("Extrahierte Notiz-ID:", noteId);
+        
+        if (!noteId) {
+          console.error("Keine ID in dataTransfer gefunden");
+          return;
+        }
+        
+        // Element finden
+        const noteElement = document.getElementById(noteId);
+        if (!noteElement) {
+          console.error("Element nicht gefunden:", noteId);
+          return;
+        }
+        
+        // Prüfen, ob es eine Notiz ist
+        if (!noteElement.classList.contains('notiz')) {
+          console.log("Element ist keine Notiz, prüfe ob es eine Karte ist...");
+          
+          // Falls es eine Karte ist, spezielle Behandlung
+          if (noteElement.classList.contains('card')) {
+            console.log("Karte kann nicht gelöscht werden, sie wird zum Stapel zurückgelegt");
+            // Hier könnte man die Karte zurück zum Stapel legen, falls erwünscht
+            returnCardToStack(card);
+            return;
+          }
+          
+          console.error("Element ist weder Notiz noch Karte:", noteId);
+          return;
+        }
+        
+        console.log("Lösche Notizzettel durch Drop:", noteId);
+        
+        // Notiz löschen mit Animation
+        noteElement.style.transition = 'all 0.3s ease';
+        noteElement.style.transform = 'scale(0.1) rotate(5deg)';
+        noteElement.style.opacity = '0';
+        
+        setTimeout(() => {
+          noteElement.remove();
+          
+          // Array aktualisieren
+          if (typeof notes !== 'undefined' && Array.isArray(notes)) {
+            notes = notes.filter(note => {
+              if (note instanceof Element) {
+                return note.id !== noteId;
+              } else if (note && note.id) {
+                return note.id !== noteId;
+              }
+              return true;
+            });
+          }
+          
+          console.log("Notiz erfolgreich gelöscht!");
+          
+          // Aktuellen Board-Zustand speichern
+          if (typeof saveCurrentBoardState === 'function') {
+            saveCurrentBoardState();
+          }
+        }, 300);
+        
+        // Feedback-Effekt
+        this.classList.add('note-deleted');
+        setTimeout(() => {
+          this.classList.remove('note-deleted');
+        }, 500);
+      } catch (error) {
+        console.error("Fehler beim Drop-Handling:", error);
+      }
+    }
+    
+    // Event-Listener für die verbesserte Drag & Drop-Funktionalität hinzufügen
+    trashContainer.addEventListener('dragover', dragOverHandler);
+    trashContainer.addEventListener('dragleave', dragLeaveHandler);
+    trashContainer.addEventListener('drop', dropHandler);
+    
+    // Zum DOM hinzufügen
+    document.body.appendChild(trashContainer);
+    console.log("Mülleimer erfolgreich erstellt mit verbesserter Drop-Funktionalität");
+    
+    // CSS für Tooltip und verbesserte Drag-and-Drop hinzufügen
+    if (!document.getElementById('trash-tooltip-style')) {
+      const style = document.createElement('style');
+      style.id = 'trash-tooltip-style';
+      style.textContent = `
+        .trash-tooltip {
+          position: fixed;
+          top: 20px;
+          left: 50%;
+          transform: translateX(-50%);
+          background-color: rgba(0, 0, 0, 0.8);
+          color: white;
+          padding: 10px 20px;
+          border-radius: 5px;
+          z-index: 10000;
+          font-size: 16px;
+          display: none;
+        }
+        
+        .notiz.deletable {
+          cursor: pointer;
+          box-shadow: 0 0 8px rgba(255, 0, 0, 0.5);
+        }
+        
+        .notiz.deletable:hover {
+          transform: scale(1.05);
+          box-shadow: 0 0 12px rgba(255, 0, 0, 0.8);
+        }
+        
+        .trash-container.deletion-mode::after {
+          content: "✖";
+          position: absolute;
+          top: -5px;
+          right: -5px;
+          background-color: red;
+          color: white;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+          font-weight: bold;
+        }
+        
+        /* Verbesserte Styles für Drag & Drop */
+        .trash-container.drag-over {
+          animation: pulse 0.5s infinite alternate;
+        }
+        
+        @keyframes pulse {
+          0% { transform: scale(1.1); }
+          100% { transform: scale(1.3); }
+        }
+        
+        /* Verbesserte Animation für das Löschen */
+        .notiz.being-dragged {
+          opacity: 0.8 !important;
+          transform: scale(0.9) !important;
+          box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+          pointer-events: none;
+          z-index: 10000 !important;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    return trashContainer;
+  };
+
+  // Karte umdrehen
+  const flipCard = (card) => {
+    if (!card) return;
+    
+    card.classList.toggle('flipped');
+    
+    // Sound abspielen
+    if (cardFlipSound) {
+      cardFlipSound.currentTime = 0;
+      cardFlipSound.play().catch(e => console.log('Audio konnte nicht abgespielt werden:', e));
+    }
+    
+    // Karte nach vorne bringen
+    card.style.zIndex = getHighestZIndex() + 1;
+    // Speichern des Board-Zustands nach dem Umdrehen einer Karte
+    saveCurrentBoardState();
+  };
+
+  // Karten mischen - überarbeitete Version, die nur Karten auf dem Stapel mischt
+  const shuffleCards = () => {
+    // Den Kartenstapel Element finden
+    const cardStack = document.getElementById('card-stack');
+    if (!cardStack) return;
+    
+    // Nur Karten direkt im Stapel selektieren
+    const stackCardElements = cardStack.querySelectorAll(':scope > .card');
+    
+    // Wenn keine Karten im Stapel sind, beenden
+    if (stackCardElements.length === 0) {
+      console.log("Keine Karten zum Mischen im Stapel vorhanden");
+      return;
+    }
+    
+    // Konvertiere NodeList zu Array für bessere Handhabung
+    const stackCards = Array.from(stackCardElements);
+    console.log(`${stackCards.length} Karten im Stapel zum Mischen gefunden`);
+    
+    // Kurze Animation für jede Karte hinzufügen
+    stackCards.forEach(card => {
+      card.classList.add('shuffling');
+      setTimeout(() => card.classList.remove('shuffling'), 500);
+    });
+    
+    // Sound abspielen
+    if (shuffleSound) {
+      shuffleSound.currentTime = 0;
+      shuffleSound.play().catch(e => console.log('Audio konnte nicht abgespielt werden:', e));
+    }
+  
+    // WICHTIG: Alle Karten vom Stack entfernen, damit wir sie in neuer Reihenfolge hinzufügen können
+    stackCards.forEach(card => cardStack.removeChild(card));
+    
+    // Fisher-Yates Shuffle-Algorithmus
+    for (let i = stackCards.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [stackCards[i], stackCards[j]] = [stackCards[j], stackCards[i]];
+    }
+    
+    // Karten in der gemischten Reihenfolge wieder hinzufügen
+    stackCards.forEach((card, index) => {
+      // Umgedrehte Karten zurückdrehen
+      if (card.classList.contains('flipped')) {
+        card.classList.remove('flipped');
+      }
+      
+      // Karte zum Stapel hinzufügen
+      cardStack.appendChild(card);
+      
+      // Position im Stapel mit leichtem Versatz
+      const offset = index * 0.5;
+      card.style.position = 'absolute';
+      card.style.left = `${offset}px`;
+      card.style.top = `${offset}px`;
+      card.style.zIndex = index + 1;
+    });
+    
+    // Speichern des Board-Zustands nach dem Mischen
+    saveCurrentBoardState();
+  };
+
+  // Event-Listener für Buttons und Aktionen einrichten
+  const setupEventListeners = () => {
+    // Karten mischen
+    if (shuffleCardsBtn) {
+      shuffleCardsBtn.addEventListener('click', shuffleCards);
+    }
+    
+    // Neue Notiz erstellen
+    if (newNoteBtn) {
+      newNoteBtn.addEventListener('click', () => {
+        // Zufällige Position im sichtbaren Bereich
+        const left = Math.floor(Math.random() * (window.innerWidth - 200)) + 50;
+        const top = Math.floor(Math.random() * (window.innerHeight - 200)) + 50;
+        createNote(left, top);
+      });
+    }
+    
+    // Sitzung schließen
+    const endSessionBtn = document.querySelector('.end-session-btn');
+    if (endSessionBtn) {
+      endSessionBtn.addEventListener('click', () => {
+        createEndSessionDialog();
+      });
+    }
+    
+    // Karten filtern
+    if (cardFilter) {
+      cardFilter.addEventListener('change', () => {
+        const filterValue = cardFilter.value;
+        
+        if (filterValue === 'none') {
+          // Alle Elemente anzeigen
+          document.querySelectorAll('.note, .card').forEach(elem => {
+            elem.style.display = 'block';
+          });
+        } else {
+          // Nur Elemente mit dem entsprechenden Typ anzeigen
+          document.querySelectorAll('.note, .card').forEach(elem => {
+            if (elem.classList.contains('focus-note') && filterValue === 'Focus') {
+              elem.style.display = 'block';
+            } else if (elem.classList.contains('card') && filterValue === 'Problem') {
+              elem.style.display = 'block';
+            } else if (elem.classList.contains('note') && !elem.classList.contains('focus-note') && filterValue === 'Note') {
+              elem.style.display = 'block';
+            } else {
+              elem.style.display = 'none';
+            }
+          });
+        }
+      });
+    }
+    
+    // Kontextmenü für rechte Maustaste
+    document.addEventListener('contextmenu', (e) => {
+      const target = e.target.closest('.card, .note');
+      if (target) {
+        e.preventDefault();
+        showContextMenu(e, target);
+      }
+    });
+    
+    // Klick auf den Board-Bereich (zum Schließen von Kontextmenüs)
+    document.addEventListener('click', () => {
+      const contextMenu = document.querySelector('.context-menu');
+      if (contextMenu) {
+        contextMenu.remove();
+      }
+    });
+    
+    // WICHTIG: Tastaturkürzel aktivieren
+    setupKeyboardShortcuts();
+  };
+
+
+  // Kontextmenü für Karten anzeigen
+  const showCardContextMenu = (event, card) => {
+    // Vorhandenes Kontextmenü entfernen
+    const existingMenu = document.querySelector('.context-menu');
+    if (existingMenu) {
+      existingMenu.remove();
+    }
+    
+    // Neues Kontextmenü erstellen
+    const contextMenu = document.createElement('div');
+    contextMenu.className = 'context-menu';
+    contextMenu.style.left = `${event.clientX}px`;
+    contextMenu.style.top = `${event.clientY}px`;
+    
+    // Menü für Karten
+    contextMenu.innerHTML = `
+      <ul>
+        <li class="flip-card">Karte umdrehen (F)</li>
+        <li class="reset-card">Zurück zum Stapel (B)</li>
+        <li class="shuffle-cards">Karten mischen (M)</li>
+      </ul>
+    `;
+    
+    document.body.appendChild(contextMenu);
+    
+    // Event-Listener für Menüaktionen
+    contextMenu.querySelector('.flip-card').addEventListener('click', () => {
+      flipCard(card);
+      contextMenu.remove();
+    });
+    
+    contextMenu.querySelector('.reset-card').addEventListener('click', () => {
+      returnCardToStack(card);
+      contextMenu.remove();
+    });
+    
+    contextMenu.querySelector('.shuffle-cards').addEventListener('click', () => {
+      shuffleCards();
+      contextMenu.remove();
+    });
+    
+    // Kontextmenü im Fenster halten
+    const menuRect = contextMenu.getBoundingClientRect();
+    if (menuRect.right > window.innerWidth) {
+      contextMenu.style.left = `${window.innerWidth - menuRect.width}px`;
+    }
+    if (menuRect.bottom > window.innerHeight) {
+      contextMenu.style.top = `${window.innerHeight - menuRect.height}px`;
+    }
+  };
+  
+  // Kontextmenü anzeigen
+  const showContextMenu = (event, target) => {
+    // Vorhandenes Kontextmenü entfernen
+    const existingMenu = document.querySelector('.context-menu');
+    if (existingMenu) {
+      existingMenu.remove();
+    }
+    
+    // Wenn das Ziel eine Karte ist, verwenden wir die spezielle Funktion
+    if (target.classList.contains('card')) {
+      showCardContextMenu(event, target);
+      return;
+    }
+    
+    // Neues Kontextmenü erstellen
+    const contextMenu = document.createElement('div');
+    contextMenu.className = 'context-menu';
+    contextMenu.style.left = `${event.clientX}px`;
+    contextMenu.style.top = `${event.clientY}px`;
+    
+    let menuItems = '';
+    
+    if (target.classList.contains('note')) {
+      // Menü für Notizen
+      const colors = [
+        { name: 'Gelb', value: '#FFFF99' },
+        { name: 'Rot', value: '#FF9999' },
+        { name: 'Grün', value: '#99FF99' },
+        { name: 'Blau', value: '#9999FF' },
+        { name: 'Orange', value: '#FFCC99' }
+      ];
+      
+      let colorItems = '';
+      colors.forEach(color => {
+        colorItems += `<li class="change-color" data-color="${color.value}">${color.name}</li>`;
+      });
+      
+      menuItems = `
+        <ul>
+          <li class="delete-note">Notiz löschen</li>
+          <li class="color-submenu">
+            Farbe ändern
+            <ul class="color-options">
+              ${colorItems}
+            </ul>
+          </li>
+        </ul>
+      `;
+      
+      contextMenu.innerHTML = menuItems;
+      document.body.appendChild(contextMenu);
+      
+      contextMenu.querySelector('.delete-note').addEventListener('click', () => {
+        target.remove();
+        notes = notes.filter(n => n !== target);
+        contextMenu.remove();
+      });
+      
+      contextMenu.querySelectorAll('.change-color').forEach(item => {
+        item.addEventListener('click', () => {
+          const color = item.dataset.color;
+          target.style.backgroundColor = color;
+          contextMenu.remove();
+        });
+      });
+    }
+    
+    // Kontextmenü im Fenster halten
+    const menuRect = contextMenu.getBoundingClientRect();
+    if (menuRect.right > window.innerWidth) {
+      contextMenu.style.left = `${window.innerWidth - menuRect.width}px`;
+    }
+    if (menuRect.bottom > window.innerHeight) {
+      contextMenu.style.top = `${window.innerHeight - menuRect.height}px`;
+    }
+  };
+ 
+  // Element draggable machen - angepasst für Karten
+  function makeDraggable(element) {
+    console.log("Mache Element draggable:", element.id || "Unbekanntes Element");
+    
+    // Für Notizen die bestehende Logik verwenden
+    if (element.classList.contains('notiz')) {
+      enhanceDraggableNote(element);
+      return;
+    }
+    
+    // Für Karten, benutzerdefiniertes Drag-and-Drop implementieren
+    if (element.classList.contains('card')) {
+      // Standard Drag-Attribute entfernen
+      element.removeAttribute('draggable');
+      
+      let isDragging = false;
+      let offsetX, offsetY;
+      let initialParent;
+      let isHoveringOverStack = false; // Neuer Status für Hover über Stapel
+      
+      element.addEventListener('mousedown', function(e) {
+        // Nur mit linker Maustaste
+        if (e.button !== 0) return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Initialen Elternelement speichern
+        initialParent = element.parentNode;
+        
+        // Exakten Offset vom Klickpunkt zur Kartenecke berechnen
+        const rect = element.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        
+        // Karte nach vorne bringen
+        element.style.zIndex = getHighestZIndex() + 1;
+        
+        // Visuelles Feedback dass Karte gezogen wird
+        element.classList.add('being-dragged');
+        
+        // Drag-Status aktivieren
+        isDragging = true;
+        
+        // Event-Listener zum Dokument hinzufügen
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      });
+      
+      function onMouseMove(e) {
+        if (!isDragging) return;
+        e.preventDefault();
+        
+        // Elternelement-Grenzen abrufen
+        const parentElement = element.parentNode;
+        const parentRect = parentElement.getBoundingClientRect();
+        
+        // Neue Position relativ zum Elternelement berechnen
+        const newX = e.clientX - parentRect.left - offsetX;
+        const newY = e.clientY - parentRect.top - offsetY;
+        
+        // Neue Position setzen
+        element.style.position = 'absolute';
+        element.style.left = newX + 'px';
+        element.style.top = newY + 'px';
+        
+        // NEUE FUNKTIONALITÄT: Überprüfen, ob Karte über dem Stapel schwebt
+        const cardStack = document.getElementById('card-stack');
+        if (cardStack) {
+          const cardRect = element.getBoundingClientRect();
+          const stackRect = cardStack.getBoundingClientRect();
+          
+          // Prüfen, ob sich die Karte über dem Stapel befindet
+          const isOverStack = (
+            cardRect.right > stackRect.left &&
+            cardRect.left < stackRect.right &&
+            cardRect.bottom > stackRect.top &&
+            cardRect.top < stackRect.bottom
+          );
+          
+          // Status-Update und visuelles Feedback
+          if (isOverStack && !isHoveringOverStack) {
+            isHoveringOverStack = true;
+            
+            // Visuelles Feedback für den Stapel
+            cardStack.classList.add('stack-hover');
+            cardStack.style.boxShadow = '0 0 10px rgba(0, 255, 0, 0.5)';
+            cardStack.style.transform = 'scale(1.05)';
+            
+            // Hinweis für den Nutzer
+            showStackHoverTooltip("Loslassen, um Karte zum Stapel zurückzulegen");
+          } 
+          else if (!isOverStack && isHoveringOverStack) {
+            isHoveringOverStack = false;
+            
+            // Visuelles Feedback entfernen
+            cardStack.classList.remove('stack-hover');
+            cardStack.style.boxShadow = '';
+            cardStack.style.transform = '';
+            
+            // Tooltip entfernen
+            hideStackHoverTooltip();
+          }
+        }
+      }
+      
+      function onMouseUp(e) {
+        if (!isDragging) return;
+        
+        // Drag-Status zurücksetzen
+        isDragging = false;
+        element.classList.remove('being-dragged');
+        
+        // Event-Listener entfernen
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        
+        // NEUE FUNKTIONALITÄT: Wenn Karte über dem Stapel losgelassen wird
+        const cardStack = document.getElementById('card-stack');
+        if (cardStack && isHoveringOverStack) {
+          // Visuelles Feedback entfernen
+          cardStack.classList.remove('stack-hover');
+          cardStack.style.boxShadow = '';
+          cardStack.style.transform = '';
+          hideStackHoverTooltip();
+          
+          // Karte zum Stapel zurücklegen
+          console.log("Karte wird per Drag-and-Drop zum Stapel zurückgelegt");
+          returnCardToStack(element);
+          
+          // Hover-Status zurücksetzen
+          isHoveringOverStack = false;
+          return;
+        }
+        
+        // Ursprüngliche Funktionalität für Bewegung vom Stapel zum Board behalten
+        const boardArea = document.querySelector('.board-area');
+        if (initialParent === cardStack && cardStack.contains(element)) {
+          // Berechnen, ob Karte weit genug vom Stapel weggezogen wurde
+          const stackRect = cardStack.getBoundingClientRect();
+          const cardRect = element.getBoundingClientRect();
+          
+          const distanceX = Math.abs(cardRect.left - stackRect.left);
+          const distanceY = Math.abs(cardRect.top - stackRect.top);
+          
+          if (distanceX > element.offsetWidth / 2 || distanceY > element.offsetHeight / 2) {
+            // WICHTIG: Globale Position berechnen, bevor das Elternelement geändert wird
+            const globalLeft = cardRect.left;
+            const globalTop = cardRect.top;
+            
+            // Karte vom Stapel entfernen
+            cardStack.removeChild(element);
+            
+            // Zum Board hinzufügen
+            boardArea.appendChild(element);
+            
+            // Board-Position abrufen
+            const boardRect = boardArea.getBoundingClientRect();
+            
+            // Position relativ zum neuen Elternelement berechnen und sofort anwenden
+            element.style.position = 'absolute';
+            element.style.left = (globalLeft - boardRect.left) + 'px';
+            element.style.top = (globalTop - boardRect.top) + 'px';
+            
+            // Browser-Repaint erzwingen, um Flackern zu vermeiden
+            element.offsetHeight;
+          }
+        }
+        
+        // Board-Zustand speichern
+        if (typeof saveCurrentBoardState === 'function') {
+          saveCurrentBoardState();
+        }
+      }
+      
+      return;
+    }
+    
+    // Bestehende Logik für andere Elemente beibehalten
+    let startX, startY;
+    let initialLeft, initialTop;
+    
+    element.onmousedown = function(e) {
+      // Nur mit linker Maustaste
+      if (e.button !== 0) return;
+      
+      // Wenn Element editierbar ist, nicht ziehen
+      if (e.target.isContentEditable) {
+        return;
+      }
+      
+      // Bei aktivem Löschmodus nicht ziehen
+      const trashCan = document.querySelector('.trash-container');
+      if (trashCan && trashCan.classList.contains('deletion-mode')) {
+        return;
+      }
+      
+      e.preventDefault();
+      
+      // Element nach vorne bringen
+      element.style.zIndex = getHighestZIndex() + 1;
+      
+      // Startpositionen speichern
+      startX = e.clientX;
+      startY = e.clientY;
+      
+      // Aktuelle Element-Position
+      initialLeft = parseInt(element.style.left) || 0;
+      initialTop = parseInt(element.style.top) || 0;
+      
+      // Event-Handler hinzufügen
+      document.addEventListener('mousemove', elementDrag);
+      document.addEventListener('mouseup', closeDragElement);
+    };
+    
+    function elementDrag(e) {
+      e.preventDefault();
+      
+      // Neue Position basierend auf Startpunkt und Bewegung berechnen
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      
+      // Neue Position direkt setzen
+      element.style.left = (initialLeft + dx) + "px";
+      element.style.top = (initialTop + dy) + "px";
+    }
+    
+    function closeDragElement() {
+      // Event-Handler entfernen
+      document.removeEventListener('mousemove', elementDrag);
+      document.removeEventListener('mouseup', closeDragElement);
+    }
+  }
+
+  // Hilfsfunktionen für den Stack-Hover-Tooltip
+  function showStackHoverTooltip(message) {
+    let tooltip = document.getElementById('stack-hover-tooltip');
+    if (!tooltip) {
+      tooltip = document.createElement('div');
+      tooltip.id = 'stack-hover-tooltip';
+      tooltip.className = 'stack-hover-tooltip';
+      document.body.appendChild(tooltip);
+      
+      // Stil für den Tooltip hinzufügen, falls nicht vorhanden
+      if (!document.getElementById('stack-hover-tooltip-style')) {
+        const style = document.createElement('style');
+        style.id = 'stack-hover-tooltip-style';
+        style.textContent = `
+          .stack-hover-tooltip {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 14px;
+            z-index: 10000;
+            pointer-events: none;
+            animation: fadeIn 0.2s ease-in-out;
+          }
+          
+          @keyframes fadeIn {
+            from { opacity: 0; transform: translate(-50%, -10px); }
+            to { opacity: 1; transform: translate(-50%, 0); }
+          }
+        `;
+        document.head.appendChild(style);
+      }
+    }
+    
+    tooltip.textContent = message;
+    tooltip.style.display = 'block';
+  }
+
+  function hideStackHoverTooltip() {
+    const tooltip = document.getElementById('stack-hover-tooltip');
+    if (tooltip) {
+      tooltip.style.display = 'none';
+    }
+  }
+
+  // Diese Funktion erstellt einen benutzerfreundlichen Dialog zum Beenden der Sitzung
+  function createEndSessionDialog() {
+    // Vorhandenen Dialog entfernen, falls einer existiert
+    const existingDialog = document.getElementById('end-session-dialog');
+    if (existingDialog) {
+      existingDialog.remove();
+    }
+    
+    // Dialog-Container erstellen
+    const dialogContainer = document.createElement('div');
+    dialogContainer.id = 'end-session-dialog';
+    dialogContainer.className = 'custom-dialog';
+    
+    // Dialog-Inhalt erstellen
+    dialogContainer.innerHTML = `
+      <div class="dialog-content">
+        <div class="dialog-header">
+          <h3>Sitzung beenden</h3>
+        </div>
+        <div class="dialog-body">
+          <p>Sind Sie sicher, dass Sie die Sitzung beenden möchten?</p>
+        </div>
+        <div class="dialog-footer">
+          <button id="dialog-cancel" class="dialog-button cancel-button">Abbrechen</button>
+          <button id="dialog-confirm" class="dialog-button confirm-button">Sitzung beenden</button>
+        </div>
+      </div>
+    `;
+    
+    // Dialog zum DOM hinzufügen
+    document.body.appendChild(dialogContainer);
+    
+    // Dialog zeigen - mit Fade-in Animation
+    setTimeout(() => {
+      dialogContainer.classList.add('visible');
+    }, 10);
+    
+    // Event-Listener für Buttons
+    const cancelButton = document.getElementById('dialog-cancel');
+    const confirmButton = document.getElementById('dialog-confirm');
+    
+    // Schließen-Funktion für den Dialog
+    const closeDialog = () => {
+      dialogContainer.classList.remove('visible');
+      setTimeout(() => {
+        dialogContainer.remove();
+      }, 300); // Zeit für Fade-out Animation
+    };
+    
+    // Abbrechen-Button
+    cancelButton.addEventListener('click', closeDialog);
+    
+    // Sitzung-beenden-Button
+    confirmButton.addEventListener('click', () => {
+      closeDialog();
+      
+      // Markieren, dass die Dashboard-Seite beim nächsten Öffnen neu geladen werden soll
+      localStorage.setItem('dashboard_reload_requested', 'true');
+      
+      // Tab/Fenster schließen oder zur Dashboard-Seite zurückkehren
+      if (window.opener && !window.opener.closed) {
+        // Wenn das Fenster von einem anderen geöffnet wurde, das öffnende Fenster neu laden
+        window.opener.location.reload();
+        window.close();
+      } else {
+        // Sonst zur Dashboard-Seite navigieren
+        window.location.href = '/kartensets/dashboard/';
+      }
+    });
+    
+    // Schließen bei Klick außerhalb des Dialogs
+    dialogContainer.addEventListener('click', (e) => {
+      if (e.target === dialogContainer) {
+        closeDialog();
+      }
+    });
+    
+    // ESC-Taste zum Schließen des Dialogs
+    document.addEventListener('keydown', function escHandler(e) {
+      if (e.key === 'Escape') {
+        closeDialog();
+        document.removeEventListener('keydown', escHandler);
+      }
+    });
+    
+    return dialogContainer;
+  }
+
+  // Funktion, um den "Sitzung beenden" Button zu aktualisieren
+  function setupEndSessionButton() {
+    const endSessionBtn = document.querySelector('.end-session-btn');
+    
+    if (endSessionBtn) {
+      // Vorhandene Event-Listener entfernen
+      const newEndSessionBtn = endSessionBtn.cloneNode(true);
+      endSessionBtn.parentNode.replaceChild(newEndSessionBtn, endSessionBtn);
+      
+      // Neuen Event-Listener hinzufügen
+      newEndSessionBtn.addEventListener('click', () => {
+        createEndSessionDialog();
+      });
+    }
+  }
+
+  // Funktionen zum Speichern und Laden des Board-Zustands
+  // Holt den aktuellen Zustand des Boards
+  function captureBoardState() {
+    // Board-State-Objekt erstellen
+    const boardState = {
+      focusNote: captureFocusNote(),
+      notes: captureAllNotes(),
+      cards: captureAllCards(),
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log("Erfasster Board-Zustand:", boardState);
+    return boardState;
+  }
+
+  // Erfasst den Inhalt der Focus Note
+  function captureFocusNote() {
+    const focusNoteDisplay = document.getElementById('focus-note-display');
+    if (!focusNoteDisplay) return "";
+    
+    const content = focusNoteDisplay.textContent;
+    return content === 'Schreiben sie hier die Focus Note der Sitzung rein' ? "" : content;
+  }
+
+  // Erfasst alle Notizzettel und ihre Eigenschaften
+  function captureAllNotes() {
+    const notesArray = [];
+    const notizElements = document.querySelectorAll('.notiz');
+    
+    notizElements.forEach(notiz => {
+      // Modified to capture innerHTML and size
+      const rect = notiz.getBoundingClientRect();
+      const noteData = {
+        id: notiz.id || 'note-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+        content: notiz.querySelector('.notiz-content')?.innerHTML || '', // Changed from textContent to innerHTML
+        left: notiz.style.left,
+        top: notiz.style.top,
+        zIndex: notiz.style.zIndex,
+        backgroundColor: notiz.style.backgroundColor || '#ffff99',
+        rotation: getComputedStyle(notiz).getPropertyValue('--rotation') || '0deg',
+        width: (notiz.style.width && notiz.style.width.trim() !== '') ? notiz.style.width : Math.round(rect.width) + 'px',
+        height: (notiz.style.height && notiz.style.height.trim() !== '') ? notiz.style.height : Math.round(rect.height) + 'px'
+      };
+      
+      notesArray.push(noteData);
+    });
+    
+    return notesArray;
+  }   
+
+  // Erfasst alle Karten und ihre Eigenschaften
+  function captureAllCards() {
+    const cardsArray = [];
+    const cardElements = document.querySelectorAll('.card');
+    
+    cardElements.forEach(card => {
+      // Position, Zustand (umgedreht/nicht umgedreht) und andere Eigenschaften erfassen
+      const cardData = {
+        id: card.id,
+        cardId: card.dataset.cardId,
+        left: card.style.left,
+        top: card.style.top,
+        zIndex: card.style.zIndex,
+        isFlipped: card.classList.contains('flipped'),
+        inStack: card.closest('#card-stack') !== null,
+        placedAt: card.dataset.placedAt || null
+      };
+      
+      cardsArray.push(cardData);
+    });
+    
+    return cardsArray;
+  }
+
+   // Speichert den aktuellen Zustand in die Sitzung
+  function saveCurrentBoardState() {
+    try {
+      // Session-ID aus URL holen
+      const urlParams = new URLSearchParams(window.location.search);
+      const sessionId = urlParams.get('id');
+      
+      if (!sessionId) {
+        console.error("Keine Sitzungs-ID gefunden");
+        return false;
+      }
+      
+      // Board-Zustand erfassen
+      const boardState = captureBoardState();
+      
+      // Sitzungen aus dem localStorage laden
+      const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
+      
+      // Sitzung mit der angegebenen ID finden und aktualisieren
+      const updatedSessions = sessions.map(session => {
+        if (session.id === sessionId) {
+          return {
+            ...session,
+            boardState: boardState,
+            lastEdited: new Date().toISOString()
+          };
+        }
+        return session;
+      });
+      
+      // Aktualisierte Sitzungen im localStorage speichern
+      localStorage.setItem('kartensets_sessions', JSON.stringify(updatedSessions));
+      
+      console.log(`Board-Zustand für Sitzung ${sessionId} erfolgreich gespeichert`);
+      return true;
+    } catch (error) {
+      console.error("Fehler beim Speichern des Board-Zustands:", error);
+      return false;
+    }
+  }
+
+  // Lädt den gespeicherten Zustand aus der Sitzung
+  function loadSavedBoardState() {
+    try {
+      // Session-ID aus URL holen
+      const urlParams = new URLSearchParams(window.location.search);
+      const sessionId = urlParams.get('id');
+      
+      if (!sessionId) {
+        console.error("[DEBUG] loadSavedBoardState: Keine Sitzungs-ID gefunden");
+        return false;
+      }
+      
+      // Sitzungsdaten laden
+      const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
+      const session = sessions.find(s => s.id === sessionId);
+      
+      if (!session) {
+        console.error("[DEBUG] loadSavedBoardState: Sitzung nicht gefunden:", sessionId);
+        return false;
+      }
+      
+      console.log("[DEBUG] loadSavedBoardState: Sitzung gefunden:", session);
+      
+      if (!session.boardState) {
+        console.warn("[DEBUG] loadSavedBoardState: Kein gespeicherter Board-Zustand gefunden");
+        return false;
+      }
+      
+      console.log("[DEBUG] loadSavedBoardState: Gespeicherter Board-Zustand vorhanden:", session.boardState);
+      
+      // Zustand wiederherstellen
+      const restoreResult = restoreBoardState(session.boardState);
+      console.log("[DEBUG] loadSavedBoardState: Board-Zustand wiederhergestellt:", restoreResult);
+      
+      return restoreResult;
+    } catch (error) {
+      console.error("[DEBUG] loadSavedBoardState: Fehler beim Laden des Board-Zustands:", error);
+      return false;
+    }
+  }
+
+  // Stellt den Board-Zustand wieder her
+  function restoreBoardState(boardState) {
+    if (!boardState) return false;
+    
+    console.log("Stelle Board-Zustand wieder her:", boardState);
+    
+    // Focus Note wiederherstellen
+    restoreFocusNote(boardState.focusNote);
+    
+    // Notizen wiederherstellen
+    restoreNotes(boardState.notes);
+    
+    // Karten wiederherstellen
+    restoreCards(boardState.cards);
+    
+    return true;
+  }
+
+  // Stellt die Focus Note wieder her
+  function restoreFocusNote(focusNoteContent) {
+    if (!focusNoteContent) return;
+    
+    const focusNoteDisplay = document.getElementById('focus-note-display');
+    const focusNoteEditable = document.getElementById('focus-note-editable');
+    
+    if (focusNoteDisplay) {
+      focusNoteDisplay.textContent = focusNoteContent;
+      focusNoteDisplay.classList.add('has-content');
+    }
+    
+    if (focusNoteEditable) {
+      focusNoteEditable.textContent = focusNoteContent;
+    }
+  }
+
+  // Stellt alle Notizzettel wieder her
+  function restoreNotes(notes) {
+    if (!notes || !notes.length) return;
+    
+    // Vorhandene Notizen entfernen
+    document.querySelectorAll('.notiz').forEach(notiz => notiz.remove());
+    
+    // Neue Notizen erstellen
+    notes.forEach(noteData => {
+      const notiz = document.createElement('div');
+      notiz.className = 'notiz';
+      notiz.id = noteData.id;
+      
+      // Eigenschaften wiederherstellen
+      notiz.style.left = noteData.left;
+      notiz.style.top = noteData.top;
+      notiz.style.zIndex = noteData.zIndex;
+      notiz.style.backgroundColor = noteData.backgroundColor;
+      notiz.style.setProperty('--rotation', noteData.rotation);
+      if (noteData.width) notiz.style.width = noteData.width;
+      if (noteData.height) notiz.style.height = noteData.height;
+      
+      // Inhalt wiederherstellen
+      notiz.innerHTML = `
+        <div class="notiz-content" contenteditable="false">${noteData.content}</div>
+      `;
+      
+      // Zum Board hinzufügen
+      document.body.appendChild(notiz);
+      attachNoteResizeObserver(notiz);
+      attachNoteAutoGrow(notiz);
+      
+      // Drag-and-Drop und Bearbeitungs-Handler hinzufügen
+      makeDraggable(notiz);
+      setupNoteEditingHandlers(notiz);
+      enhanceDraggableNote(notiz);
+    });
+  }
+
+  // Stellt alle Karten wieder her
+  function restoreCards(cards) {
+    if (!cards || !cards.length) return;
+    
+    // Für jede gespeicherte Karte die entsprechende Karte finden und wiederherstellen
+    cards.forEach(cardData => {
+      const card = document.getElementById(cardData.id);
+      
+      if (!card) {
+        console.warn("Karte nicht gefunden:", cardData.id);
+        return;
+      }
+      
+      // Position und Z-Index wiederherstellen
+      card.style.left = cardData.left;
+      card.style.top = cardData.top;
+      card.style.zIndex = cardData.zIndex;
+      
+      // Karte umdrehen, falls nötig
+      if (cardData.isFlipped && !card.classList.contains('flipped')) {
+        flipCard(card);
+      } else if (!cardData.isFlipped && card.classList.contains('flipped')) {
+        flipCard(card);
+      }
+      
+      // Falls Karte vom Stapel genommen wurde
+      const cardStack = document.getElementById('card-stack');
+      const boardArea = document.querySelector('.board-area');
+      
+      if (!cardData.inStack && cardStack && cardStack.contains(card)) {
+        // Karte aus dem Stapel entfernen
+        cardStack.removeChild(card);
+        // Und zum Board-Bereich hinzufügen
+        boardArea.appendChild(card);
+      }
+      
+      // Wenn die Karte auf einem Platz liegt
+      if (cardData.placedAt) {
+        card.dataset.placedAt = cardData.placedAt;
+        const placeholder = document.getElementById(cardData.placedAt);
+        if (placeholder) {
+          placeholder.classList.add('filled');
+        }
+      }
+    });
+  }
+
+  // Erweiterte Funktion für den "Sitzung beenden" Button
+  function setupSaveAndCloseButton() {
+    // Automatisches Speichern in regelmäßigen Abständen
+    const autoSaveInterval = setInterval(() => {
+      saveCurrentBoardState();
+    }, 60000); // Alle 60 Sekunden
+    
+    // Speichern beim Beenden der Sitzung
+    const closeSessionBtn = document.querySelector('.end-session-btn');
+    if (closeSessionBtn) {
+      // Vorhandene Event-Listener entfernen
+      const newCloseSessionBtn = closeSessionBtn.cloneNode(true);
+      closeSessionBtn.parentNode.replaceChild(newCloseSessionBtn, closeSessionBtn);
+      
+      // Neuen Event-Listener hinzufügen
+      newCloseSessionBtn.addEventListener('click', () => {
+        // Speichern und dann Dialog anzeigen
+        if (saveCurrentBoardState()) {
+          createEndSessionDialog();
+        } else {
+          // Bei Fehler Warnung anzeigen
+          alert("Es gab ein Problem beim Speichern der Sitzung. Möchten Sie trotzdem fortfahren?");
+        }
+      });
+    }
+    
+    // Speichern bei Verlassen der Seite
+    window.addEventListener('beforeunload', (e) => {
+      saveCurrentBoardState();
+      // Kein Dialog nötig, da automatisch gespeichert wird
+    });
+    
+    // Speichern beim Drücken von Strg+S
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (saveCurrentBoardState()) {
+          showSaveNotification();
+        }
+      }
+    });
+    
+    return autoSaveInterval;
+  }
+
+  // Zeigt eine Benachrichtigung an, dass gespeichert wurde
+  function showSaveNotification() {
+    // Vorhandenen Toast entfernen
+    const existingToast = document.getElementById('save-toast');
+    if (existingToast) {
+      existingToast.remove();
+    }
+    
+    // Neuen Toast erstellen
+    const toast = document.createElement('div');
+    toast.id = 'save-toast';
+    toast.className = 'save-toast';
+    toast.textContent = 'Sitzung wurde gespeichert';
+    
+    // Zur Seite hinzufügen
+    document.body.appendChild(toast);
+    
+    // Nach 2 Sekunden wieder entfernen
+    setTimeout(() => {
+      toast.classList.add('hide');
+      setTimeout(() => {
+        toast.remove();
+      }, 300);
+    }, 2000);
+  }
+
+  // CSS für den Save-Toast hinzufügen
+  function addSaveToastStyles() {
+    if (!document.getElementById('save-toast-styles')) {
+      const style = document.createElement('style');
+      style.id = 'save-toast-styles';
+      style.textContent = `
+        .save-toast {
+          position: fixed;
+          bottom: 20px;
+          left: 50%;
+          transform: translateX(-50%);
+          background-color: rgba(0, 0, 0, 0.7);
+          color: white;
+          padding: 10px 20px;
+          border-radius: 4px;
+          z-index: 9999;
+          animation: fadeIn 0.3s ease;
+        }
+        
+        .save-toast.hide {
+          animation: fadeOut 0.3s ease forwards;
+        }
+        
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translate(-50%, 20px); }
+          to { opacity: 1; transform: translate(-50%, 0); }
+        }
+        
+        @keyframes fadeOut {
+          from { opacity: 1; transform: translate(-50%, 0); }
+          to { opacity: 0; transform: translate(-50%, 20px); }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  }
+
+  function setupAutoSave() {
+    // Automatisches Speichern in regelmäßigen Abständen
+    const autoSaveInterval = setInterval(() => {
+      if (saveCurrentBoardState()) {
+        console.log("Automatische Speicherung erfolgreich");
+      }
+    }, 60000); // Alle 60 Sekunden
+  
+    // Speichern bei Verlassen der Seite
+    window.addEventListener('beforeunload', () => {
+      saveCurrentBoardState();
+    });
+    
+    // Speichern bei Tastenkombination Strg+S
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault(); // Verhindert das Browser-Speichern
+        if (saveCurrentBoardState()) {
+          showSaveNotification("Board wurde gespeichert");
+        }
+      }
+    });
+  
+    return autoSaveInterval;
+  }
+
+  // Benachrichtigung anzeigen
+  function showSaveNotification(message = "Sitzung wurde gespeichert") {
+    // Vorhandenen Toast entfernen
+    const existingToast = document.getElementById('save-toast');
+    if (existingToast) {
+      existingToast.remove();
+    }
+    
+    // Neuen Toast erstellen
+    const toast = document.createElement('div');
+    toast.id = 'save-toast';
+    toast.className = 'save-toast';
+    toast.textContent = message;
+    
+    // Stil für Toast definieren, falls nicht vorhanden
+    if (!document.getElementById('save-toast-styles')) {
+      const style = document.createElement('style');
+      style.id = 'save-toast-styles';
+      style.textContent = `
+        .save-toast {
+          position: fixed;
+          bottom: 20px;
+          left: 50%;
+          transform: translateX(-50%);
+          background-color: rgba(0, 0, 0, 0.7);
+          color: white;
+          padding: 10px 20px;
+          border-radius: 4px;
+          z-index: 9999;
+          opacity: 0;
+          transition: opacity 0.3s ease;
+        }
+        
+        .save-toast.show {
+          opacity: 1;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    // Zur Seite hinzufügen
+    document.body.appendChild(toast);
+    
+    // Animation einleiten
+    setTimeout(() => {
+      toast.classList.add('show');
+    }, 10);
+    
+    // Nach 2 Sekunden wieder entfernen
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => {
+        toast.remove();
+      }, 300);
+    }, 2000);
+  }
+
+  // Fehlermeldung anzeigen
+  const showError = (message) => {
+    errorMessage.textContent = message;
+    errorContainer.classList.remove('hidden');
+  };
+
+  // Seite initialisieren
+  loadSession();
+  loadSavedBoardState();
+  // CSS für Speicherbenachrichtigungen hinzufügen
+  addSaveToastStyles(); 
+
+  // Automatisches Speichern einrichten
+  const autoSaveInterval = setupAutoSave();
+
+  // Prüfen, ob es sich um einen Beitritt handelt
+  if (window.addPasswordPromptStyles) window.addPasswordPromptStyles();
+  if (window.initializeParticipantJoin) window.initializeParticipantJoin();
+  if (window.handleSessionJoin) window.handleSessionJoin();
+
+  // Bestehende Notizen/Notes initial beobachten (AutoGrow + Resize)
+  document.querySelectorAll('.notiz, .note').forEach(n => {
+    attachNoteResizeObserver(n);
+    attachNoteAutoGrow(n);
+  });
+
+  // Bei Fenstergrößenänderung Notizzettel ggf. auf Maximalgröße begrenzen
+  window.addEventListener('resize', () => {
+    const max = getMaxNoteSize();
+    document.querySelectorAll('.notiz, .note').forEach(n => {
+      if (typeof n._autoGrowRecalc === 'function') {
+        n._autoGrowRecalc();
+      } else {
+        // Fallback: clampen
+        const rect = n.getBoundingClientRect();
+        const w = Math.min(Math.ceil(rect.width), max.width);
+        const h = Math.min(Math.ceil(rect.height), max.height);
+        n.style.width = w + 'px';
+        n.style.height = h + 'px';
+      }
+    });
+    debouncedSave();
+  });
+
+    // In board-interaction.js am Ende der DOMContentLoaded-Funktion
+  window.addEventListener('beforeunload', function() {
+    // Aktuellen Zustand speichern
+    saveCurrentBoardState();
+    
+    // Markieren, dass das Dashboard neu geladen werden soll
+    localStorage.setItem('dashboard_reload_requested', 'true');
+  });
+});
+
+// Am Ende der Datei hinzufügen
+window.handleSessionJoin = handleSessionJoin;
+window.handleParticipantJoin = handleParticipantJoin;
+window.showParticipantNamePrompt = showParticipantNamePrompt;
+window.showPasswordPrompt = showPasswordPrompt;
+window.addPasswordPromptStyles = addPasswordPromptStyles;
+window.addParticipantNamePromptStyles = addParticipantNamePromptStyles;
+window.joinSession = joinSession;
+
+// Fallback-Funktion für showError
+window.showError = showError || function(message) {
+  console.error(message);
+  const errorContainer = document.createElement('div');
+  errorContainer.style.position = 'fixed';
+  errorContainer.style.top = '20px';
+  errorContainer.style.left = '50%';
+  errorContainer.style.transform = 'translateX(-50%)';
+  errorContainer.style.backgroundColor = '#ffecec';
+  errorContainer.style.color = '#d8000c';
+  errorContainer.style.padding = '10px';
+  errorContainer.style.borderRadius = '4px';
+  errorContainer.style.zIndex = '9999';
+  errorContainer.textContent = message;
+  
+  document.body.appendChild(errorContainer);
+  
+  setTimeout(() => {
+    document.body.removeChild(errorContainer);
+  }, 5000);
+};
+
+function enhancedSaveCurrentBoardState() {
+  try {
+    // Prüfen, ob localStorage verfügbar ist
+    if (!window.localStorage) {
+      console.error('localStorage nicht verfügbar');
+      return false;
+    }
+
+    // Session-ID aus URL extrahieren
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('id');
+
+    if (!sessionId) {
+      console.error('Keine gültige Sitzungs-ID gefunden');
+      return false;
+    }
+
+    // Board-Zustand erfassen
+    const boardState = captureBoardState();
+
+    // Zusätzliche Validierung des Board-Zustands
+    if (!isValidBoardState(boardState)) {
+      console.warn('Ungültiger Board-Zustand. Speichern abgebrochen.');
+      return false;
+    }
+
+    // Sitzungen laden und aktualisieren
+    const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
+    const updatedSessions = sessions.map(session => {
+      if (session.id === sessionId) {
+        return {
+          ...session,
+          boardState: boardState,
+          lastEdited: new Date().toISOString()
+        };
+      }
+      return session;
+    });
+
+    // Speichern mit Größenüberprüfung
+    if (StorageManager && StorageManager.saveWithSizeCheck) {
+      StorageManager.saveWithSizeCheck('kartensets_sessions', updatedSessions);
+    } else {
+      localStorage.setItem('kartensets_sessions', JSON.stringify(updatedSessions));
+    }
+
+    console.log(`Board-Zustand für Sitzung ${sessionId} gespeichert`);
+    return true;
+  } catch (error) {
+    console.error('Fehler beim Speichern des Board-Zustands:', error);
+    
+    // Fallback-Benachrichtigung für den Benutzer
+    showErrorNotification('Fehler beim Speichern der Sitzung');
+    
+    return false;
+  }
+}
+
+// Validierung des Board-Zustands
+function isValidBoardState(boardState) {
+  // Grundlegende Validierungen
+  if (!boardState) return false;
+  
+  // Maximale Anzahl von Elementen begrenzen
+  const MAX_NOTES = 50;
+  const MAX_CARDS = 30;
+  
+  if (boardState.notes && boardState.notes.length > MAX_NOTES) {
+    console.warn(`Zu viele Notizen (${boardState.notes.length}). Maximale Anzahl: ${MAX_NOTES}`);
+    return false;
+  }
+  
+  if (boardState.cards && boardState.cards.length > MAX_CARDS) {
+    console.warn(`Zu viele Karten (${boardState.cards.length}). Maximale Anzahl: ${MAX_CARDS}`);
+    return false;
+  }
+  
+  return true;
+}
+
+
+// Fehler-Benachrichtigungsfunktion
+function showErrorNotification(message) {
+  const notification = document.createElement('div');
+  notification.style.position = 'fixed';
+  notification.style.top = '20px';
+  notification.style.left = '50%';
+  notification.style.transform = 'translateX(-50%)';
+  notification.style.backgroundColor = '#ffcccc';
+  notification.style.color = '#d9534f';
+  notification.style.padding = '10px';
+  notification.style.borderRadius = '4px';
+  notification.style.zIndex = '9999';
+  notification.textContent = message;
+  
+  document.body.appendChild(notification);
+  
+  setTimeout(() => {
+    document.body.removeChild(notification);
+  }, 3000);
+}
+
+function cleanupOldSessions() {
+  const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
+  
+  // Nach Datum sortieren und älteste Sitzungen entfernen
+  const sortedSessions = sessions.sort((a, b) => 
+    new Date(a.created) - new Date(b.created)
+  );
+  
+  // Entferne älteste Sitzungen, bis Speicherplatz ausreicht
+  while (sortedSessions.length > 5) {
+    sortedSessions.shift();
+  }
+  
+  localStorage.setItem('kartensets_sessions', JSON.stringify(sortedSessions));
+}
+
+document.addEventListener('DOMContentLoaded', checkLocalStorageSpace);
+
+function debugLocalStorage() {
+  try {
+    // Session-ID aus URL holen
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('id');
+    
+    if (!sessionId) {
+      console.error("[DEBUG] Keine Sitzungs-ID gefunden");
+      return;
+    }
+    
+    // Sitzungsdaten laden
+    const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
+    const session = sessions.find(s => s.id === sessionId);
+    
+    if (!session) {
+      console.error("[DEBUG] Sitzung nicht gefunden:", sessionId);
+      return;
+    }
+    
+    console.log("[DEBUG] Sitzung gefunden:", session);
+    console.log("[DEBUG] BoardState vorhanden:", !!session.boardState);
+    
+    if (session.boardState) {
+      console.log("[DEBUG] BoardState Inhalt:", session.boardState);
+      console.log("[DEBUG] FocusNote:", session.boardState.focusNote);
+      console.log("[DEBUG] Anzahl Notizen:", session.boardState.notes?.length);
+      console.log("[DEBUG] Anzahl Karten:", session.boardState.cards?.length);
+    }
+    
+    // Prüfen, ob localStorage überhaupt funktioniert
+    const testKey = 'test_' + Date.now();
+    localStorage.setItem(testKey, 'test');
+    const testValue = localStorage.getItem(testKey);
+    localStorage.removeItem(testKey);
+    
+    console.log("[DEBUG] localStorage funktioniert:", testValue === 'test');
+    
+    // Gesamtgröße des localStorage überprüfen
+    let totalSize = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      const value = localStorage.getItem(key);
+      totalSize += (key.length + value.length) * 2; // Ungefähre Größe in Bytes
+    }
+    
+    console.log("[DEBUG] localStorage Gesamtgröße:", Math.round(totalSize / 1024), "KB");
+    
+  } catch (error) {
+    console.error("[DEBUG] Fehler bei LocalStorage-Diagnose:", error);
+  }
+}
+
+// Die checkLocalStorageSpace Funktion hinzufügen oder entfernen
+function checkLocalStorageSpace() {
+  console.log("[DEBUG] Überprüfe localStorage...");
+  // Keine weiteren Aktionen, um Fehler zu vermeiden
+}
+

@@ -1,0 +1,464 @@
+﻿/* Board Layout */
+:root {
+  /* Responsive sizing variables */
+  --card-w: clamp(180px, 20vw, 320px);
+  --card-h: calc(var(--card-w) * 260 / 295);
+  --note-size: clamp(120px, 12vw, 200px);
+}
+.board-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  font-family: sans-serif;
+}
+
+.board-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  background-color: #f1f1f1;
+  border-bottom: 1px solid #ccc;
+}
+
+.board-info h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.board-info span {
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.board-controls {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.board-btn {
+  padding: 8px 16px;
+  background-color: #f8f8f8;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.board-btn:hover {
+  background-color: #e8e8e8;
+}
+
+.board-btn.danger {
+  background-color: #fff0f0;
+  color: #d00;
+  border-color: #ffcccc;
+}
+
+.board-btn.danger:hover {
+  background-color: #ffe0e0;
+}
+
+/* Board Typen */
+.board-area {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+/* Allgemeine Grid-Layout-Einstellungen */
+.board-main-area, .board-header-area {
+  width: 100%;
+}
+
+/* Hervorhebung wenn eine Karte platziert wurde */
+.card-placeholder-area.filled {
+  border-style: solid;
+  border-color: #4CAF50;
+  background-color: rgba(76, 175, 80, 0.1);
+}
+
+/* Anpassungen fÃ¼r die URL-Leiste oben */
+.url-bar {
+  background-color: white;
+  border-bottom: 1px solid #ccc;
+  padding: 5px 10px;
+  text-align: center;
+  color: #666;
+  font-size: 14px;
+}
+
+.board-type-board1 {
+  background-color: #f9f9f9;
+  background-image: url('/assets/images/boards/board1-background.jpg');
+}
+
+/* Verbesserter Kartenstapel */
+.card-stack {
+  position: relative;
+  width: var(--card-w);
+  height: var(--card-h);
+  margin: 0 auto;
+  transform-style: preserve-3d;
+  perspective: 1000px;
+}
+
+/* Verbesserte Kartendesigns */
+.card {
+  position: absolute;
+  width: var(--card-w);
+  height: var(--card-h);
+  perspective: 1000px;
+  cursor: grab;
+  transition: transform 0.2s ease-out, top 0.3s ease, left 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  z-index: 1000 !important;
+}
+
+.card-front, .card-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  transition: transform 0.5s;
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  overflow: hidden;
+}
+
+/* Basisdarstellung - Hier wollen wir die RÃ¼ckseite oben haben */
+.card-front {
+  background-color: white;
+  border: 1px solid #ddd;
+  transform: rotateY(180deg); /* Vorderseite versteckt */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.card-front img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* BehÃ¤lt das SeitenverhÃ¤ltnis des Bildes bei */
+}
+
+.card-back {
+  background-color: #802929;
+  background-image: url('/assets/cards/deck1/card-back.png');
+  background-size: cover;
+  background-position: center;
+  transform: rotateY(0deg); /* RÃ¼ckseite sichtbar */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Geflippter Zustand - Beim Klicken soll die Vorderseite sichtbar werden */
+.card.flipped .card-front {
+  transform: rotateY(0deg); /* Vorderseite sichtbar */
+}
+
+.card.flipped .card-back {
+  transform: rotateY(180deg); /* RÃ¼ckseite versteckt */
+}
+
+.card-image {
+  flex-grow: 1;
+  margin: 10px 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.card-content, .card-number, .card-text {
+  display: none;
+}
+
+/* Animation fÃ¼r Kartenmischen */
+.card.shuffling {
+  animation: shuffle-card 0.5s ease-in-out;
+  z-index: 100;
+}
+
+@keyframes shuffle-card {
+  0% {
+    transform: rotate(0deg) translateY(0);
+  }
+  50% {
+    transform: rotate(15deg) translateY(-50px);
+  }
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+}
+
+/* Stil fÃ¼r gezogene Karte */
+.card.being-dragged {
+  opacity: 1 !important;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+  transition: none !important; /* Important: no transition during dragging */
+  cursor: grabbing;
+  transform: none !important; /* Don't rotate or scale during drag */
+  z-index: 10000 !important;
+}
+
+.card, .card.being-dragged, .card.being-dragged * {
+  transition: none !important;
+}
+
+/* Aktiviere Transitions nur fÃ¼r Flip und Shuffle */
+.card.flipping, .card.shuffling {
+  transition: all 0.5s ease-in-out !important;
+}
+
+/* KontextmenÃ¼ fÃ¼r Karten */
+.context-menu {
+  position: fixed;
+  background-color: white;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+  z-index: 10000;
+  min-width: 150px;
+}
+
+.context-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.context-menu li {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+}
+
+.context-menu li:hover {
+  background-color: #f0f0f0;
+}
+
+.context-menu li:last-child {
+  border-bottom: none;
+}
+
+
+/* Focus Note Styling */
+.focus-note {
+  width: clamp(160px, 18vw, 260px);
+  height: clamp(120px, 12vw, 180px);
+  z-index: 15;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.focus-note .note-content {
+  font-weight: bold;
+  font-size: 16px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+}
+
+/* Notizzettel Styling */
+.note {
+  position: absolute;
+  width: var(--note-size);
+  height: var(--note-size);
+  padding: 10px;
+  box-shadow: 2px 2px 10px rgba(0,0,0,0.15);
+  border-radius: 4px;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+  transition: box-shadow 0.2s ease-out;
+}
+
+.note:hover {
+  box-shadow: 0 5px 15px rgba(0,0,0,0.25);
+  z-index: 25;
+}
+
+.note-content {
+  flex-grow: 1;
+  overflow: auto;
+  outline: none;
+  padding: 5px;
+  font-size: 14px;
+}
+
+.note-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+  padding-top: 5px;
+}
+
+.note-color-btn, .note-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 2px;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+
+.note-color-btn:hover, .note-delete-btn:hover {
+  opacity: 1;
+}
+
+/* AblageplÃ¤tze fÃ¼r Karten */
+.card-placeholder {
+  position: absolute;
+  width: var(--card-w);
+  height: var(--card-h);
+  border: 2px dashed #ccc;
+  border-radius: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #999;
+  background-color: rgba(255, 255, 255, 0.5);
+  z-index: 1;
+}
+
+.card-placeholder.filled {
+  border-style: solid;
+  border-color: #4CAF50;
+}
+
+/* Placeholders fÃ¼r Karten */
+.card-placeholder:nth-child(1) {
+  left: calc(var(--card-w) * 0.68);
+  top: calc(var(--card-h) * 1.92);
+}
+
+.card-placeholder:nth-child(2) {
+  left: calc(var(--card-w) * 1.36);
+  top: calc(var(--card-h) * 1.92);
+}
+
+.card-placeholder:nth-child(3) {
+  left: calc(var(--card-w) * 2.03);
+  top: calc(var(--card-h) * 1.92);
+}
+
+/* Animation fÃ¼r Kartenmischen */
+.card.shuffling {
+  animation: shuffle-card 0.5s ease-in-out;
+  z-index: 100;
+}
+
+/* Animation fÃ¼r Kartenumdrehen */
+.card.flipping {
+  animation: flip-card 0.5s ease-in-out;
+}
+
+@keyframes shuffle-card {
+  0% {
+    transform: rotate(0deg) translateY(0);
+  }
+  50% {
+    transform: rotate(15deg) translateY(-50px);
+  }
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+}
+
+@keyframes flip-card {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Teilnehmerliste */
+.participants-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px;
+}
+
+.participant {
+  background-color: #f1f1f1;
+  border-radius: 15px;
+  padding: 5px 12px;
+  font-size: 14px;
+}
+
+.participant-name.owner {
+  font-weight: bold;
+  color: #ff8581;
+}
+
+/* Utility */
+.hidden {
+  display: none;
+}
+
+.error-message {
+  background-color: #ffecec;
+  color: #d8000c;
+  padding: 10px;
+  margin: 10px;
+  border-radius: 4px;
+  border: 1px solid #ffbaba;
+}
+
+/* === Sticky Notes: responsive + autosize + manual resize === */
+.note {
+  box-sizing: border-box;
+  min-width: var(--card-w);
+  min-height: var(--card-h);
+  width: max-content;
+  height: max-content;
+  display: inline-block;
+  resize: both;        /* Benutzer kann GrÃ¶ÃŸe Ã¤ndern */
+  overflow: visible;   /* keine Scrollbalken; Notiz wächst */
+  max-width: 80vw;
+  max-height: 70vh;
+}
+
+.note-content {
+  box-sizing: border-box;
+  display: inline-block;
+  width: 100%;         /* nutzt die gesamte Zettelbreite */
+  white-space: normal; /* bricht an Grenzen um */
+  overflow: visible;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.note-content.editing {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+.note.is-editing {
+  transform: none !important;
+}
+
+
