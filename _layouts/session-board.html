@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kartenset Sitzung - SichtWeisen</title>
+  
+  <!-- CSS-Dateien einbinden -->
+  <link rel="stylesheet" href="/assets/css/board.css">
+  <link rel="stylesheet" href="/assets/css/board-styles.css">
+
+  
+  <!-- Favicon und App-Icons -->
+  <link rel="icon" href="/assets/images/favicon.ico">
+</head>
+<body>
+  <div class="board-container">
+    <header class="board-header">
+      <div class="board-info">
+        <h1 id="board-title">Sitzungsname</h1>
+        <span id="board-type">Boardtyp</span>
+      </div>
+      <div class="board-controls">
+        <div class="filter-container">
+          <label for="card-filter">Filter:</label>
+          <select id="card-filter">
+            <option value="none">Keinen ausgewählt</option>
+            <option value="Focus">Focus Note</option>
+            <option value="Problem">Problem</option>
+            <option value="Note">Kartenset Notizzettel</option>
+          </select>
+        </div>
+        <button id="shuffle-cards-btn" class="board-btn">Mischen</button>
+        <button id="new-note-btn" class="board-btn">+ Notiz</button>
+        <button id="save-session-btn" class="board-btn">Sitzung speichern</button>
+        <button id="close-session-btn" class="board-btn danger">Sitzung schließen</button>
+      </div>
+    </header>
+
+    <div id="error-container" class="error-message hidden">
+      <p id="error-message"></p>
+    </div>
+
+    <main id="session-board" class="board-area">
+      <!-- Hier werden die Kartenpositionen angezeigt -->
+      <div id="card-placeholders">
+        <div class="card-placeholder" data-position="1">Platz 1</div>
+        <div class="card-placeholder" data-position="2">Platz 2</div>
+        <div class="card-placeholder" data-position="3">Platz 3</div>
+      </div>
+      
+      <div id="cards-container" class="cards-container"></div>
+      <div id="notes-container" class="notes-container"></div>
+    </main>
+
+    <footer class="board-footer">
+      <div id="participants-container" class="participants-container"></div>
+    </footer>
+  </div>
+
+  <!-- Sound-Effekte -->
+  <audio id="shuffle-sound" src="/assets/sounds/shuffle.mp3" preload="auto"></audio>
+  <audio id="card-flip-sound" src="/assets/sounds/card-flip.mp3" preload="auto"></audio>
+
+  <!-- JavaScript einbinden -->
+  <script src="{{ '/assets/js/session-storage.js' | relative_url }}"></script>
+  <script src="/assets/js/participant-join.js"></script>
+  <script src="/assets/js/board-interaction.js"></script>
+</body>
+</html>
