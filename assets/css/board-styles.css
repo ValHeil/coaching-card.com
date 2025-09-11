@@ -50,6 +50,14 @@ body {
   padding: 20px 40px;
 }
 
+/* Spezifische Stile für BoardTest (wie Board1) */
+.board-type-boardTest {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 40px;
+}
+
 /* Header-Bereich mit Infotexten und Focus Note */
 .board-header-area {
   display: grid;
