@@ -781,6 +781,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Variablen zum Verfolgen, ob Maus über Karte/Stapel ist
     // WICHTIG: Diese müssen global bleiben, damit sie in Eventhändlern verfügbar sind
     window.isHoveringCard = false;
+    window.isHoveringStack = false;
     window.hoveredCard = null;
     
     // Hover-Tracking für Karten einrichten
@@ -827,7 +828,7 @@ document.addEventListener('DOMContentLoaded', function() {
         card.addEventListener('mouseenter', enterHandler);
         card.addEventListener('mouseleave', leaveHandler);
       });
-      
+
       // Auch für den Kartenstapel
       const cardStack = document.getElementById('card-stack');
       if (cardStack) {
@@ -860,10 +861,47 @@ document.addEventListener('DOMContentLoaded', function() {
         // Neue Event-Listener hinzufügen
         cardStack.addEventListener('mouseenter', stackEnterHandler);
         cardStack.addEventListener('mouseleave', stackLeaveHandler);
+        // Capture-Listener ergänzen, um Stack-Hover-Zustand zuverlässig zu setzen
+        cardStack.addEventListener('mouseenter', () => {
+          window.isHoveringStack = true;
+          window.isHoveringCard = false;
+          window.hoveredCard = null;
+        }, true);
+        cardStack.addEventListener('mouseleave', () => {
+          window.isHoveringStack = false;
+        }, true);
         
         console.log("[DEBUG] Hover-Tracking für Kartenstapel eingerichtet");
       }
-      
+
+      // Zusätzliche, robuste Erkennung via Mausbewegung (falls mouseenter nicht greift)
+      if (window._hoverMoveHandler) {
+        document.removeEventListener('mousemove', window._hoverMoveHandler);
+      }
+      window._hoverMoveHandler = function(e) {
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const stackEl = el ? el.closest('#card-stack') : null;
+        const cardEl = el ? el.closest('.card') : null;
+
+        if (stackEl) {
+          // Cursor über dem Kartenstapel: M erlaubt, F/B deaktiviert
+          window.isHoveringStack = true;
+          window.isHoveringCard = false;
+          window.hoveredCard = null;
+        } else if (cardEl) {
+          // Nur Karten außerhalb des Stapels zählen für F/B
+          const insideStack = !!cardEl.closest('#card-stack');
+          window.isHoveringStack = false;
+          window.isHoveringCard = !insideStack;
+          window.hoveredCard = insideStack ? null : cardEl;
+        } else {
+          window.isHoveringStack = false;
+          window.isHoveringCard = false;
+          window.hoveredCard = null;
+        }
+      };
+      document.addEventListener('mousemove', window._hoverMoveHandler);
+
       console.log("[DEBUG] Hover-Tracking Setup abgeschlossen");
     }
     
@@ -879,7 +917,44 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log(`[DEBUG] Hover-Status: ${window.isHoveringCard}, Karte: ${window.hoveredCard ? window.hoveredCard.id : 'Stapel'}`);
       }
     }, 5000); // Alle 5 Sekunden, nur zu Debug-Zwecken
-    
+
+    // Tastaturverhalten überschreiben: nur bei Hover über Karte/Stapel aktiv
+    document.addEventListener('keydown', (e) => {
+      const isInTextInput =
+        (e.target && e.target.isContentEditable) ||
+        (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'));
+      if (isInTextInput) return;
+
+      const key = (e.key || '').toLowerCase();
+
+      // F: nur Karte direkt unter dem Cursor umdrehen
+      if (key === 'f') {
+        e.stopImmediatePropagation();
+        if (window.hoveredCard) {
+          flipCard(window.hoveredCard);
+        }
+        return;
+      }
+
+      // M: nur mischen, wenn Cursor über dem Stapel (nicht über einzelner Karte)
+      if (key === 'm') {
+        e.stopImmediatePropagation();
+        if (window.isHoveringStack) {
+          shuffleCards();
+        }
+        return;
+      }
+
+      // B: nur Karte direkt unter dem Cursor zurück zum Stapel
+      if (key === 'b') {
+        e.stopImmediatePropagation();
+        if (window.hoveredCard) {
+          returnCardToStack(window.hoveredCard);
+        }
+        return;
+      }
+    }, true);
+
     document.addEventListener('keydown', (e) => {
     // Nur blockieren, wenn der Nutzer gerade wirklich in einem Eingabefeld tippt
     const isInTextInput =
@@ -931,11 +1006,62 @@ document.addEventListener('DOMContentLoaded', function() {
     return topCard;
   };
 
+  // Liefert den höchsten z-index unter allen Karten, die NICHT im Stapel liegen
+  function getHighestCardZIndexOnBoard() {
+    const boardCards = Array.from(document.querySelectorAll('.card'))
+      .filter(c => !c.closest('#card-stack'));
+    let highest = 1199; // Basis: etwas über typischen UI-Elementen (z.B. 1000)
+    boardCards.forEach(c => {
+      const z = parseInt(getComputedStyle(c).zIndex, 10);
+      if (!isNaN(z) && z > highest) highest = z;
+    });
+    return highest;
+  }
+
+  // Normalisiert den z-index einer Karte nach dem Loslassen:
+  // - Über Basis-UI (min 1200),
+  // - Unterhalb von Notizen im Drag/Edit (unter 10000)
+  function normalizeCardZIndex(card) {
+    const newZ = Math.max(getHighestInteractiveZIndex() + 1, 1200);
+    card.style.zIndex = newZ;
+  }
+
+  // Liefert den h�chsten z-index �ber allen interaktiven Elementen (Karten au�erhalb des Stapels und Notizzettel)
+  // Global verf�gbar machen, damit alle Handler darauf zugreifen k�nnen
+  if (!window.getHighestInteractiveZIndex) {
+    window.getHighestInteractiveZIndex = function() {
+      const interactive = [
+        ...Array.from(document.querySelectorAll('.card')).filter(c => !c.closest('#card-stack')),
+        ...Array.from(document.querySelectorAll('.notiz')),
+      ];
+      let highest = 1199; // Basis leicht �ber UI-Boxen
+      interactive.forEach(el => {
+        const z = parseInt(getComputedStyle(el).zIndex, 10);
+        if (!isNaN(z) && z > highest) highest = z;
+      });
+      return highest;
+    };
+  }
+
+  function getHighestInteractiveZIndex() { return window.getHighestInteractiveZIndex(); }
   // Focus Note erstellen
   const createFocusNote = () => {
     if (boardType === 'board1' || boardType === 'boardTest') {
       // Bei Board1 platzieren wir die Focus Note im vorgesehenen Bereich
       const focusNoteArea = document.getElementById('focus-note-area');
+  // Liefert den h�chsten z-index unter allen interaktiven Elementen (Karten au�erhalb des Stapels und Notizzettel)
+  function getHighestInteractiveZIndex() {
+    const interactive = [
+      ...Array.from(document.querySelectorAll('.card')).filter(c => !c.closest('#card-stack')),
+      ...Array.from(document.querySelectorAll('.notiz')),
+    ];
+    let highest = 1199; // Basis leicht �ber UI-Boxen
+    interactive.forEach(el => {
+      const z = parseInt(getComputedStyle(el).zIndex, 10);
+      if (!isNaN(z) && z > highest) highest = z;
+    });
+    return highest;
+  }
       if (focusNoteArea) {
         // Wir müssen nichts tun, da der Text bereits in createCardPlaceholders gesetzt wurde
         // Der Text ist bereits in der focus-note-content enthalten
@@ -1002,7 +1128,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Position am Mauszeiger
     notiz.style.left = `${e.clientX - 90}px`;
     notiz.style.top = `${e.clientY - 90}px`;
-    notiz.style.zIndex = getHighestZIndex() + 1;
+    notiz.style.zIndex = Math.max(getHighestInteractiveZIndex() + 1, 1200);
     
     // Inhalt mit leerem editierbarem Textfeld
     notiz.innerHTML = `
@@ -1214,7 +1340,7 @@ document.addEventListener('DOMContentLoaded', function() {
       initialY = rect.top;
       
       // Notiz nach vorne bringen
-      note.style.zIndex = getHighestZIndex() + 1;
+      note.style.zIndex = Math.max(getHighestInteractiveZIndex() + 1, 1200);
       
       // Ziehen noch NICHT starten - warten, ob es ein Doppelklick ist
       
@@ -1666,7 +1792,7 @@ document.addEventListener('DOMContentLoaded', function() {
           transform: scale(0.9) !important;
           box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
           pointer-events: none;
-          z-index: 10000 !important;
+          z-index: 1000000 !important;
         }
       `;
       document.head.appendChild(style);
@@ -1687,8 +1813,10 @@ document.addEventListener('DOMContentLoaded', function() {
       cardFlipSound.play().catch(e => console.log('Audio konnte nicht abgespielt werden:', e));
     }
     
-    // Karte nach vorne bringen
-    card.style.zIndex = getHighestZIndex() + 1;
+    // Karte nach vorne bringen (normalisiert, aber unter Notizen im Drag/Edit)
+    if (!card.closest('#card-stack')) {
+      normalizeCardZIndex(card);
+    }
     // Speichern des Board-Zustands nach dem Umdrehen einer Karte
     saveCurrentBoardState();
   };
@@ -1991,9 +2119,27 @@ document.addEventListener('DOMContentLoaded', function() {
         const rect = element.getBoundingClientRect();
         offsetX = e.clientX - rect.left;
         offsetY = e.clientY - rect.top;
-        
-        // Karte nach vorne bringen
-        element.style.zIndex = getHighestZIndex() + 1;
+
+        // Karte nach vorne bringen – immer vor Focus Note/Notizzettel
+        // Nutze den höchsten bekannten z-index oder mindestens 10001
+        element.style.zIndex = Math.max(getHighestInteractiveZIndex() + 1, 1200);
+
+        // WICHTIG: Wenn die Karte noch im Stapel ist, sofort ins Board umhängen,
+        // damit sie nicht hinter Focus Note/Notizzettel verschwindet
+        const cardStack = document.getElementById('card-stack');
+        const boardArea = document.querySelector('.board-area');
+        if (initialParent === cardStack && boardArea) {
+          const globalLeft = rect.left;
+          const globalTop = rect.top;
+          // Aus dem Stapel entfernen und dem Board hinzufügen
+          try { cardStack.removeChild(element); } catch (_) {}
+          boardArea.appendChild(element);
+          // Position relativ zum Board setzen, um keine "Sprünge" zu erzeugen
+          const boardRect = boardArea.getBoundingClientRect();
+          element.style.position = 'absolute';
+          element.style.left = (globalLeft - boardRect.left) + 'px';
+          element.style.top = (globalTop - boardRect.top) + 'px';
+        }
         
         // Visuelles Feedback dass Karte gezogen wird
         element.classList.add('being-dragged');
@@ -2091,7 +2237,7 @@ document.addEventListener('DOMContentLoaded', function() {
           isHoveringOverStack = false;
           return;
         }
-        
+
         // Ursprüngliche Funktionalität für Bewegung vom Stapel zum Board behalten
         const boardArea = document.querySelector('.board-area');
         if (initialParent === cardStack && cardStack.contains(element)) {
@@ -2125,7 +2271,14 @@ document.addEventListener('DOMContentLoaded', function() {
             element.offsetHeight;
           }
         }
-        
+
+        // Nach dem Loslassen: z-index der Karte normalisieren, damit Notizzettel
+        // beim Ziehen vorne liegen, Karten aber weiterhin über Fokus-/Notizzettelblock stehen.
+        // Nicht normalisieren, wenn die Karte im Stapel liegt.
+        if (!element.closest('#card-stack')) {
+          normalizeCardZIndex(element);
+        }
+
         // Board-Zustand speichern
         if (typeof saveCurrentBoardState === 'function') {
           saveCurrentBoardState();
@@ -2157,7 +2310,7 @@ document.addEventListener('DOMContentLoaded', function() {
       e.preventDefault();
       
       // Element nach vorne bringen
-      element.style.zIndex = getHighestZIndex() + 1;
+      element.style.zIndex = getHighestInteractiveZIndex() + 1;
       
       // Startpositionen speichern
       startX = e.clientX;
@@ -3075,4 +3228,11 @@ function checkLocalStorageSpace() {
   console.log("[DEBUG] Überprüfe localStorage...");
   // Keine weiteren Aktionen, um Fehler zu vermeiden
 }
+
+
+
+
+
+
+
 
