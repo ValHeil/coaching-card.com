@@ -1,4 +1,4 @@
-﻿/* Board Layout */
+/* Board Layout */
 :root {
   /* Responsive sizing variables */
   --card-w: clamp(180px, 20vw, 320px);
@@ -80,7 +80,7 @@
   background-color: rgba(76, 175, 80, 0.1);
 }
 
-/* Anpassungen fÃ¼r die URL-Leiste oben */
+/* Anpassungen für die URL-Leiste oben */
 .url-bar {
   background-color: white;
   border-bottom: 1px solid #ccc;
@@ -136,7 +136,7 @@
   overflow: hidden;
 }
 
-/* Basisdarstellung - Hier wollen wir die RÃ¼ckseite oben haben */
+/* Basisdarstellung - Hier wollen wir die Rückseite oben haben */
 .card-front {
   background-color: white;
   border: 1px solid #ddd;
@@ -150,7 +150,7 @@
 .card-front img {
   width: 100%;
   height: 100%;
-  object-fit: contain; /* Behält das Seitenverhältnis des Bildes bei */
+  object-fit: contain; /* Beh�lt das Seitenverh�ltnis des Bildes bei */
 }
 
 .card-back {
@@ -158,13 +158,13 @@
   background-image: url('/assets/cards/deck1/card-back.png');
   background-size: cover;
   background-position: center;
-  transform: rotateY(0deg); /* Rückseite sichtbar */
+  transform: rotateY(0deg); /* R�ckseite sichtbar */
   display: flex;
   justify-content: center;
   align-items: center;
 }
 
-/* Für boardTest: Kartenrückseite aus test_deck */
+/* F�r boardTest: Kartenr�ckseite aus test_deck */
 .board-area.board-type-boardTest .card-back {
   background-image: url('/assets/cards/test_deck/card-back.png');
 }
@@ -175,7 +175,7 @@
 }
 
 .card.flipped .card-back {
-  transform: rotateY(180deg); /* RÃ¼ckseite versteckt */
+  transform: rotateY(180deg); /* Rückseite versteckt */
 }
 
 .card-image {
@@ -196,7 +196,7 @@
   display: none;
 }
 
-/* Animation fÃ¼r Kartenmischen */
+/* Animation für Kartenmischen */
 .card.shuffling {
   animation: shuffle-card 0.5s ease-in-out;
   z-index: 100;
@@ -214,33 +214,33 @@
   }
 }
 
-/* Stil fÃ¼r gezogene Karte */
+/* Stil für gezogene Karte */
 .card.being-dragged {
   opacity: 1 !important;
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
-  transition: none !important; /* Important: no transition during dragging */
+  transition: none !important;
   cursor: grabbing;
-  transform: none !important; /* Don't rotate or scale during drag */
-  z-index: 10000 !important;
+  transform: none !important;
+  z-index: 1000000 !important;
 }
 
 .card, .card.being-dragged, .card.being-dragged * {
   transition: none !important;
 }
 
-/* Aktiviere Transitions nur fÃ¼r Flip und Shuffle */
+/* Aktiviere Transitions nur für Flip und Shuffle */
 .card.flipping, .card.shuffling {
   transition: all 0.5s ease-in-out !important;
 }
 
-/* KontextmenÃ¼ fÃ¼r Karten */
+/* Kontextmenü für Karten */
 .context-menu {
   position: fixed;
   background-color: white;
   border: 1px solid #ccc;
   border-radius: 5px;
   box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-  z-index: 10000;
+  z-index: 2000000;
   min-width: 150px;
 }
 
@@ -333,7 +333,7 @@
   opacity: 1;
 }
 
-/* AblageplÃ¤tze fÃ¼r Karten */
+/* Ablageplätze für Karten */
 .card-placeholder {
   position: absolute;
   width: var(--card-w);
@@ -353,7 +353,7 @@
   border-color: #4CAF50;
 }
 
-/* Placeholders fÃ¼r Karten */
+/* Placeholders für Karten */
 .card-placeholder:nth-child(1) {
   left: calc(var(--card-w) * 0.68);
   top: calc(var(--card-h) * 1.92);
@@ -369,13 +369,13 @@
   top: calc(var(--card-h) * 1.92);
 }
 
-/* Animation fÃ¼r Kartenmischen */
+/* Animation für Kartenmischen */
 .card.shuffling {
   animation: shuffle-card 0.5s ease-in-out;
   z-index: 100;
 }
 
-/* Animation fÃ¼r Kartenumdrehen */
+/* Animation für Kartenumdrehen */
 .card.flipping {
   animation: flip-card 0.5s ease-in-out;
 }
@@ -446,8 +446,8 @@
   width: max-content;
   height: max-content;
   display: inline-block;
-  resize: both;        /* Benutzer kann Größe ändern */
-  overflow: visible;   /* keine Scrollbalken; Notiz wächst */
+  resize: both;        /* Benutzer kann Gr��e �ndern */
+  overflow: visible;   /* keine Scrollbalken; Notiz w�chst */
   max-width: 80vw;
   max-height: 70vh;
 }
@@ -470,5 +470,8 @@
 .note.is-editing {
   transform: none !important;
 }
+
+
+
 
 

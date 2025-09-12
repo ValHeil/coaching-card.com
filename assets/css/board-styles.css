@@ -1,4 +1,4 @@
-﻿/* Allgemeine Seiten-Struktur */
+/* Allgemeine Seiten-Struktur */
 :root {
   --card-w: clamp(180px, 20vw, 320px);
   --card-h: calc(var(--card-w) * 260 / 295);
@@ -20,7 +20,7 @@ body {
 
 .board-area {
   flex-grow: 1;
-  overflow: auto; /* ErmÃ¶glicht Scrollen im Board-Bereich bei Bedarf */
+  overflow: auto; /* Ermöglicht Scrollen im Board-Bereich bei Bedarf */
   display: flex;
   flex-direction: column; /* Stellt sicher, dass Inhalte vertikal angeordnet sind */
 }
@@ -42,7 +42,7 @@ body {
   color: #666;
 }
 
-/* Spezifische Stile fÃ¼r Board1 (Problem-LÃ¶sung) */
+/* Spezifische Stile für Board1 (Problem-Lösung) */
 .board-type-board1 {
   flex-grow: 1;
   display: flex;
@@ -50,7 +50,7 @@ body {
   padding: 20px 40px;
 }
 
-/* Spezifische Stile für BoardTest (wie Board1) */
+/* Spezifische Stile f�r BoardTest (wie Board1) */
 .board-type-boardTest {
   flex-grow: 1;
   display: flex;
@@ -64,7 +64,7 @@ body {
   grid-template-columns: 1fr 1.5fr 1.5fr 1fr;
   gap: 25px;
   margin-bottom: 40px;
-  /* Keine feste HÃ¶he â€“ Inhalte sollen Platz bekommen */
+  /* Keine feste Höhe – Inhalte sollen Platz bekommen */
   height: auto;
 }
 
@@ -73,14 +73,14 @@ body {
   min-height: 0;
 }
 
-/* Drei Hauptbereiche fÃ¼r die Karten (Problem-LÃ¶sung) */
+/* Drei Hauptbereiche für die Karten (Problem-Lösung) */
 .board-main-area {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 30px;
   height: auto;
-  min-height: 400px; /* MinimalhÃ¶he */
-  flex-grow: 1; /* Damit dieser Bereich den verfÃ¼gbaren Platz nutzt */
+  min-height: 400px; /* Minimalhöhe */
+  flex-grow: 1; /* Damit dieser Bereich den verfügbaren Platz nutzt */
   margin-bottom: 30px;
 }
 
@@ -101,7 +101,7 @@ body {
   min-height: clamp(160px, 22vh, 260px);
 }
 
-/* Board1 Beschreibungs-Box (Problem-LÃ¶sung) */
+/* Board1 Beschreibungs-Box (Problem-Lösung) */
 .board-description-box {
   background-color: #9fe2bf;
   border: 2px solid #7dcca5;
@@ -173,7 +173,7 @@ body {
   box-shadow: 0 0 5px rgba(255, 133, 129, 0.5);
 }
 
-/* Anzeige fÃ¼r die Focus Note */
+/* Anzeige für die Focus Note */
 .focus-note-display {
   width: 100%;
   min-height: 80px;
@@ -200,7 +200,7 @@ body {
   color: #000000;
 }
 
-/* Verbesserung der Ãœberschrift im Focus Note Bereich */
+/* Verbesserung der Überschrift im Focus Note Bereich */
 .focus-note-area h2 {
   text-align: center;
   font-size: 22px;
@@ -215,7 +215,7 @@ body {
   background-color: #ffff99;
   border: 1px solid #e6e673;
   border-radius: 3px;
-  /* Gleiche GrundgrÃ¶ÃŸe wie Karten */
+  /* Gleiche Grundgröße wie Karten */
   width: var(--card-w);
   height: var(--card-h);
   display: flex;
@@ -241,11 +241,11 @@ body {
   opacity: 0.6;
 }
 
-/* Einzelne Notizzettel, die abgezogen werden kÃ¶nnen */
+/* Einzelne Notizzettel, die abgezogen werden können */
 .notiz {
   position: absolute;
   width: 180px; /* Feste Breite */
-  min-height: 180px; /* MindesthÃ¶he */
+  min-height: 180px; /* Mindesthöhe */
   background-color: #ffff99;
   border: 1px solid #e6e673;
   border-radius: 3px;
@@ -278,22 +278,22 @@ body {
   background: transparent;
   border: none;
   font-family: 'Playfair Display', serif; /* Passend zum Rest der Website */
-  font-size: 18px; /* GrÃ¶ÃŸere Schrift fÃ¼r bessere Lesbarkeit */
+  font-size: 18px; /* Größere Schrift für bessere Lesbarkeit */
   line-height: 1.6;
   overflow-y: auto;
   white-space: pre-wrap;
-  padding: 8px; /* Mehr Padding fÃ¼r besseren Abstand zum Rand */
-  color: #333; /* Dunkle Schriftfarbe fÃ¼r besseren Kontrast */
-  letter-spacing: 0.5px; /* Leicht erhÃ¶hter Buchstabenabstand fÃ¼r bessere Lesbarkeit */
+  padding: 8px; /* Mehr Padding für besseren Abstand zum Rand */
+  color: #333; /* Dunkle Schriftfarbe für besseren Kontrast */
+  letter-spacing: 0.5px; /* Leicht erhöhter Buchstabenabstand für bessere Lesbarkeit */
 }
 
-/* AufzÃ¤hlungspunkte etwas anpassen */
+/* Aufzählungspunkte etwas anpassen */
 .notiz-content ul {
   margin: 0;
   padding-left: 20px;
 }
 
-/* SchriftgrÃ¶ÃŸe fÃ¼r Bulletpoints anpassen */
+/* Schriftgröße für Bulletpoints anpassen */
 .notiz-content ul li {
   font-size: 18px;
   margin-bottom: 5px;
@@ -310,7 +310,7 @@ body {
   padding: 8px; /* konsistent mit Auto-Grow Berechnung */
 }
 
-/* Verbessertes Blinkverhalten fÃ¼r den Cursor */
+/* Verbessertes Blinkverhalten für den Cursor */
 @keyframes blink-caret {
   from, to { caret-color: transparent }
   50% { caret-color: black }
@@ -322,9 +322,9 @@ body {
   box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0.5);
 }
 
-/* Verbesserte Stile fÃ¼r Notizzettel */
+/* Verbesserte Stile für Notizzettel */
 .notiz-content.editing {
-  /* Beim Bearbeiten keine weiÃŸe Box im Zettel anzeigen */
+  /* Beim Bearbeiten keine weiße Box im Zettel anzeigen */
   background-color: transparent !important;
   box-shadow: none !important;
   padding: 8px; /* konsistent mit normalem Zustand */
@@ -373,7 +373,7 @@ body {
   50% { caret-color: black }
 }
 
-/* Hover-Effekt fÃ¼r Notizzettel, um anzuzeigen, dass sie bearbeitbar sind */
+/* Hover-Effekt für Notizzettel, um anzuzeigen, dass sie bearbeitbar sind */
 .notiz:not(.is-editing):hover::after {
   content: "Doppelklick zum Bearbeiten";
   position: absolute;
@@ -402,9 +402,9 @@ body {
   padding: 20px;
   display: flex;
   flex-direction: column;
-  min-height: 300px; /* MinimalhÃ¶he statt feste HÃ¶he */
-  height: auto; /* Automatische HÃ¶he */
-  flex-grow: 1; /* WÃ¤chst mit verfÃ¼gbarem Platz */
+  min-height: 300px; /* Minimalhöhe statt feste Höhe */
+  height: auto; /* Automatische Höhe */
+  flex-grow: 1; /* Wächst mit verfügbarem Platz */
   background-color: rgba(255,255,255,0.4);
 }
 
@@ -479,7 +479,7 @@ body {
 }
 
 
-/* Basisstil fÃ¼r den MÃ¼lleimer */
+/* Basisstil für den Mülleimer */
 .trash-container {
   position: fixed;
   bottom: 20px;
@@ -497,9 +497,9 @@ body {
   cursor: pointer;
 }
 
-/* Mülleimer-Symbol (Unicode, robust gegen Encoding-Probleme) */
+/* M�lleimer-Symbol (Unicode, robust gegen Encoding-Probleme) */
 .trash-container::before {
-  content: "\\01F5D1"; /* Unicode: 🗑 */
+  content: "\\01F5D1"; /* Unicode: ?? */
   display: block;
   font-family: "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;
   font-size: 30px;
@@ -520,14 +520,14 @@ body {
   box-shadow: 0 0 20px rgba(255, 0, 0, 0.4);
 }
 
-/* LÃ¶schmodus-Stil */
+/* Löschmodus-Stil */
 .trash-container.deletion-mode {
   background-color: #ffcccc;
   transform: scale(1.2);
   box-shadow: 0 0 20px rgba(255, 0, 0, 0.4);
 }
 
-/* Animation beim LÃ¶schen */
+/* Animation beim Löschen */
 .trash-container.note-deleted {
   animation: delete-flash 0.5s ease;
 }
@@ -538,9 +538,9 @@ body {
   100% { background-color: rgba(255, 255, 255, 0.9); }
 }
 
-/* KÃ¼rzerer Tooltip fÃ¼r den MÃ¼lleimer */
+/* Kürzerer Tooltip für den Mülleimer */
 .trash-container::after {
-  content: "Ziehen oder Klicken zum LÃ¶schen";
+  content: "Ziehen oder Klicken zum Löschen";
   position: absolute;
   bottom: 100%;
   left: 50%;
@@ -561,16 +561,17 @@ body {
   opacity: 1;
 }
 
-/* Stil fÃ¼r Notizzettel wÃ¤hrend des Ziehens */
+/* Stil für Notizzettel während des Ziehens */
 .notiz.being-dragged {
   opacity: 1 !important;
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3) !important;
-  transition: none !important; /* Keine Ãœbergangseffekte wÃ¤hrend des Ziehens */
+  transition: none !important; /* Keine �bergangseffekte w�hrend des Ziehens */
   cursor: grabbing !important;
-  z-index: 10000 !important;
+  z-index: 1000000 !important;
+}
 }
 
-/* Stil fÃ¼r Notizzettel im LÃ¶schmodus */
+/* Stil für Notizzettel im Löschmodus */
 .notiz.deletable {
   cursor: pointer !important;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -581,7 +582,7 @@ body {
   box-shadow: 0 0 10px rgba(255, 0, 0, 0.5) !important;
 }
 
-/* Tooltip fÃ¼r wichtige Benachrichtigungen */
+/* Tooltip für wichtige Benachrichtigungen */
 .trash-tooltip {
   position: fixed;
   top: 20px;
@@ -604,7 +605,7 @@ body {
   to { opacity: 1; transform: translate(-50%, 0); }
 }
 
-/* FÃ¼r kleinere Desktops und Tablets im Querformat */
+/* Für kleinere Desktops und Tablets im Querformat */
 @media (max-width: 1200px) {
   .board-header-area {
     grid-template-columns: 1fr 1fr;
@@ -618,7 +619,7 @@ body {
   }
 }
 
-/* FÃ¼r Tablets im Hochformat */
+/* Für Tablets im Hochformat */
 @media (max-width: 768px) {
   .board-main-area {
     grid-template-columns: 1fr;
@@ -635,7 +636,7 @@ body {
   }
 }
 
-/* FÃ¼r MobilgerÃ¤te */
+/* Für Mobilgeräte */
 @media (max-width: 480px) {
   .board-header-area {
     grid-template-columns: 1fr;
@@ -656,7 +657,7 @@ body {
   }
 }
 
-/* Anpassungen fÃ¼r verschiedene BildschirmgrÃ¶ÃŸen */
+/* Anpassungen für verschiedene Bildschirmgrößen */
 @media (min-width: 1400px) {
   .board-description-box h3 {
     font-size: 26px;
@@ -822,7 +823,7 @@ body {
 }
 
 /* === Notizzettel: responsive + auto-sizing overrides === */
-/* Notiz wächst wie Karte und kann manuell skaliert werden */
+/* Notiz w�chst wie Karte und kann manuell skaliert werden */
 .notiz {
   box-sizing: border-box;
   min-width: var(--card-w);
@@ -831,7 +832,7 @@ body {
   height: max-content;
   display: inline-block;
   resize: both;           /* manueller Resize */
-  overflow: visible;      /* keine Scrollbalken; Notiz wächst */
+  overflow: visible;      /* keine Scrollbalken; Notiz w�chst */
   max-width: 80vw;        /* Sicherheit, nicht aus dem Viewport */
   max-height: 70vh;
 }
@@ -839,14 +840,17 @@ body {
 .notiz-content {
   box-sizing: border-box;
   display: inline-block;
-  width: 100% !important;            /* nutzt verfügbare Breite der Notiz */
-  white-space: normal !important;    /* überall umbrechen */
+  width: 100% !important;            /* nutzt verf�gbare Breite der Notiz */
+  white-space: normal !important;    /* �berall umbrechen */
   overflow: visible !important;      /* Container darf wachsen */
   overflow-wrap: anywhere;
   word-break: break-word;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+
+
+
 
 
 
