@@ -52,6 +52,21 @@ document.addEventListener('DOMContentLoaded', function() {
   const shuffleSound = document.getElementById('shuffle-sound');
   const cardFlipSound = document.getElementById('card-flip-sound');
   
+  // CSS für Notiz-Placeholder nur im Editiermodus (verhindert Verlust des ersten Zeichens)
+  if (!document.getElementById('note-placeholder-style')) {
+    const style = document.createElement('style');
+    style.id = 'note-placeholder-style';
+    style.textContent = `
+      .notiz-content.editing:empty:before {
+        content: 'Hier tippen...';
+        color: #999;
+        font-style: italic;
+        pointer-events: none;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
 
   // Session-ID aus der URL extrahieren
   const urlParams = new URLSearchParams(window.location.search);
@@ -1201,21 +1216,7 @@ document.addEventListener('DOMContentLoaded', function() {
       // Optional: Cursor-Animation hinzufügen
       content.classList.add('blinking-cursor');
       
-      // Einen temporären Platzhaltertext hinzufügen, wenn leer
-      if (content.textContent.trim() === '') {
-        content.innerHTML = '<span class="placeholder">Hier tippen...</span>';
-        
-        // Platzhalter entfernen, sobald der Benutzer zu tippen beginnt
-        const handleFirstInput = () => {
-          const placeholder = content.querySelector('.placeholder');
-          if (placeholder) {
-            placeholder.remove();
-          }
-          content.removeEventListener('input', handleFirstInput);
-        };
-        
-        content.addEventListener('input', handleFirstInput);
-      }
+      // Kein DOM-Platzhalter mehr injizieren – Anzeige erfolgt per CSS (:empty:before)
       
       // Dem Notizzettel eine Klasse hinzufügen, um zu zeigen, dass er bearbeitet wird
       notiz.classList.add('is-editing');
