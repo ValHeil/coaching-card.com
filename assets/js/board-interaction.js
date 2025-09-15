@@ -1490,8 +1490,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const trashContainer = document.createElement('div');
     trashContainer.className = 'trash-container';
     trashContainer.style.zIndex = '9999';
+    trashContainer.title = 'Notizzettel hier ablegen zum Löschen';
     trashContainer.addEventListener('mouseenter', () => {
-      showTooltip('Ablegen oder Klicken zum l\\u00f6schen');
+      showTooltip('Ablegen oder Notizzettel anKlicken zum löschen');
       });
     trashContainer.addEventListener('mouseleave', hideTooltip);
     
@@ -1503,9 +1504,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // Visuelles Feedback, dass der Löschmodus aktiv ist
         this.style.backgroundColor = '#ffcccc';
         this.style.transform = 'scale(1.2)';
-        this.title = 'Klicke auf einen Notizzettel zum L√∂schen';
-       showTooltip("Klicke auf einen Notizzettel zum L√∂schen");
-       showTooltip("Klicken zum l\\u00f6schen");
+        this.title = 'Klicke auf einen Notizzettel zum Löschen';
+       
         
         // Benachrichtigung anzeigen
         showTooltip("Klicke auf einen Notizzettel zum Löschen");
@@ -1519,7 +1519,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Löschmodus beenden
         this.style.backgroundColor = '';
         this.style.transform = '';
-        this.title = 'Notizzettel hier ablegen zum L√∂schen';
+        this.title = 'Notizzettel hier ablegen zum Löschen';
         
         // Benachrichtigung entfernen
         hideTooltip();
