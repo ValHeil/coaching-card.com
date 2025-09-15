@@ -1492,7 +1492,7 @@ document.addEventListener('DOMContentLoaded', function() {
     trashContainer.style.zIndex = '9999';
     
     trashContainer.addEventListener('mouseenter', () => {
-      showTooltip('Ablegen oder Notizzettel anklicken zum löschen');
+      showTooltip('Ablegen oder Notizzettel anklicken zum löschen', trashContainer);
       });
     trashContainer.addEventListener('mouseleave', hideTooltip);
     
@@ -1504,11 +1504,11 @@ document.addEventListener('DOMContentLoaded', function() {
         // Visuelles Feedback, dass der Löschmodus aktiv ist
         this.style.backgroundColor = '#ffcccc';
         this.style.transform = 'scale(1.2)';
-        this.title = 'Klicke auf einen Notizzettel zum Löschen';
+        
        
         
         // Benachrichtigung anzeigen
-        showTooltip("Klicke auf einen Notizzettel zum Löschen");
+        showTooltip("Klicke auf einen Notizzettel zum Löschen", this);
         
         // Klick-Handler für alle Notizzettel
         document.querySelectorAll('.notiz').forEach(notiz => {
@@ -1519,7 +1519,6 @@ document.addEventListener('DOMContentLoaded', function() {
         // Löschmodus beenden
         this.style.backgroundColor = '';
         this.style.transform = '';
-        this.title = 'Notizzettel hier ablegen zum Löschen';
         
         // Benachrichtigung entfernen
         hideTooltip();
@@ -1580,7 +1579,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Hilfsfunktion zum Anzeigen einer Tooltip-Nachricht
-    function showTooltip(message) {
+    function showTooltip(message, anchorEl) {
       let tooltip = document.getElementById('trash-tooltip');
       if (!tooltip) {
         tooltip = document.createElement('div');
@@ -1588,23 +1587,41 @@ document.addEventListener('DOMContentLoaded', function() {
         tooltip.className = 'trash-tooltip';
         document.body.appendChild(tooltip);
       }
-      
       tooltip.textContent = message;
       tooltip.style.display = 'block';
-      
-      // Nach 3 Sekunden ausblenden
-      setTimeout(() => {
-        hideTooltip();
-      }, 3000);
+
+      // Anker bestimmen (Default: Papierkorb)
+      const anchor = anchorEl || document.querySelector('.trash-container');
+      if (!anchor) return;
+
+      // Nach dem Einblenden messen und positionieren
+      requestAnimationFrame(() => {
+        const a = anchor.getBoundingClientRect();
+        const t = tooltip.getBoundingClientRect();
+        const margin = 12;
+
+        // Standardposition: zentriert ÜBER dem Papierkorb
+        let left = a.left + (a.width - t.width) / 2;
+        let top  = a.top - t.height - margin;
+
+        // Clamping: nie aus dem Viewport ragen
+        left = Math.max(8, Math.min(left, window.innerWidth  - t.width  - 8));
+        top  = Math.max(8, Math.min(top,  window.innerHeight - t.height - 8));
+
+        tooltip.style.left = left + 'px';
+        tooltip.style.top  = top  + 'px';
+      });
+
+      // Auto-Hide nach 3s (Timer zurücksetzen)
+      clearTimeout(window._trashTooltipTimer);
+      window._trashTooltipTimer = setTimeout(hideTooltip, 3000);
     }
-    
-    // Hilfsfunktion zum Ausblenden des Tooltips
+
     function hideTooltip() {
       const tooltip = document.getElementById('trash-tooltip');
-      if (tooltip) {
-        tooltip.style.display = 'none';
-      }
+      if (tooltip) tooltip.style.display = 'none';
     }
+
     
     // *** VERBESSERTE DRAG & DROP FUNKTIONALITÄT ***
     
@@ -1742,9 +1759,9 @@ document.addEventListener('DOMContentLoaded', function() {
       style.textContent = `
         .trash-tooltip {
           position: fixed;
-          top: 20px;
-          left: 50%;
-          transform: translateX(-50%);
+          top: 0;
+          left: 0;
+          transform: none;
           background-color: rgba(0, 0, 0, 0.8);
           color: white;
           padding: 10px 20px;
