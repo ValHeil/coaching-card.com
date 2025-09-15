@@ -1026,15 +1026,15 @@ document.addEventListener('DOMContentLoaded', function() {
     card.style.zIndex = newZ;
   }
 
-  // Liefert den höchsten z-index über allen interaktiven Elementen (Karten außerhalb des Stapels und Notizzettel)
-  // Global verfügbar machen, damit alle Handler darauf zugreifen können
+  // Liefert den hï¿½chsten z-index ï¿½ber allen interaktiven Elementen (Karten auï¿½erhalb des Stapels und Notizzettel)
+  // Global verfï¿½gbar machen, damit alle Handler darauf zugreifen kï¿½nnen
   if (!window.getHighestInteractiveZIndex) {
     window.getHighestInteractiveZIndex = function() {
       const interactive = [
         ...Array.from(document.querySelectorAll('.card')).filter(c => !c.closest('#card-stack')),
         ...Array.from(document.querySelectorAll('.notiz')),
       ];
-      let highest = 1199; // Basis leicht über UI-Boxen
+      let highest = 1199; // Basis leicht ï¿½ber UI-Boxen
       interactive.forEach(el => {
         const z = parseInt(getComputedStyle(el).zIndex, 10);
         if (!isNaN(z) && z > highest) highest = z;
@@ -1049,13 +1049,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if (boardType === 'board1' || boardType === 'boardTest') {
       // Bei Board1 platzieren wir die Focus Note im vorgesehenen Bereich
       const focusNoteArea = document.getElementById('focus-note-area');
-  // Liefert den höchsten z-index unter allen interaktiven Elementen (Karten außerhalb des Stapels und Notizzettel)
+  // Liefert den hï¿½chsten z-index unter allen interaktiven Elementen (Karten auï¿½erhalb des Stapels und Notizzettel)
   function getHighestInteractiveZIndex() {
     const interactive = [
       ...Array.from(document.querySelectorAll('.card')).filter(c => !c.closest('#card-stack')),
       ...Array.from(document.querySelectorAll('.notiz')),
     ];
-    let highest = 1199; // Basis leicht über UI-Boxen
+    let highest = 1199; // Basis leicht ï¿½ber UI-Boxen
     interactive.forEach(el => {
       const z = parseInt(getComputedStyle(el).zIndex, 10);
       if (!isNaN(z) && z > highest) highest = z;
@@ -1490,7 +1490,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const trashContainer = document.createElement('div');
     trashContainer.className = 'trash-container';
     trashContainer.style.zIndex = '9999';
-    trashContainer.title = 'Notizzettel hier ablegen zum LÃ¶schen';
+    trashContainer.addEventListener('mouseenter', () => {
+      showTooltip('Ablegen oder Klicken zum l\\u00f6schen');
+      });
+    trashContainer.addEventListener('mouseleave', hideTooltip);
     
     // Alternative LÃ¶schmethode: Direktes Anklicken des MÃ¼lleimers
     trashContainer.addEventListener('click', function() {
@@ -1500,7 +1503,9 @@ document.addEventListener('DOMContentLoaded', function() {
         // Visuelles Feedback, dass der LÃ¶schmodus aktiv ist
         this.style.backgroundColor = '#ffcccc';
         this.style.transform = 'scale(1.2)';
-        this.title = 'Klicke auf einen Notizzettel zum LÃ¶schen';
+        this.title = 'Klicke auf einen Notizzettel zum Lâˆšâˆ‚schen';
+       showTooltip("Klicke auf einen Notizzettel zum Lâˆšâˆ‚schen");
+       showTooltip("Klicken zum l\\u00f6schen");
         
         // Benachrichtigung anzeigen
         showTooltip("Klicke auf einen Notizzettel zum LÃ¶schen");
@@ -1514,7 +1519,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // LÃ¶schmodus beenden
         this.style.backgroundColor = '';
         this.style.transform = '';
-        this.title = 'Notizzettel hier ablegen zum LÃ¶schen';
+        this.title = 'Notizzettel hier ablegen zum Lâˆšâˆ‚schen';
         
         // Benachrichtigung entfernen
         hideTooltip();
@@ -1747,6 +1752,9 @@ document.addEventListener('DOMContentLoaded', function() {
           z-index: 10000;
           font-size: 16px;
           display: none;
+          max-width: calc(100vw - 24px);
+          white-space: normal;
+          word-break: break-word;
         }
         
         .notiz.deletable {
