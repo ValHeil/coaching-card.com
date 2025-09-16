@@ -577,6 +577,23 @@ body {
   opacity: 1;
 }
 
+/* Löschmodus optisch zeigen: Tonne wird zu kleinem X */
+.trash-container.deletion-mode {
+  background-color: #ffcccc;
+  transform: scale(1.2);
+}
+
+.trash-container.deletion-mode::before {
+  content: "✕";      /* Tonne ersetzen */
+  font-size: 22px;   /* klein halten */
+  line-height: 1;
+}
+
+/* Optional: Tooltip im Löschmodus ausblenden, falls du kein Overlay möchtest */
+.trash-container.deletion-mode:hover::after {
+  opacity: 0;
+}
+
 /* Stil für Notizzettel während des Ziehens */
 .notiz.being-dragged {
   opacity: 1 !important;
