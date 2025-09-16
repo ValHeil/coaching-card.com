@@ -1492,7 +1492,9 @@ document.addEventListener('DOMContentLoaded', function() {
     trashContainer.className = 'trash-container';
     trashContainer.style.zIndex = '9999';
     
+    trashContainer.removeAttribute('title');
     trashContainer.addEventListener('mouseenter', () => {
+      trashContainer.removeAttribute('title');
       showTooltip('Ablegen oder Notizzettel anklicken zum löschen', trashContainer);
       });
     trashContainer.addEventListener('mouseleave', hideTooltip);
