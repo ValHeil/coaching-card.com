@@ -1506,7 +1506,7 @@ document.addEventListener('DOMContentLoaded', function() {
        
         
         // Benachrichtigung anzeigen
-       
+       showTooltip("Klicke auf einen Notizzettel zum Löschen", this);
         
         // Klick-Handler für alle Notizzettel
         document.querySelectorAll('.notiz').forEach(notiz => {
