@@ -577,15 +577,19 @@ body {
   opacity: 1;
 }
 
-/* Löschmodus optisch zeigen: Tonne wird zu kleinem X */
+/* Löschmodus: runder, roter Button + weißes X */
 .trash-container.deletion-mode {
-  background-color: #ffcccc;
+  background-color: #e53935;          /* statt #ffcccc */
   transform: scale(1.2);
+  box-shadow: 0 0 20px rgba(229, 57, 53, 0.4);
 }
 
+/* WICHTIG: !important, damit es den Emoji-Override schlägt */
 .trash-container.deletion-mode::before {
-  content: "✕";      /* Tonne ersetzen */
-  font-size: 22px;   /* klein halten */
+  content: "✕" !important;            /* X statt Mülleimer */
+  color: #fff;
+  font-weight: 700;
+  font-size: 26px;                     /* klein & rund */
   line-height: 1;
 }
 
