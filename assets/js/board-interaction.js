@@ -1782,23 +1782,6 @@ document.addEventListener('DOMContentLoaded', function() {
           box-shadow: 0 0 12px rgba(255, 0, 0, 0.8);
         }
         
-        .trash-container.deletion-mode::after {
-          content: "✖";
-          position: absolute;
-          top: -5px;
-          right: -5px;
-          background-color: red;
-          color: white;
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 12px;
-          font-weight: bold;
-        }
-        
         /* Verbesserte Styles für Drag & Drop */
         .trash-container.drag-over {
           animation: pulse 0.5s infinite alternate;
