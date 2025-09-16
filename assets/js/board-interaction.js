@@ -1519,7 +1519,7 @@ document.addEventListener('DOMContentLoaded', function() {
         this.style.transform = '';
         
         // Benachrichtigung entfernen
-       
+       hideTooltip();
         
         // Klick-Handler entfernen
         document.querySelectorAll('.notiz').forEach(notiz => {
