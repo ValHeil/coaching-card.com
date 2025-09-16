@@ -1493,11 +1493,6 @@ document.addEventListener('DOMContentLoaded', function() {
     trashContainer.style.zIndex = '9999';
     
     trashContainer.removeAttribute('title');
-    trashContainer.addEventListener('mouseenter', () => {
-      trashContainer.removeAttribute('title');
-      showTooltip('Ablegen oder Notizzettel anklicken zum löschen', trashContainer);
-      });
-    trashContainer.addEventListener('mouseleave', hideTooltip);
     
     // Alternative Löschmethode: Direktes Anklicken des Mülleimers
     trashContainer.addEventListener('click', function() {
@@ -1511,7 +1506,7 @@ document.addEventListener('DOMContentLoaded', function() {
        
         
         // Benachrichtigung anzeigen
-        showTooltip("Klicke auf einen Notizzettel zum Löschen", this);
+       
         
         // Klick-Handler für alle Notizzettel
         document.querySelectorAll('.notiz').forEach(notiz => {
@@ -1524,7 +1519,7 @@ document.addEventListener('DOMContentLoaded', function() {
         this.style.transform = '';
         
         // Benachrichtigung entfernen
-        hideTooltip();
+       
         
         // Klick-Handler entfernen
         document.querySelectorAll('.notiz').forEach(notiz => {
