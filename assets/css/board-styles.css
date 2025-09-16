@@ -50,7 +50,7 @@ body {
   padding: 20px 40px;
 }
 
-/* Spezifische Stile für BoardTest (wie Board1) */
+/* Spezifische Stile fï¿½r BoardTest (wie Board1) */
 .board-type-boardTest {
   flex-grow: 1;
   display: flex;
@@ -497,7 +497,7 @@ body {
   cursor: pointer;
 }
 
-/* Mülleimer-Symbol (Unicode, robust gegen Encoding-Probleme) */
+/* Mï¿½lleimer-Symbol (Unicode, robust gegen Encoding-Probleme) */
 .trash-container::before {
   content: "\\01F5D1"; /* Unicode: ?? */
   display: block;
@@ -541,7 +541,7 @@ body {
 /* KÃ¼rzerer Tooltip fÃ¼r den MÃ¼lleimer */
 .trash-container::after {
   content: "Ziehen oder Klicken zum LÃ¶schen";
-  position: absolute;
+  position: fixed;
   bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
@@ -565,11 +565,11 @@ body {
 .notiz.being-dragged {
   opacity: 1 !important;
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3) !important;
-  transition: none !important; /* Keine Übergangseffekte während des Ziehens */
+  transition: none !important; /* Keine ï¿½bergangseffekte wï¿½hrend des Ziehens */
   cursor: grabbing !important;
   z-index: 1000000 !important;
 }
-}
+
 
 /* Stil fÃ¼r Notizzettel im LÃ¶schmodus */
 .notiz.deletable {
@@ -823,7 +823,7 @@ body {
 }
 
 /* === Notizzettel: responsive + auto-sizing overrides === */
-/* Notiz wächst wie Karte und kann manuell skaliert werden */
+/* Notiz wï¿½chst wie Karte und kann manuell skaliert werden */
 .notiz {
   box-sizing: border-box;
   min-width: var(--card-w);
@@ -832,7 +832,7 @@ body {
   height: max-content;
   display: inline-block;
   resize: both;           /* manueller Resize */
-  overflow: visible;      /* keine Scrollbalken; Notiz wächst */
+  overflow: visible;      /* keine Scrollbalken; Notiz wï¿½chst */
   max-width: 80vw;        /* Sicherheit, nicht aus dem Viewport */
   max-height: 70vh;
 }
@@ -840,8 +840,8 @@ body {
 .notiz-content {
   box-sizing: border-box;
   display: inline-block;
-  width: 100% !important;            /* nutzt verfügbare Breite der Notiz */
-  white-space: normal !important;    /* überall umbrechen */
+  width: 100% !important;            /* nutzt verfï¿½gbare Breite der Notiz */
+  white-space: normal !important;    /* ï¿½berall umbrechen */
   overflow: visible !important;      /* Container darf wachsen */
   overflow-wrap: anywhere;
   word-break: break-word;
