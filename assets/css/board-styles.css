@@ -540,21 +540,29 @@ body {
 
 /* Kürzerer Tooltip für den Mülleimer */
 .trash-container::after {
-  content: "Ziehen oder Klicken zum Löschen";
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  transform: none;
-  white-space: nowrap;
+  content: "Ablegen oder Klicken zum Löschen";
+  position: absolute;                 /* <- am Papierkorb ausrichten */
+  bottom: calc(100% + 8px);           /* 8px ÜBER dem Icon */
+  left: 50%;
+  transform: translateX(-50%);        /* zentriert zum Icon */
+
   background-color: rgba(0, 0, 0, 0.7);
-  color: white;
+  color: #fff;
   padding: 6px 10px;
-  border-radius: 4px;
+  border-radius: 5px;
   font-size: 12px;
+  line-height: 1.2;
+  z-index: 9999;
+
+  /* NIE am Bildschirmrand abschneiden: */
+  white-space: normal;                 /* Umbrechen erlauben */
+  max-width: min(260px, calc(100vw - 24px)); /* nie breiter als Viewport */
+  overflow-wrap: anywhere;             /* notfalls umbrechen */
+
+  /* Sichtbarkeit steuert weiter deine :hover-Regel */
   opacity: 0;
-  transition: opacity 0.3s;
+  transition: opacity .3s;
   pointer-events: none;
-  margin-bottom: 5px;
 }
 
 .trash-container:hover::after {
