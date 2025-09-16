@@ -542,9 +542,9 @@ body {
 .trash-container::after {
   content: "Ziehen oder Klicken zum Löschen";
   position: fixed;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 0;
+  left: 0;
+  transform: none;
   white-space: nowrap;
   background-color: rgba(0, 0, 0, 0.7);
   color: white;
