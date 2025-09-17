@@ -2455,18 +2455,31 @@ document.addEventListener('DOMContentLoaded', function() {
     confirmButton.addEventListener('click', () => {
       closeDialog();
       
-      // Markieren, dass die Dashboard-Seite beim nächsten Öffnen neu geladen werden soll
+      // Markieren, dass das Dashboard neu geladen werden soll (optional)
       localStorage.setItem('dashboard_reload_requested', 'true');
-      
-      // Tab/Fenster schließen oder zur Dashboard-Seite zurückkehren
-      if (window.opener && !window.opener.closed) {
-        // Wenn das Fenster von einem anderen geöffnet wurde, das öffnende Fenster neu laden
-        window.opener.location.reload();
-        window.close();
-      } else {
-        // Sonst zur Dashboard-Seite navigieren
-        window.location.href = '/kartensets/dashboard/';
+
+      // Nur fürs Testboard: Tab schließen versuchen, sonst freundlich umleiten
+      const isTestBoard = location.hostname === 'test.coaching-card.com';
+
+      if (isTestBoard) {
+        // Lokale Daten aufräumen
+        try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}
+
+        // 1) Tab schließen (funktioniert nur, wenn das Fenster per JS geöffnet wurde)
+        try {
+          // Safari-Workaround
+          window.open('', '_self');
+          window.close();
+          return; // wenn geklappt hat, hier Schluss
+        } catch (e) {}
+
+        // 2) Fallback: auf eine „Danke“-/Ausprobieren-Seite umleiten (keine 404)
+        location.replace('https://coaching-card.com/ausprobieren?closed=1');
+        return;
       }
+
+      // (Produktivpfad – falls du ihn später brauchst)
+      window.location.href = '/kartensets/dashboard/';
     });
     
     // Schließen bei Klick außerhalb des Dialogs
