@@ -697,6 +697,8 @@ document.addEventListener('DOMContentLoaded', function() {
       cards = [];
       
       // Karten für den Stapel erstellen
+      const p = new URLSearchParams(location.search);
+      const boardType = p.get('board') || 'board1';
       // NEU – ersetzt die bisherige deckPath-Zeile:
       const deckSlug = (window.CC_BOOT && window.CC_BOOT.deck)
                     || (boardType === 'boardTest' ? 'test_deck' : 'deck1');
