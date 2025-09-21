@@ -294,7 +294,6 @@ const SessionStorage = {
     const boardNames = {
       'board1': 'Problem-Lösung',
       'boardTest': 'TestBoard',
-      'Problem-Lösung': board1,
       'board2': 'Kartenset 2',
       'board3': 'Freies Feld'
     };
@@ -304,13 +303,12 @@ const SessionStorage = {
   // Hilfsfunktion: Holt die Bild-URL eines Boards basierend auf der ID
   getBoardImage: function(boardId) {
     const boardImages = {
-      'board1': '/assets/images/boards/board1.jpg',
-      'boardTest': '/assets/images/boards/board1.jpg',
-      'Problem-Lösung': '/assets/images/boards/board1.jpg',
-      'board2': '/assets/images/boards/board2.jpg',
-      'board3': '/assets/images/boards/board3.jpg'
+      'board1': 'assets/images/boards/board1.jpg',
+      'boardTest': 'assets/images/boards/board1.jpg',
+      'board2': 'assets/images/boards/board2.jpg',
+      'board3': 'assets/images/boards/board3.jpg'
     };
-    return boardImages[boardId] || '/assets/images/boards/default.jpg';
+    return boardImages[boardId] || 'assets/images/boards/default.jpg';
   }
 };
 
