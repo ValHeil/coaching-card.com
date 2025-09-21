@@ -2,6 +2,16 @@
 <html lang="de">
 <head>
   <base href="/app/">
+  <script>
+  // URL-Params früh auslesen (für Board/Deck)
+  (function () {
+    const p = new URLSearchParams(location.search);
+    window.CC_BOOT = {
+      board: p.get('board') || 'board1',
+      deck:  p.get('deck')  || (p.get('board') === 'boardTest' ? 'test_deck' : 'deck1')
+    };
+  })();
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kartenset Sitzung - Coaching Card</title>
