@@ -9,7 +9,13 @@ function initializeParticipantJoin() {
 
 function handleSessionJoin() {
   // URL-Parameter auslesen
+    // NEU – ganz oben nach dem Lesen der URL-Params:
   const urlParams = new URLSearchParams(window.location.search);
+  let boardType = (window.CC_BOOT && window.CC_BOOT.board) 
+             || (sessionData && sessionData.boardId) 
+             || 'board1';
+
+  // später nutzt du weiter: document.querySelector('.board-area').classList.add(`board-type-${boardType}`);
   const sessionId = urlParams.get('id');
   const isJoining = urlParams.get('join') === 'true';
   
@@ -691,7 +697,12 @@ document.addEventListener('DOMContentLoaded', function() {
       cards = [];
       
       // Karten für den Stapel erstellen
-      const deckPath = (boardType === 'boardTest') ? '/assets/cards/test_deck' : '/assets/cards/deck1';
+      // NEU – ersetzt die bisherige deckPath-Zeile:
+      const deckSlug = (window.CC_BOOT && window.CC_BOOT.deck)
+                    || (boardType === 'boardTest' ? 'test_deck' : 'deck1');
+
+      // WICHTIG: dank <base href="/app/"> KEIN führendes Slash mehr
+      const deckPath = `assets/cards/${deckSlug}`;
       cards = [];
 
       detectCardCount(deckPath).then((totalCards) => {
