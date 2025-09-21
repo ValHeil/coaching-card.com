@@ -1,17 +1,18 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
+  <base href="/app/">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kartenset Sitzung - SichtWeisen</title>
+  <title>Kartenset Sitzung - Coaching Card</title>
   
   <!-- CSS-Dateien einbinden -->
-  <link rel="stylesheet" href="/assets/css/board.css">
-  <link rel="stylesheet" href="/assets/css/board-styles.css">
+  <link rel="stylesheet" href="assets/css/board.css">
+  <link rel="stylesheet" href="assets/css/board-styles.css">
 
   
   <!-- Favicon und App-Icons -->
-  <link rel="icon" href="/assets/images/favicon.ico">
+  <link rel="icon" href="assets/images/favicon.ico">
 </head>
 <body>
   <div class="board-container">
@@ -59,12 +60,12 @@
   </div>
 
   <!-- Sound-Effekte -->
-  <audio id="shuffle-sound" src="/assets/sounds/shuffle.mp3" preload="auto"></audio>
-  <audio id="card-flip-sound" src="/assets/sounds/card-flip.mp3" preload="auto"></audio>
+  <audio id="shuffle-sound" src="assets/sounds/shuffle.mp3" preload="auto"></audio>
+  <audio id="card-flip-sound" src="assets/sounds/card-flip.mp3" preload="auto"></audio>
 
   <!-- JavaScript einbinden -->
-  <script src="{{ '/assets/js/session-storage.js' | relative_url }}"></script>
-  <script src="/assets/js/participant-join.js"></script>
-  <script src="/assets/js/board-interaction.js"></script>
+  <script src="{{ 'assets/js/session-storage.js' | relative_url }}"></script>
+  <script src="assets/js/participant-join.js"></script>
+  <script src="assets/js/board-interaction.js"></script>
 </body>
 </html>
