@@ -92,17 +92,17 @@
 
 .board-type-board1 {
   background-color: #f9f9f9;
-  background-image: url('/assets/images/boards/board1-background.jpg');
+  background-image: url('assets/images/boards/board1-background.jpg');
 }
 
 .board-type-boardTest {
   background-color: #f9f9f9;
-  background-image: url('/assets/images/boards/boardTest-background.jpg');
+  background-image: url('assets/images/boards/boardTest-background.jpg');
 }
 
 .board-type-Problem-Lösung {
   background-color: #f9f9f9;
-  background-image: url('/assets/images/boards/board1-background.jpg');
+  background-image: url('assets/images/boards/board1-background.jpg');
 }
 
 /* Verbesserter Kartenstapel */
@@ -160,7 +160,7 @@
 
 .card-back {
   background-color: #802929;
-  background-image: url('/assets/cards/deck1/card-back.png');
+  background-image: url('assets/cards/deck1/card-back.png');
   background-size: cover;
   background-position: center;
   transform: rotateY(0deg); /* R�ckseite sichtbar */
@@ -171,7 +171,7 @@
 
 /* F�r boardTest: Kartenr�ckseite aus test_deck */
 .board-area.board-type-boardTest .card-back {
-  background-image: url('/assets/cards/test_deck/card-back.png');
+  background-image: url('assets/cards/test_deck/card-back.png');
 }
 
 /* Geflippter Zustand - Beim Klicken soll die Vorderseite sichtbar werden */
