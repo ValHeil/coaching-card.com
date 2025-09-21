@@ -77,6 +77,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Session-ID aus der URL extrahieren
   const urlParams = new URLSearchParams(window.location.search);
   const sessionId = urlParams.get('id');
+  const isJoining = urlParams.get('join') === 'true';
 
   // Sitzungsdaten und Board-Typ
   let sessionData = null;
@@ -261,27 +262,45 @@ document.addEventListener('DOMContentLoaded', function() {
    const urlParams = new URLSearchParams(window.location.search);
    const isJoining = urlParams.get('join') === 'true';
    
+   
     // Aktuellen Benutzer laden
-    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-    if (!currentUser || !currentUser.id) {
-      window.location.href = '/kartensets/login/';
+    const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    if (!isJoining) {
+    const isOwner = session.userId === currentUser?.id;
+    const isParticipant = session.participants &&
+      session.participants.some(p => p.id === currentUser.id);
+
+    if (!isOwner && !isParticipant) {
+      showError("Sie haben keinen Zugriff auf diese Sitzung.");
+      setTimeout(() => {
+        window.location.href = 'https://coaching-card.com/login/';
+      }, 3000);
       return;
     }
-   
-   // Nur für neue Sitzungen (nicht für Beitritte) Anmeldung erforderlich
-   if (!isJoining && !currentUser) {
-     // Wenn nicht angemeldet, zur Login-Seite weiterleiten
-     window.location.href = '/kartensets/login/';
-     return;
-   }
+    }
   
     // Sitzungsdaten aus dem LocalStorage laden
     const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-    sessionData = sessions.find(session => session.id === sessionId);
-    if (!sessionData) {
-      showError("Sitzung nicht gefunden.");
+    let session = sessions.find(s => s.id === sessionId);
+
+    // JOIN-MODUS: ohne LocalStorage weiterarbeiten (minimaler Stub)
+    if (isJoining && !session) {
+      const boardTypeFromUrl = (window.CC_BOOT && window.CC_BOOT.board) || 'board1';
+      session = {
+        id: sessionId,
+        name: 'Teilnehmer-Beitritt',
+        boardName: boardTypeFromUrl,
+        boardId: boardTypeFromUrl,
+        participants: []
+      };
+    }
+
+    // Wenn auch nach Join-Stubs nichts da ist (z. B. Direktaufruf ohne id)
+    if (!session) {
+      showError("Die angeforderte Sitzung existiert nicht.");
       return;
     }
+
 
     // Überprüfen, ob der Benutzer Zugriff auf diese Sitzung hat
     const isOwner = sessionData.userId === currentUser.id;
