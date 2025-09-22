@@ -1,32 +1,36 @@
 // Handled die Beitrittslogik, wenn jemand über einen Teilnahmelink beitritt
 function handleSessionJoin() {
-  // URL-Parameter auslesen
-  const urlParams = new URLSearchParams(window.location.search);
-  const sessionId = urlParams.get('id');
-  const isJoining = urlParams.get('join') === 'true';
-  
+  const urlParams  = new URLSearchParams(window.location.search);
+  const sessionId  = urlParams.get('id');
+  const isJoining  = urlParams.get('join') === 'true';
+
+  // NEU: Wenn wir aus der Token-Seite (externer Join-Flow) kommen, hier NICHTS tun.
+  if (isJoining && (window.parent && window.parent.__ccSessionId)) {
+    console.debug('[JOIN] Externer Join-Flow aktiv – participant-join.js tut nichts.');
+    return true;
+  }
+
   if (!sessionId) {
     showError("Ungültiger Link: Keine Sitzungs-ID gefunden.");
     return false;
   }
-  
-  // Sitzungsdaten laden
+
   const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-  const session = sessions.find(s => s.id === sessionId);
-  
+  const session  = sessions.find(s => s.id === sessionId);
+
   if (!session) {
     showError("Die angeforderte Sitzung existiert nicht.");
     return false;
   }
-  
-  // Wenn es ein Beitritt ist (über einen Teilnehmerlink)
-  if (isJoining) {
+
+  // Normaler (Dashboard-)Aufruf: ggf. Passwort/Name abfragen
+  const isLocalJoin = urlParams.get('join') === 'true';
+  if (isLocalJoin) {
     return handleParticipantJoin(session);
   }
-  
-  // Normale Sitzungsöffnung (eigene Sitzung)
   return true;
 }
+
 
 // Handled den Beitritt eines Teilnehmers
 function handleParticipantJoin(session) {
