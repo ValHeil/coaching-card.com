@@ -27,6 +27,10 @@ function handleSessionJoin() {
   // Sitzungsdaten laden
   const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
   const session = sessions.find(s => s.id === sessionId);
+  // FIX: sessionData befüllen und Board-Typ festlegen
+  sessionData = session;
+  boardType = (window.CC_BOOT && window.CC_BOOT.board) || sessionData?.boardId || 'board1';
+
   
   if (!session) {
     showError("Die angeforderte Sitzung existiert nicht.");
@@ -265,19 +269,17 @@ document.addEventListener('DOMContentLoaded', function() {
    
     // Aktuellen Benutzer laden
     const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    // Rechteprüfung NACHDEM sessionData gesetzt wurde
     if (!isJoining) {
-    const isOwner = session.userId === currentUser?.id;
-    const isParticipant = session.participants &&
-      session.participants.some(p => p.id === currentUser.id);
+      const isOwner = sessionData?.participants?.some(p => p.id === currentUser?.id && p.role === 'owner');
+      const isParticipant = sessionData?.participants?.some(p => p.id === currentUser?.id);
+      if (!isOwner && !isParticipant) {
+        showError("Sie haben keinen Zugriff auf diese Sitzung.");
+        setTimeout(() => { window.location.href = '/kartensets/dashboard/'; }, 3000);
+        return;
+      }
+    }
 
-    if (!isOwner && !isParticipant) {
-      showError("Sie haben keinen Zugriff auf diese Sitzung.");
-      setTimeout(() => {
-        window.location.href = 'https://coaching-card.com/login/';
-      }, 3000);
-      return;
-    }
-    }
   
     // Sitzungsdaten aus dem LocalStorage laden
     const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
