@@ -5,13 +5,32 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Sitzung</title>
 
-  <!-- WICHTIG: Assets sollen von /app/ kommen -->
+  <!-- Assets kommen von /app/, unabhängig davon wo die HTML-Datei liegt -->
   <base href="/app/">
 
-  <!-- (optional) CSS, wenn du Styles trennst -->
-  <link rel="stylesheet" href="assets/css/board-styles.css">
-  <link rel="stylesheet" href="assets/css/kartensets.css">
+  <!-- CSS (absolute Pfade) -->
+  <link rel="stylesheet" href="/app/assets/css/board-styles.css">
+  <link rel="stylesheet" href="/app/assets/css/kartensets.css">
+
+  <!-- Fallback: wenn /app/ nicht erreichbar ist, probiere /kartensets/ -->
+  <script>
+    (function () {
+      function add(href) {
+        var l = document.createElement('link');
+        l.rel = 'stylesheet'; l.href = href;
+        document.head.appendChild(l);
+        return l;
+      }
+      window.addEventListener('error', function (e) {
+        if (e.target && e.target.tagName === 'LINK' && /assets\/css\//.test(e.target.href)) {
+          var alt = e.target.href.replace('/app/', '/kartensets/');
+          if (alt !== e.target.href) add(alt);
+        }
+      }, true);
+    })();
+  </script>
 </head>
+
 
 <body>
   <div class="board-container">
@@ -63,8 +82,8 @@
   <audio id="card-flip-sound" src="assets/sounds/card-flip.mp3" preload="auto"></audio>
 
   <!-- JavaScript einbinden -->
-  <script src="assets/js/session-storage.js"></script>
-  <script src="assets/js/participant-join.js"></script>
-  <script src="assets/js/board-interaction.js"></script>
+  <script src="/app/assets/js/session-storage.js"></script>
+  <script src="/app/assets/js/participant-join.js"></script>
+  <script src="/app/assets/js/board-interaction.js"></script>
 </body>
 </html>
