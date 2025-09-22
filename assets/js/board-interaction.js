@@ -1085,29 +1085,6 @@ document.addEventListener('DOMContentLoaded', function() {
     (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'));
 
     if (isInTextInput) return;
-
-    const key = (e.key || '').toLowerCase();
-    // F: Karte umdrehen (bevorzugt die aktuell gehoverte, sonst Top-Karte)
-    if (key === 'f') {
-    const targetCard = window.hoveredCard || findTopCard();
-    if (targetCard) {
-    console.log('F-Taste gedrückt - Karte umdrehen');
-    flipCard(targetCard);
-    }
-    }
-    // M: Mischen (immer erlauben, kein Hover erforderlich)
-    if (key === 'm') {
-    console.log('M-Taste gedrückt - Karten mischen');
-    shuffleCards();
-    }
-    // B: Karte zurück zum Stapel (bevorzugt gehoverte, sonst Top-Karte)
-    if (key === 'b') {
-    const targetCard = window.hoveredCard || findTopCard();
-    if (targetCard) {
-    console.log('B-Taste gedrückt - Karte zurück zum Stapel');
-    returnCardToStack(targetCard);
-    }
-    }
     });
   };
 
