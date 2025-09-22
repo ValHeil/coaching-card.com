@@ -259,38 +259,46 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
-     // Debug-Ausgaben hinzufügen
+    // Debug
     console.log("[DEBUG] Lade Sitzung:", sessionId);
 
-   // Prüfen, ob es ein Beitritt über einen Link ist
-   const urlParams = new URLSearchParams(window.location.search);
-   const isJoining = urlParams.get('join') === 'true';
-   
-   
-    // Aktuellen Benutzer laden
+    // Join-Flag & Parameter lesen
+    const urlParams  = new URLSearchParams(window.location.search);
+    const isJoining  = urlParams.get('join') === 'true';
+    const boardParam = urlParams.get('board') || ((window.CC_BOOT && window.CC_BOOT.board) || 'board1');
+    const deckParam  = urlParams.get('deck')  || ((window.CC_BOOT && window.CC_BOOT.deck)  || 'deck1');
+
+    // Aktuellen Benutzer (nur für Owner/Teilnehmer-Check außerhalb des Join-Flows)
     const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
 
-  
-    // Sitzungsdaten aus dem LocalStorage laden
+    // Sitzung aus localStorage holen
     const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-    let session = sessions.find(s => s.id === sessionId);
-    sessionData = session || null;
+    let session     = sessions.find(s => s.id === sessionId) || null;
+    sessionData     = session;
 
-    // JOIN-MODUS: ohne LocalStorage weiterarbeiten (minimaler Stub)
+    // JOIN-FLOW: kein localStorage vorhanden? → minimalen Stub erzeugen
     if (isJoining && !session) {
-      const boardTypeFromUrl = (window.CC_BOOT && window.CC_BOOT.board) || 'board1';
       session = {
         id: sessionId,
-        name: 'Teilnehmer-Beitritt',
-        boardName: boardTypeFromUrl,
-        boardId: boardTypeFromUrl,
+        name: 'Sitzung',
+        boardName: boardParam,
+        boardId: boardParam,
         participants: []
       };
+      sessionData = session;
     }
 
+    // Wenn es selbst mit Stub nichts gibt → Fehler (aber KEIN Redirect im Join-Flow!)
+    if (!sessionData) {
+      showError("Die angeforderte Sitzung existiert nicht.");
+      console.warn("[DEBUG] Keine Sitzung im localStorage gefunden; join=", isJoining);
+      return;
+    }
+
+    // Nur außerhalb des Join-Flows Zugriff prüfen und ggf. zurück ins Dashboard
     if (!isJoining) {
-      const isOwner = sessionData?.participants?.some(p => p.id === currentUser?.id && p.role === 'owner');
-      const isParticipant = sessionData?.participants?.some(p => p.id === currentUser?.id);
+      const isOwner       = !!sessionData.participants?.some(p => p.id === currentUser?.id && p.role === 'owner');
+      const isParticipant = !!sessionData.participants?.some(p => p.id === currentUser?.id);
       if (!isOwner && !isParticipant) {
         showError("Sie haben keinen Zugriff auf diese Sitzung.");
         setTimeout(() => { window.location.href = '/kartensets/dashboard/'; }, 3000);
@@ -298,58 +306,34 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
 
-    // Wenn auch nach Join-Stubs nichts da ist (z. B. Direktaufruf ohne id)
-    if (!session) {
-      showError("Die angeforderte Sitzung existiert nicht.");
-      return;
-    }
+    console.log("[DEBUG] Sitzungsdaten:", sessionData);
 
+    // UI mit Sitzungsdaten füllen
+    boardTitle.textContent       = sessionData.name || 'Sitzung';
+    boardTypeElement.textContent = sessionData.boardName || sessionData.boardId || '';
+    boardType                    = sessionData.boardId || 'board1';
 
-    // Überprüfen, ob der Benutzer Zugriff auf diese Sitzung hat
-    const isOwner = !!sessionData?.participants?.some(p => p.id === currentUser?.id && p.role === 'owner');
-    const isParticipant = !!sessionData?.participants?.some(p => p.id === currentUser?.id);
-
-    
-    if (!isOwner && !isParticipant) {
-      showError("Sie haben keinen Zugriff auf diese Sitzung.");
-      setTimeout(() => {
-        window.location.href = '/kartensets/dashboard/';
-      }, 3000);
-      return;
-    }
-  
-    console.log("[DEBUG] Sitzungsdaten geladen:", sessionData);
-    console.log("[DEBUG] BoardState vorhanden:", !!sessionData.boardState);
-    
-    // UI mit Sitzungsdaten aktualisieren
-    boardTitle.textContent = sessionData.name;
-    boardTypeElement.textContent = sessionData.boardName;
-  
-    // Board-Typ speichern
-    boardType = sessionData.boardId;
-  
-    // Letzten Zugriff aktualisieren
+    // Metadatum "zuletzt geöffnet"
     updateLastAccess();
-  
-    // Board initialisieren
+
+    // Board aufbauen
     initializeBoard();
 
-    // WICHTIG: Gespeicherten Board-Zustand NACH der Initialisierung laden
-    console.log("[DEBUG] Versuche gespeicherten Board-Zustand zu laden...");
-    const loadResult = loadSavedBoardState();
-    console.log("[DEBUG] Laden des Board-Zustands:", loadResult ? "Erfolgreich" : "Fehlgeschlagen");
+    // Gespeicherten Zustand nach dem Aufbau laden
+    setTimeout(() => {
+      const ok = loadSavedBoardState();
+      console.log("[DEBUG] Zustand geladen:", ok);
+    }, 0);
 
-    // Passwort-Prompt-Styles hinzufügen
-    if (typeof addPasswordPromptStyles === 'function') {
-      addPasswordPromptStyles();
+    // Nur außerhalb des Join-Flows: Local-Join-Dialoge
+    if (!isJoining && typeof handleSessionJoin === 'function') {
+      handleSessionJoin();
     }
-    
-    // Session-Beitritt behandeln
-    handleSessionJoin();
-    
-    // Debug-Funktionen aufrufen
+
+    // Debug
     setTimeout(debugLocalStorage, 1000);
   };
+
 
   // Letzten Zugriff auf die Sitzung aktualisieren
   const updateLastAccess = () => {
@@ -358,9 +342,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
     const updatedSessions = sessions.map(session => {
       if (session.id === sessionId) {
-        return {
-          ...session,
-          lastOpened: new Date().toISOString()
+        return {...session, lastOpened: new Date().toISOString()
         };
       }
       return session;
@@ -2646,10 +2628,7 @@ document.addEventListener('DOMContentLoaded', function() {
       // Sitzung mit der angegebenen ID finden und aktualisieren
       const updatedSessions = sessions.map(session => {
         if (session.id === sessionId) {
-          return {
-            ...session,
-            boardState: boardState,
-            lastEdited: new Date().toISOString()
+          return {...session, boardState: boardState, lastEdited: new Date().toISOString()
           };
         }
         return session;
