@@ -91,19 +91,21 @@
 }
 
 .board-type-board1 {
-  background-color: #f9f9f9;
-  background-image: url('assets/images/boards/board1-background.jpg');
+  background-color: #f9ecd2;
+  background-image: url('/app/assets/images/boards/board1-background.jpg');
 }
 
 .board-type-boardTest {
-  background-color: #f9f9f9;
-  background-image: url('assets/images/boards/boardTest-background.jpg');
+  background-color: #f9ecd2;
+  background-image: url('/app/assets/images/boards/boardTest-background.jpg');
 }
 
 .board-type-Problem-Lösung {
-  background-color: #f9f9f9;
-  background-image: url('assets/images/boards/board1-background.jpg');
+  background-color: #f9ecd2;
+  background-image: url('/app/assets/images/boards/board1-background.jpg');
 }
+
+
 
 /* Verbesserter Kartenstapel */
 .card-stack {
