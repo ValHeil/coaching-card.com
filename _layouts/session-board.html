@@ -1,29 +1,18 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <base href="/app/">
-  <script>
-  // URL-Params früh auslesen (für Board/Deck)
-  (function () {
-    const p = new URLSearchParams(location.search);
-    window.CC_BOOT = {
-      board: p.get('board') || 'board1',
-      deck:  p.get('deck')  || (p.get('board') === 'boardTest' ? 'test_deck' : 'deck1')
-    };
-  })();
-  </script>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kartenset Sitzung - Coaching Card</title>
-  
-  <!-- CSS-Dateien einbinden -->
-  <link rel="stylesheet" href="assets/css/board.css">
-  <link rel="stylesheet" href="assets/css/board-styles.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sitzung</title>
 
-  
-  <!-- Favicon und App-Icons -->
-  <link rel="icon" href="assets/images/favicon.ico">
+  <!-- WICHTIG: Assets sollen von /app/ kommen -->
+  <base href="/app/">
+
+  <!-- (optional) CSS, wenn du Styles trennst -->
+  <link rel="stylesheet" href="assets/css/board-styles.css">
+  <link rel="stylesheet" href="assets/css/kartensets.css">
 </head>
+
 <body>
   <div class="board-container">
     <header class="board-header">
