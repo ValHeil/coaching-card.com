@@ -662,7 +662,7 @@ document.addEventListener('DOMContentLoaded', function() {
     participantsContainer.innerHTML = '';
     
     // Teilnehmer der Sitzung anzeigen
-    const participants = sessionData.participants || [];
+    const participants = (window.sessionData?.participants) || [];
     
     participants.forEach(participant => {
       const participantElement = document.createElement('div');
