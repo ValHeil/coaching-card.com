@@ -6,6 +6,23 @@ window.cards          = window.cards          || [];
 window.notes          = window.notes          || [];
 window.participants   = window.participants   || [];
 
+// CC_INIT vom Token-Wrapper entgegennehmen (Name/Board/Deck)
+window.addEventListener('message', (ev) => {
+  const d = ev.data || {};
+  if (d.type !== 'CC_INIT' || !d.config) return;
+
+  window.CC_BOOT = d.config; // global merken
+
+  // H1 oben füllen
+  const sess = d.config.session || {};
+  if (sess.name) {
+    const h = document.getElementById('board-title');
+    if (h) h.textContent = sess.name;
+  }
+  if (sess.board) window.boardType = (typeof canonBoardSlug === 'function') ? canonBoardSlug(sess.board) : (sess.board||'board1');
+  if (sess.deck)  window.deck      = (typeof canonDeckSlug  === 'function') ? canonDeckSlug(sess.deck)  : (sess.deck||'deck1');
+});
+
 // Kanonische Slugs -> interne Keys
 function canonBoardSlug(s='') {
   s = (s || '').toString().toLowerCase();
@@ -341,7 +358,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // UI füllen (wenn Variablen vorhanden sind)
-    try { if (typeof boardTitle !== 'undefined' && boardTitle) boardTitle.textContent = window.sessionData.name || 'Sitzung'; } catch{}
+    // Titel setzen – zuerst Name aus CC_BOOT, dann Fallback auf sessionData
+    try {
+      const fromBoot = window.CC_BOOT?.session?.name;
+      if (boardTitle) boardTitle.textContent = fromBoot || (window.sessionData?.name || 'Sitzung');
+    } catch {}
     try { if (typeof boardTypeElement !== 'undefined' && boardTypeElement) boardTypeElement.textContent = window.sessionData.boardName || window.sessionData.boardId || effBoard; } catch{}
 
     // Metadatum & Board aufbauen
@@ -448,8 +469,40 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Event-Listener für Aktionen einrichten
     setupEventListeners();
+
+    // skaliert das Board so, dass alles in den Viewport passt (nie größer als 1.0)
+    function fitBoardToViewport(){
+      const area = document.querySelector('.board-area');
+      if (!area) return;
+
+      // kurz zurücksetzen zum Messen
+      const prev = area.style.transform;
+      area.style.transform = 'none';
+
+      const naturalW = Math.max(area.scrollWidth,  area.getBoundingClientRect().width);
+      const naturalH = Math.max(area.scrollHeight, area.getBoundingClientRect().height);
+
+      const availW = window.innerWidth;
+      const availH = window.innerHeight;
+
+      const scale = Math.min(availW / naturalW, availH / naturalH, 1);
+
+      area.style.transformOrigin = 'top center';
+      area.style.transform = `scale(${scale})`;
+    }
+
+    // beim Start & bei Resize anwenden
+    window.addEventListener('resize', (() => {
+      let t; 
+      return () => { clearTimeout(t); t = setTimeout(fitBoardToViewport, 120); };
+    })());
+
+    fitBoardToViewport();
   };
   
+
+
+
   // Ablageplätze für Karten erstellen
   const createCardPlaceholders = () => {
     if (boardType === 'board1' || boardType === 'boardTest') {
