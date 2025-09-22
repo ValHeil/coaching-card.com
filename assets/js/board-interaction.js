@@ -6,22 +6,42 @@ window.cards          = window.cards          || [];
 window.notes          = window.notes          || [];
 window.participants   = window.participants   || [];
 
+// Kanonische Slugs -> interne Keys
 function canonBoardSlug(s='') {
   s = (s || '').toString().toLowerCase();
-  if ([
-    'problem-lösung','problem-loesung','problemlösung','problem',
-    'problem_loesung','board_problem_loesung'
-  ].includes(s)) return 'board1';
+  if (['problem-lösung','problem-loesung','problemlösung','problem','problem_loesung','board_problem_loesung'].includes(s)) return 'board1';
   if (['boardtest','testboard','board_test'].includes(s)) return 'boardTest';
   return s || 'board1';
 }
-
 function canonDeckSlug(s='') {
   s = (s || '').toString().toLowerCase();
   if (['starterdeck','starter','deck_starter','startkarten'].includes(s)) return 'deck1';
   if (['testdeck','test_deck'].includes(s)) return 'test_deck';
   return s || 'deck1';
 }
+
+// kleine Boot-Konfig (vom Token-Host per postMessage optional gesetzt)
+window.CC_BOOT = window.CC_BOOT || {};
+
+// ------------------------------------------------------------------
+// WICHTIG: Effektiven Board/Deck-Typ aus URL/Boot/Sitzung ermitteln
+// und auf 'board1' fallbacken, wenn etwas Unbekanntes kommt.
+// ------------------------------------------------------------------
+function resolveBoardAndDeck() {
+  const url = new URLSearchParams(location.search);
+  const rawBoard = url.get('board') || (window.CC_BOOT && window.CC_BOOT.board) || (window.sessionData && window.sessionData.boardId) || 'board1';
+  const rawDeck  = url.get('deck')  || (window.CC_BOOT && window.CC_BOOT.deck)  || 'deck1';
+
+  let b = canonBoardSlug(rawBoard);
+  let d = canonDeckSlug(rawDeck);
+
+  // Fallbacks: wenn trotzdem etwas Exotisches reinrutscht -> board1/deck1
+  if (!['board1','boardTest'].includes(b)) b = 'board1';
+  if (!d) d = 'deck1';
+
+  return { board: b, deck: d };
+}
+
 
 /* Kompat: wird vom Token/Join-Flow ggf. gesetzt */
 window.CC_BOOT = window.CC_BOOT || {};
@@ -266,90 +286,80 @@ document.addEventListener('DOMContentLoaded', function() {
     'board2': "#0000ff"  // Blau
   };
 
-  // Session laden und Board initialisieren
-  const loadSession = () => {
-    if (!sessionId) {
-      showError("Keine gültige Sitzungs-ID gefunden.");
-      return;
-    }
+  // Session laden und Board initialisieren (JOIN-Flow-sicher, mit Mapping)
+  function loadSession() {
+    // --- kleine Helfer lokal halten, um keine Globals zu verschmutzen ---
+    const canonBoardSlug = (s = '') => {
+      s = String(s || '').toLowerCase();
+      if (['problem-lösung','problem-loesung','problemlösung','problem','problem_loesung','board_problem_loesung'].includes(s)) return 'board1';
+      if (['boardtest','testboard','board_test'].includes(s)) return 'boardTest';
+      return s || 'board1';
+    };
+    const canonDeckSlug = (s = '') => {
+      s = String(s || '').toLowerCase();
+      if (['starterdeck','starter','deck_starter','startkarten'].includes(s)) return 'deck1';
+      if (['testdeck','test_deck'].includes(s)) return 'test_deck';
+      return s || 'deck1';
+    };
 
-    // Debug
-    console.log("[DEBUG] Lade Sitzung:", sessionId);
+    const url = new URLSearchParams(window.location.search);
+    const sid = url.get('id') || window.sessionId;
+    if (!sid) { showError('Keine gültige Sitzungs-ID gefunden.'); return; }
 
-    // Join-Flag & Parameter lesen
-    const urlParams  = new URLSearchParams(window.location.search);
-    const isJoining  = urlParams.get('join') === 'true';
-    const boardParam = urlParams.get('board') || ((window.CC_BOOT && window.CC_BOOT.board) || 'board1');
-    const rawBoard = urlParams.get('board') || (window.CC_BOOT && window.CC_BOOT.board) || (sessionData && sessionData.boardId) || 'board1';
-    const rawDeck  = urlParams.get('deck')  || (window.CC_BOOT && window.CC_BOOT.deck)  || 'deck1';
-    boardType = canonBoardSlug(rawBoard);
-    const deckParam = canonDeckSlug(rawDeck);
+    const isJoining = url.get('join') === 'true';
 
-    // Aktuellen Benutzer (nur für Owner/Teilnehmer-Check außerhalb des Join-Flows)
-    const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    // Effektive Board/Deck-Werte aus URL / Boot / Sitzung bestimmen und normalisieren
+    const rawBoard = url.get('board') || (window.CC_BOOT && window.CC_BOOT.board) || (window.sessionData && window.sessionData.boardId) || 'board1';
+    const rawDeck  = url.get('deck')  || (window.CC_BOOT && window.CC_BOOT.deck)  || 'deck1';
+    let effBoard = canonBoardSlug(rawBoard);
+    let effDeck  = canonDeckSlug(rawDeck);
+    if (!['board1','boardTest'].includes(effBoard)) effBoard = 'board1';
+    if (!effDeck) effDeck = 'deck1';
 
-    // Sitzung aus localStorage holen
+    // Sitzung laden (oder Stub für externen Join)
     const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-    let session     = sessions.find(s => s.id === sessionId) || null;
-    sessionData     = session;
-
-    // JOIN-FLOW: kein localStorage vorhanden? → minimalen Stub erzeugen
-    if (isJoining && !session) {
-      session = {
-        id: sessionId,
-        name: 'Sitzung',
-        boardName: boardParam,
-        boardId: boardParam,
-        participants: []
-      };
-      sessionData = session;
+    let s = sessions.find(x => String(x.id) === String(sid)) || null;
+    if (isJoining && !s) {
+      s = { id: sid, name: 'Sitzung', boardName: effBoard, boardId: effBoard, participants: [] };
     }
+    if (!s) { showError('Die angeforderte Sitzung existiert nicht.'); return; }
 
-    // Wenn es selbst mit Stub nichts gibt → Fehler (aber KEIN Redirect im Join-Flow!)
-    if (!sessionData) {
-      showError("Die angeforderte Sitzung existiert nicht.");
-      console.warn("[DEBUG] Keine Sitzung im localStorage gefunden; join=", isJoining);
-      return;
-    }
+    // Globals belegen (wichtig: KEIN "let" davor, wir schreiben auf window.*)
+    window.sessionData = s;
+    window.boardType   = effBoard;
 
-    // Nur außerhalb des Join-Flows Zugriff prüfen und ggf. zurück ins Dashboard
+    // Zugriff nur prüfen, wenn NICHT im externen Join-Flow
     if (!isJoining) {
-      const isOwner       = !!sessionData.participants?.some(p => p.id === currentUser?.id && p.role === 'owner');
-      const isParticipant = !!sessionData.participants?.some(p => p.id === currentUser?.id);
+      const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+      const isOwner       = !!window.sessionData?.participants?.some(p => p.id === currentUser?.id && p.role === 'owner');
+      const isParticipant = !!window.sessionData?.participants?.some(p => p.id === currentUser?.id);
       if (!isOwner && !isParticipant) {
-        showError("Sie haben keinen Zugriff auf diese Sitzung.");
-        setTimeout(() => { window.location.href = '/kartensets/dashboard/'; }, 3000);
+        showError('Sie haben keinen Zugriff auf diese Sitzung.');
+        if (window.top === window.self) setTimeout(() => { window.location.href = '/kartensets/dashboard/'; }, 3000);
         return;
       }
     }
 
-    console.log("[DEBUG] Sitzungsdaten:", sessionData);
+    // UI füllen (wenn Variablen vorhanden sind)
+    try { if (typeof boardTitle !== 'undefined' && boardTitle) boardTitle.textContent = window.sessionData.name || 'Sitzung'; } catch{}
+    try { if (typeof boardTypeElement !== 'undefined' && boardTypeElement) boardTypeElement.textContent = window.sessionData.boardName || window.sessionData.boardId || effBoard; } catch{}
 
-    // UI mit Sitzungsdaten füllen
-    boardTitle.textContent       = sessionData.name || 'Sitzung';
-    boardTypeElement.textContent = sessionData.boardName || sessionData.boardId || '';
-    boardType                    = sessionData.boardId || 'board1';
+    // Metadatum & Board aufbauen
+    try { if (typeof updateLastAccess === 'function') updateLastAccess(); } catch {}
+    if (typeof initializeBoard === 'function') initializeBoard();
 
-    // Metadatum "zuletzt geöffnet"
-    updateLastAccess();
-
-    // Board aufbauen
-    initializeBoard();
-
-    // Gespeicherten Zustand nach dem Aufbau laden
+    // Zustand laden (nach dem Aufbau)
     setTimeout(() => {
-      const ok = loadSavedBoardState();
-      console.log("[DEBUG] Zustand geladen:", ok);
+      try { if (typeof loadSavedBoardState === 'function') loadSavedBoardState(); } catch(e) { console.warn('loadSavedBoardState fehlgeschlagen:', e); }
     }, 0);
 
-    // Nur außerhalb des Join-Flows: Local-Join-Dialoge
-    if (!isJoining && typeof handleSessionJoin === 'function') {
-      handleSessionJoin();
-    }
+    // Lokaler Join-Dialog nur außerhalb des externen Join-Flows
+    try { if (!isJoining && typeof handleSessionJoin === 'function') handleSessionJoin(); } catch {}
 
-    // Debug
-    setTimeout(debugLocalStorage, 1000);
-  };
+    // Debug (optional)
+    try { if (typeof debugLocalStorage === 'function') setTimeout(() => debugLocalStorage(), 1000); } catch {}
+  }
+
 
 
   // Letzten Zugriff auf die Sitzung aktualisieren
@@ -698,79 +708,89 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // Karten erstellen und als Stapel anordnen
-  const createCards = () => {
-    if (boardType === 'board1' || boardType === 'boardTest') {
-      // Referenz zum "Fester Platz für Problem-Lösung"
-      const infoBox = document.querySelector('.board-info-box');
-      if (!infoBox) return;
-      
-      // Infobox leeren (Text entfernen)
-      infoBox.textContent = '';
-      infoBox.style.position = 'relative';
-      
-      // Kartenstapel-Container erstellen
-      const cardStack = document.createElement('div');
-      cardStack.className = 'card-stack';
-      cardStack.id = 'card-stack';
-      infoBox.appendChild(cardStack);
-      
-      // Karten-Array zurücksetzen, um sicherzustellen, dass wir mit einer leeren Liste beginnen
-      cards = [];
-      
-      // Karten für den Stapel erstellen
-      const p = new URLSearchParams(location.search);
-      const boardType = p.get('board') || 'board1';
-      // NEU – ersetzt die bisherige deckPath-Zeile:
-      const deckSlug = canonDeckSlug(
-        (window.CC_BOOT && window.CC_BOOT.deck) || (boardType === 'boardTest' ? 'test_deck' : 'deck1')
-      );
-      // WICHTIG: dank <base href="/app/"> KEIN führendes Slash mehr
-      const deckPath = `assets/cards/${deckSlug}`;
-      cards = [];
+  // Kartenstapel für board1/boardTest erzeugen (Decks robust auflösen)
+  function createCards() {
+    // Nur unsere Board-Typen haben den Kartenstapel
+    if (window.boardType !== 'board1' && window.boardType !== 'boardTest') return;
 
-      detectCardCount(deckPath).then((totalCards) => {
-      // Falls du unbedingt “-1” willst, dann: totalCards = Math.max(0, totalCards - 1);
-      if (!totalCards || totalCards < 1) {
-      console.warn('Keine Kartenbilder gefunden unter', deckPath);
+    // Helfer lokal
+    const canonDeckSlug = (s = '') => {
+      s = String(s || '').toLowerCase();
+      if (['starterdeck','starter','deck_starter','startkarten'].includes(s)) return 'deck1';
+      if (['testdeck','test_deck'].includes(s)) return 'test_deck';
+      return s || 'deck1';
+    };
+    const resolveDeck = () => {
+      const url = new URLSearchParams(location.search);
+      const raw = url.get('deck') || (window.CC_BOOT && window.CC_BOOT.deck) || (window.boardType === 'boardTest' ? 'test_deck' : 'deck1');
+      return canonDeckSlug(raw);
+    };
+
+    // Zielcontainer (linke Info-Box) suchen
+    const infoBox = document.querySelector('.board-info-box') || document.getElementById('board-info-box');
+    if (!infoBox) { console.warn('createCards(): .board-info-box nicht gefunden'); return; }
+
+    // Container vorbereiten
+    infoBox.textContent = '';
+    infoBox.style.position = 'relative';
+
+    // Kartenstapel-Element
+    const stack = document.createElement('div');
+    stack.className = 'card-stack';
+    stack.id = 'card-stack';
+    infoBox.appendChild(stack);
+
+    // Globale Arrays initialisieren
+    window.cards = [];
+    const deckSlug = resolveDeck();
+    const deckPath = `assets/cards/${deckSlug}`;
+
+    // Anzahl Karten feststellen und Stapel aufbauen
+    if (typeof detectCardCount !== 'function') {
+      console.warn('detectCardCount() fehlt – Karten können nicht geladen werden.');
       return;
-      }
-
-      for (let i = 1; i <= totalCards; i++) {
-      const card = document.createElement('div');
-      card.className = 'card';
-      card.id = `card-${i}`;
-      card.dataset.cardId = i;
-
-      const offset = (i - 1) * 0.5;
-      card.style.position = 'absolute';
-      card.style.left = `${offset}px`;
-      card.style.top = `${offset}px`;
-      card.style.zIndex = i;
-
-      card.innerHTML = `
-        <div class="card-front">
-          <img src="${deckPath}/card${i}.png" alt="Karte ${i}" style="width: 100%; height: 100%; object-fit: contain;">
-        </div>
-        <div class="card-back">
-          <div class="card-back-design"></div>
-        </div>
-      `;
-
-      card.addEventListener('dblclick', () => flipCard(card));
-      cardStack.appendChild(card);
-      cards.push(card);
-      makeDraggable(card);
-      }
-
-      setTimeout(() => shuffleCards(), 500);
-
-      // Falls loadSavedBoardState knapp vorher schon lief, hier optional erneut versuchen:
-      if (typeof loadSavedBoardState === 'function') {
-      try { loadSavedBoardState(); } catch (e) { console.warn('Zustand konnte nicht geladen werden:', e); }
-      }
-      });
     }
+
+    detectCardCount(deckPath).then((total) => {
+      if (!total || total < 1) {
+        console.warn('Keine Kartenbilder gefunden unter', deckPath);
+        return;
+      }
+
+      for (let i = 1; i <= total; i++) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.id = `card-${i}`;
+        card.dataset.cardId = String(i);
+
+        // leichte Staffelung
+        const offset = (i - 1) * 0.5;
+        card.style.position = 'absolute';
+        card.style.left = `${offset}px`;
+        card.style.top  = `${offset}px`;
+        card.style.zIndex = i;
+
+        card.innerHTML = `
+          <div class="card-front">
+            <img src="${deckPath}/card${i}.png" alt="Karte ${i}" style="width:100%;height:100%;object-fit:contain;">
+          </div>
+          <div class="card-back"><div class="card-back-design"></div></div>
+        `;
+
+        // Interaktionen
+        if (typeof flipCard === 'function') card.addEventListener('dblclick', () => flipCard(card));
+        if (typeof makeDraggable === 'function') makeDraggable(card);
+
+        stack.appendChild(card);
+        window.cards.push(card);
+      }
+
+      // kurz warten, dann mischen + gespeicherten Zustand versuchen
+      setTimeout(() => { if (typeof shuffleCards === 'function') shuffleCards(); }, 300);
+      try { if (typeof loadSavedBoardState === 'function') loadSavedBoardState(); } catch(e) { console.warn('Zustand konnte nicht geladen werden:', e); }
+    });
   }
+
 
   // Karte zum Stapel zurücklegen
   function returnCardToStack(card) {
