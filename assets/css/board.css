@@ -160,7 +160,7 @@
 
 .card-back {
   background-color: #802929;
-  background-image: url('assets/cards/deck1/card-back.png');
+  background-image: url('/app/assets/cards/deck1/card-back.png');
   background-size: cover;
   background-position: center;
   transform: rotateY(0deg); /* R�ckseite sichtbar */
@@ -171,7 +171,7 @@
 
 /* F�r boardTest: Kartenr�ckseite aus test_deck */
 .board-area.board-type-boardTest .card-back {
-  background-image: url('assets/cards/test_deck/card-back.png');
+  background-image: url('/app/assets/cards/test_deck/card-back.png');
 }
 
 /* Geflippter Zustand - Beim Klicken soll die Vorderseite sichtbar werden */
