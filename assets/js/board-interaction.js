@@ -33,16 +33,15 @@ function handleSessionJoin() {
   const isJoining = url.get('join') === 'true';
   if (!sid) { showError('Ungültiger Link: Keine Sitzungs-ID gefunden.'); return false; }
 
-  // Lokale Sitzungen
   const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
   const s = sessions.find(x => x.id === sid) || null;
 
-  // Externer Join-Flow ohne lokalen Eintrag: Minimal-Stub
+  // Externer Join-Flow (kein lokaler Eintrag) -> Minimal-Stub
   if (isJoining && !s) {
     window.sessionData = {
       id: sid,
       name: 'Sitzung',
-      boardId: canonBoardSlug(url.get('board') || window.CC_BOOT.board),
+      boardId: canonBoardSlug(url.get('board') || (window.CC_BOOT && window.CC_BOOT.board)),
       participants: []
     };
     return true;
@@ -53,50 +52,12 @@ function handleSessionJoin() {
   return true;
 }
 
+
 // In der board-interaction.js müssen Sie diese Funktion aufrufen
 function initializeParticipantJoin() {
   if (window.addParticipantNamePromptStyles) {
     window.addParticipantNamePromptStyles();
   }
-}
-
-function handleSessionJoin() {
-  // URL-Parameter auslesen
-    // NEU – ganz oben nach dem Lesen der URL-Params:
-  const urlParams = new URLSearchParams(window.location.search);
-  let boardType = (window.CC_BOOT && window.CC_BOOT.board) 
-             || (sessionData && sessionData.boardId) 
-             || 'board1';
-
-  // später nutzt du weiter: document.querySelector('.board-area').classList.add(`board-type-${boardType}`);
-  const sessionId = urlParams.get('id');
-  const isJoining = urlParams.get('join') === 'true';
-  
-  if (!sessionId) {
-    showError("Ungültiger Link: Keine Sitzungs-ID gefunden.");
-    return false;
-  }
-  
-  // Sitzungsdaten laden
-  const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-  const session = sessions.find(s => s.id === sessionId);
-  // FIX: sessionData befüllen und Board-Typ festlegen
-  sessionData = session;
-  boardType = (window.CC_BOOT && window.CC_BOOT.board) || sessionData?.boardId || 'board1';
-
-  
-  if (!session) {
-    showError("Die angeforderte Sitzung existiert nicht.");
-    return false;
-  }
-  
-  // Wenn es ein Beitritt ist (über einen Teilnehmerlink)
-  if (isJoining) {
-    return handleParticipantJoin(session);
-  }
-  
-  // Normale Sitzungsöffnung (eigene Sitzung)
-  return true;
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -137,11 +98,11 @@ document.addEventListener('DOMContentLoaded', function() {
   const isJoining = urlParams.get('join') === 'true';
 
   // Sitzungsdaten und Board-Typ
-  let sessionData = sessionData || null;
-  let boardType = boardType || null;
-  let cards = cards || [];
-  let notes = notes || [];
-  let participants = participants || [];
+  var sessionData  = window.sessionData  || null;
+  var boardType    = window.boardType    || 'board1';
+  var cards        = window.cards        || [];
+  var notes        = window.notes        || [];
+  var participants = window.participants || [];
 
   // Maximal zulässige Notizgröße dynamisch relativ zum Viewport
   function getMaxNoteSize() {
