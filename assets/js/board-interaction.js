@@ -269,21 +269,12 @@ document.addEventListener('DOMContentLoaded', function() {
    
     // Aktuellen Benutzer laden
     const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-    // Rechteprüfung NACHDEM sessionData gesetzt wurde
-    if (!isJoining) {
-      const isOwner = sessionData?.participants?.some(p => p.id === currentUser?.id && p.role === 'owner');
-      const isParticipant = sessionData?.participants?.some(p => p.id === currentUser?.id);
-      if (!isOwner && !isParticipant) {
-        showError("Sie haben keinen Zugriff auf diese Sitzung.");
-        setTimeout(() => { window.location.href = '/kartensets/dashboard/'; }, 3000);
-        return;
-      }
-    }
 
   
     // Sitzungsdaten aus dem LocalStorage laden
     const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
     let session = sessions.find(s => s.id === sessionId);
+    sessionData = session || null;
 
     // JOIN-MODUS: ohne LocalStorage weiterarbeiten (minimaler Stub)
     if (isJoining && !session) {
@@ -297,6 +288,16 @@ document.addEventListener('DOMContentLoaded', function() {
       };
     }
 
+    if (!isJoining) {
+      const isOwner = sessionData?.participants?.some(p => p.id === currentUser?.id && p.role === 'owner');
+      const isParticipant = sessionData?.participants?.some(p => p.id === currentUser?.id);
+      if (!isOwner && !isParticipant) {
+        showError("Sie haben keinen Zugriff auf diese Sitzung.");
+        setTimeout(() => { window.location.href = '/kartensets/dashboard/'; }, 3000);
+        return;
+      }
+    }
+
     // Wenn auch nach Join-Stubs nichts da ist (z. B. Direktaufruf ohne id)
     if (!session) {
       showError("Die angeforderte Sitzung existiert nicht.");
@@ -305,9 +306,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
     // Überprüfen, ob der Benutzer Zugriff auf diese Sitzung hat
-    const isOwner = sessionData.userId === currentUser.id;
-    const isParticipant = sessionData.participants && 
-      sessionData.participants.some(p => p.id === currentUser.id);
+    const isOwner = !!sessionData?.participants?.some(p => p.id === currentUser?.id && p.role === 'owner');
+    const isParticipant = !!sessionData?.participants?.some(p => p.id === currentUser?.id);
+
     
     if (!isOwner && !isParticipant) {
       showError("Sie haben keinen Zugriff auf diese Sitzung.");
