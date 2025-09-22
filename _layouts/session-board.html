@@ -34,27 +34,13 @@
 
 <body>
   <div class="board-container">
-    <header class="board-header">
-      <div class="board-info">
-        <h1 id="board-title">Sitzungsname</h1>
-        <span id="board-type">Boardtyp</span>
-      </div>
-      <div class="board-controls">
-        <div class="filter-container">
-          <label for="card-filter">Filter:</label>
-          <select id="card-filter">
-            <option value="none">Keinen ausgewählt</option>
-            <option value="Focus">Focus Note</option>
-            <option value="Problem">Problem</option>
-            <option value="Note">Kartenset Notizzettel</option>
-          </select>
-        </div>
-        <button id="shuffle-cards-btn" class="board-btn">Mischen</button>
-        <button id="new-note-btn" class="board-btn">+ Notiz</button>
-        <button id="save-session-btn" class="board-btn">Sitzung speichern</button>
-        <button id="close-session-btn" class="board-btn danger">Sitzung schließen</button>
+    <header class="board-title-only">
+      <h1 id="board-title">Sitzungsname</h1>
+      <div id="error-container" class="error-message hidden">
+        <p id="error-message"></p>
       </div>
     </header>
+
 
     <div id="error-container" class="error-message hidden">
       <p id="error-message"></p>
