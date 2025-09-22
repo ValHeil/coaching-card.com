@@ -928,6 +928,13 @@ html, body { height: 100%; margin: 0; }
   display: none !important;
 }
 
+/* Vollbild-Ansicht ohne äußere Scrollbalken */
+html, body { height: 100%; overflow: hidden; }
+.board-container { height: 100vh; overflow: hidden; }
+/* Der Inhalt wird skaliert, daher keine eigene Scrollbar im Bereich */
+.board-area { overflow: visible; }
+
+
 
 
 
