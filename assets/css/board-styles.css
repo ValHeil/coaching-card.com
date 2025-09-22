@@ -934,6 +934,31 @@ html, body { height: 100%; overflow: hidden; }
 /* Der Inhalt wird skaliert, daher keine eigene Scrollbar im Bereich */
 .board-area { overflow: visible; }
 
+/* --- kompakter Header / Titel oben --- */
+.board-header-area { 
+  margin: 6px 0 10px !important;
+  gap: 14px !important;
+}
+.board-title-container,
+.app-header,
+.board-title-only {
+  padding: 6px 0 0 !important;
+}
+
+.board-title-container h1,
+#board-title,
+.board-title-only h1 {
+  margin: 0 !important;
+  font-weight: 600 !important;
+  /* klein, aber responsiv */
+  font-size: clamp(18px, 2.2vw, 26px) !important;
+  line-height: 1.25 !important;
+}
+
+/* falls irgendwo noch ein Seiten-/Theme-Header reinfunkt, ausblenden */
+.entry-header,
+.page-header,
+.post-header { display: none !important; }
 
 
 
