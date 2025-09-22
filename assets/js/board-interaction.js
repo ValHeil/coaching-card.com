@@ -655,6 +655,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Teilnehmerliste initialisieren
   const initializeParticipants = () => {
+    if (!window.sessionData || !Array.isArray(window.sessionData.participants)) return;
     if (!participantsContainer) return;
     
     // Container leeren
