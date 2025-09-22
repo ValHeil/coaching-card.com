@@ -1,4 +1,57 @@
 // board-interaction.js - Funktionen für das interaktive Board
+/* --- GLOBALS & NORMALISIERUNG ------------------------------------------- */
+window.sessionData    = window.sessionData    || null;
+window.boardType      = window.boardType      || 'board1';
+window.cards          = window.cards          || [];
+window.notes          = window.notes          || [];
+window.participants   = window.participants   || [];
+
+function canonBoardSlug(s='') {
+  s = (s || '').toString().toLowerCase();
+  if ([
+    'problem-lösung','problem-loesung','problemlösung','problem',
+    'problem_loesung','board_problem_loesung'
+  ].includes(s)) return 'board1';
+  if (['boardtest','testboard','board_test'].includes(s)) return 'boardTest';
+  return s || 'board1';
+}
+
+function canonDeckSlug(s='') {
+  s = (s || '').toString().toLowerCase();
+  if (['starterdeck','starter','deck_starter','startkarten'].includes(s)) return 'deck1';
+  if (['testdeck','test_deck'].includes(s)) return 'test_deck';
+  return s || 'deck1';
+}
+
+/* Kompat: wird vom Token/Join-Flow ggf. gesetzt */
+window.CC_BOOT = window.CC_BOOT || {};
+
+/* --- REPLACE: handleSessionJoin (alte Version komplett ersetzen) -------- */
+function handleSessionJoin() {
+  const url = new URLSearchParams(location.search);
+  const sid = url.get('id');
+  const isJoining = url.get('join') === 'true';
+  if (!sid) { showError('Ungültiger Link: Keine Sitzungs-ID gefunden.'); return false; }
+
+  // Lokale Sitzungen
+  const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
+  const s = sessions.find(x => x.id === sid) || null;
+
+  // Externer Join-Flow ohne lokalen Eintrag: Minimal-Stub
+  if (isJoining && !s) {
+    window.sessionData = {
+      id: sid,
+      name: 'Sitzung',
+      boardId: canonBoardSlug(url.get('board') || window.CC_BOOT.board),
+      participants: []
+    };
+    return true;
+  }
+
+  if (!s) { showError('Die angeforderte Sitzung existiert nicht.'); return false; }
+  window.sessionData = s;
+  return true;
+}
 
 // In der board-interaction.js müssen Sie diese Funktion aufrufen
 function initializeParticipantJoin() {
@@ -84,11 +137,11 @@ document.addEventListener('DOMContentLoaded', function() {
   const isJoining = urlParams.get('join') === 'true';
 
   // Sitzungsdaten und Board-Typ
-  let sessionData = null;
-  let boardType = null;
-  let cards = [];
-  let notes = [];
-  let participants = [];
+  let sessionData = sessionData || null;
+  let boardType = boardType || null;
+  let cards = cards || [];
+  let notes = notes || [];
+  let participants = participants || [];
 
   // Maximal zulässige Notizgröße dynamisch relativ zum Viewport
   function getMaxNoteSize() {
@@ -266,7 +319,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const urlParams  = new URLSearchParams(window.location.search);
     const isJoining  = urlParams.get('join') === 'true';
     const boardParam = urlParams.get('board') || ((window.CC_BOOT && window.CC_BOOT.board) || 'board1');
-    const deckParam  = urlParams.get('deck')  || ((window.CC_BOOT && window.CC_BOOT.deck)  || 'deck1');
+    const rawBoard = urlParams.get('board') || (window.CC_BOOT && window.CC_BOOT.board) || (sessionData && sessionData.boardId) || 'board1';
+    const rawDeck  = urlParams.get('deck')  || (window.CC_BOOT && window.CC_BOOT.deck)  || 'deck1';
+    boardType = canonBoardSlug(rawBoard);
+    const deckParam = canonDeckSlug(rawDeck);
 
     // Aktuellen Benutzer (nur für Owner/Teilnehmer-Check außerhalb des Join-Flows)
     const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -704,9 +760,9 @@ document.addEventListener('DOMContentLoaded', function() {
       const p = new URLSearchParams(location.search);
       const boardType = p.get('board') || 'board1';
       // NEU – ersetzt die bisherige deckPath-Zeile:
-      const deckSlug = (window.CC_BOOT && window.CC_BOOT.deck)
-                    || (boardType === 'boardTest' ? 'test_deck' : 'deck1');
-
+      const deckSlug = canonDeckSlug(
+        (window.CC_BOOT && window.CC_BOOT.deck) || (boardType === 'boardTest' ? 'test_deck' : 'deck1')
+      );
       // WICHTIG: dank <base href="/app/"> KEIN führendes Slash mehr
       const deckPath = `assets/cards/${deckSlug}`;
       cards = [];
