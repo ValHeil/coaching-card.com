@@ -982,6 +982,21 @@ html, body { height: 100%; overflow: hidden; }
 .page-header,
 .post-header { display: none !important; }
 
+html, body { height: 100%; }
+
+.board-container { height: 100dvh; overflow: hidden; }
+
+.board-area { height: 100%; }
+
+.board-type-board1,
+.board-type-boardTest { min-height: 100%; }
+
+.board-main-area {
+  height: 100%;
+  min-height: 0;        /* damit Grid wirklich streckt */
+  align-content: stretch;
+}
+
 
 
 
