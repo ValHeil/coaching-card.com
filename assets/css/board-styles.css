@@ -20,9 +20,10 @@ body {
 
 .board-area {
   flex-grow: 1;
-  overflow: auto; /* Ermöglicht Scrollen im Board-Bereich bei Bedarf */
+  overflow: hidden; /* Ermöglicht Scrollen im Board-Bereich bei Bedarf */
   display: flex;
   flex-direction: column; /* Stellt sicher, dass Inhalte vertikal angeordnet sind */
+  min-height: 0;
 }
 
 /* Zentraler Titel */
@@ -913,7 +914,7 @@ html, body { height: 100%; margin: 0; }
 .board-area {
   height: calc(100vh - 60px);
   width: 100%;
-  overflow: auto;
+  overflow: hidden;
   padding: 16px 24px;
 }
 
