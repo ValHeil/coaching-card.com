@@ -9,7 +9,7 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
-  overflow: hidden;
+  overflow: visible;
   font-family: sans-serif;
 }
 
@@ -64,7 +64,7 @@
 .board-area {
   position: relative;
   flex: 1;
-  overflow: hidden;
+  overflow: visible;
   min-height: 0;
 }
 
@@ -140,7 +140,7 @@
   transition: transform 0.5s;
   border-radius: 10px;
   box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* Basisdarstellung - Hier wollen wir die Rückseite oben haben */
@@ -151,7 +151,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .card-front img {
