@@ -444,12 +444,23 @@ document.addEventListener('DOMContentLoaded', function() {
       
       // Calculate position relative to board
       const boardRect = boardArea.getBoundingClientRect();
-      const x = Math.round(e.clientX - boardRect.left);
-      const y = Math.round(e.clientY - boardRect.top);
-      
-      // Set new position (centered on cursor)
-      draggedElement.style.left = `${Math.round(x - (draggedElement.offsetWidth / 2))}px`;
-      draggedElement.style.top = `${Math.round(y - (draggedElement.offsetHeight / 2))}px`;
+      const scale = parseFloat(boardArea.dataset.scale || '1'); // <-- wichtig!
+
+      // Mausposition in unskalierten Pixeln
+      const rawX = (e.clientX - boardRect.left) / scale;
+      const rawY = (e.clientY - boardRect.top)  / scale;
+
+      // so platzieren, dass die Karte/Notiz vollständig sichtbar bleibt
+      const halfW = draggedElement.offsetWidth  / 2;
+      const halfH = draggedElement.offsetHeight / 2;
+      const maxX  = boardArea.scrollWidth  - halfW;
+      const maxY  = boardArea.scrollHeight - halfH;
+
+      const x = Math.max(halfW, Math.min(rawX, maxX));
+      const y = Math.max(halfH, Math.min(rawY, maxY));
+
+      draggedElement.style.left = Math.round(x - halfW) + 'px';
+      draggedElement.style.top  = Math.round(y - halfH) + 'px';
       
       // If it's a card from the stack, move it to the board
       if (draggedElement.classList.contains('card')) {
