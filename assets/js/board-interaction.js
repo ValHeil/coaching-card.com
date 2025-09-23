@@ -489,6 +489,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
       area.style.transformOrigin = 'top center';
       area.style.transform = `scale(${scale})`;
+      area.dataset.scale = String(scale);   // <-- Faktor merken
     }
 
     // beim Start & bei Resize anwenden
@@ -1824,6 +1825,18 @@ document.addEventListener('DOMContentLoaded', function() {
       } catch (error) {
         console.error("Fehler beim Drop-Handling:", error);
       }
+
+      const area = document.querySelector('.board-area');
+      const boardRect = area.getBoundingClientRect();
+      const scale = parseFloat(area?.dataset.scale || '1');
+
+      // Position in „unskalierten“ Pixeln berechnen
+      const x = Math.round((e.clientX - boardRect.left) / scale);
+      const y = Math.round((e.clientY - boardRect.top)  / scale);
+
+      draggedElement.style.left = `${Math.round(x - (draggedElement.offsetWidth  / 2))}px`;
+      draggedElement.style.top  = `${Math.round(y - (draggedElement.offsetHeight / 2))}px`;
+
     }
     
     // Event-Listener für die verbesserte Drag & Drop-Funktionalität hinzufügen
