@@ -2561,34 +2561,33 @@ document.addEventListener('DOMContentLoaded', function() {
     cancelButton.addEventListener('click', closeDialog);
     
     // Sitzung-beenden-Button
-    confirmButton.addEventListener('click', () => {
+    confirmButton.addEventListener('click', async () => {
       closeDialog();
-      
-      // Markieren, dass das Dashboard neu geladen werden soll (optional)
-      localStorage.setItem('dashboard_reload_requested', 'true');
 
-      // Nur fürs Testboard: Tab schließen versuchen, sonst freundlich umleiten
-      const isTestBoard = location.hostname === 'test.coaching-card.com';
+      // 1) Lokal sichern (LocalStorage)
+      try { 
+        if (typeof saveCurrentBoardState === 'function') {
+          saveCurrentBoardState(); // speichert den erfassten Board-State lokal
+        }
+      } catch (e) { console.warn('Lokales Speichern fehlgeschlagen:', e); }
 
-      if (isTestBoard) {
-        // Lokale Daten aufräumen
-        try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}
+      // 2) (optional) Server-Persistierung – funktioniert, wenn Punkt 2 unten umgesetzt ist
+      try {
+        if (typeof persistStateToServer === 'function') {
+          const state = captureBoardState();
+          await persistStateToServer(state);
+        }
+      } catch (e) { console.warn('Server-Speichern fehlgeschlagen:', e); }
 
-        // 1) Tab schließen (funktioniert nur, wenn das Fenster per JS geöffnet wurde)
-        try {
-          // Safari-Workaround
-          window.open('', '_self');
-          window.close();
-          return; // wenn geklappt hat, hier Schluss
-        } catch (e) {}
-
-        // 2) Fallback: auf eine „Danke“-/Ausprobieren-Seite umleiten (keine 404)
-        location.replace('https://coaching-card.com/ausprobieren?closed=1');
+      // 3) Tab schließen (nur möglich, wenn per JS geöffnet) – sonst freundlich umleiten
+      try {
+        window.open('', '_self'); // Safari-Workaround
+        window.close();
         return;
-      }
+      } catch (e) {}
 
-      // (Produktivpfad – falls du ihn später brauchst)
-      window.location.href = '/kartensets/dashboard/';
+      // Fallback: sichere Weiterleitung (keine 404)
+      location.replace('/kartensets/dashboard/?closed=1');
     });
     
     // Schließen bei Klick außerhalb des Dialogs
@@ -2699,7 +2698,7 @@ document.addEventListener('DOMContentLoaded', function() {
     return cardsArray;
   }
 
-   // Speichert den aktuellen Zustand in die Sitzung
+  // Speichert den aktuellen Zustand in die Sitzung
   function saveCurrentBoardState() {
     try {
       // Session-ID aus URL holen
@@ -2736,6 +2735,25 @@ document.addEventListener('DOMContentLoaded', function() {
       return false;
     }
   }
+
+  // (NEU) Zustand an den Node-Server posten – greift Punkt 2b (/api/state) auf
+  async function persistStateToServer(boardState) {
+    try {
+      const sessionId = new URLSearchParams(location.search).get('id');
+      if (!sessionId) return false;
+      const res = await fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: Number(sessionId), state: boardState })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return true;
+    } catch (e) {
+      console.warn('PersistStateToServer fehlgeschlagen:', e);
+      return false;
+    }
+  }
+
 
   // Lädt den gespeicherten Zustand aus der Sitzung
   function loadSavedBoardState() {
