@@ -67,27 +67,20 @@ window.CC_BOOT = window.CC_BOOT || {};
 function handleSessionJoin() {
   const url = new URLSearchParams(location.search);
   const sid = url.get('id');
-  const isJoining = url.get('join') === 'true';
   if (!sid) { showError('Ungültiger Link: Keine Sitzungs-ID gefunden.'); return false; }
 
-  const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-  const s = sessions.find(x => x.id === sid) || null;
+  const sess = (window.CC_BOOT && window.CC_BOOT.session) || {};
+  const effectiveBoard = canonBoardSlug(url.get('board') || window.CC_BOOT?.board || sess.board || 'board1');
 
-  // Externer Join-Flow (kein lokaler Eintrag) -> Minimal-Stub
-  if (isJoining && !s) {
-    window.sessionData = {
-      id: sid,
-      name: 'Sitzung',
-      boardId: canonBoardSlug(url.get('board') || (window.CC_BOOT && window.CC_BOOT.board)),
-      participants: []
-    };
-    return true;
-  }
-
-  if (!s) { showError('Die angeforderte Sitzung existiert nicht.'); return false; }
-  window.sessionData = s;
+  window.sessionData = {
+    id: sid,
+    name: sess.name || 'Sitzung',
+    boardId: effectiveBoard,
+    participants: [] // optional, wenn du später per REST nachlädst
+  };
   return true;
 }
+
 
 
 // In der board-interaction.js müssen Sie diese Funktion aufrufen
@@ -305,99 +298,33 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Session laden und Board initialisieren (JOIN-Flow-sicher, mit Mapping)
   function loadSession() {
-    // --- kleine Helfer lokal halten, um keine Globals zu verschmutzen ---
-    const canonBoardSlug = (s = '') => {
-      s = String(s || '').toLowerCase();
-      if (['problem-lösung','problem-loesung','problemlösung','problem','problem_loesung','board_problem_loesung'].includes(s)) return 'board1';
-      if (['boardtest','testboard','board_test'].includes(s)) return 'boardTest';
-      return s || 'board1';
-    };
-    const canonDeckSlug = (s = '') => {
-      s = String(s || '').toLowerCase();
-      if (['starterdeck','starter','deck_starter','startkarten'].includes(s)) return 'deck1';
-      if (['testdeck','test_deck'].includes(s)) return 'test_deck';
-      return s || 'deck1';
-    };
-
     const url = new URLSearchParams(window.location.search);
-    const sid = url.get('id') || window.sessionId;
+    const sid = url.get('id');
     if (!sid) { showError('Keine gültige Sitzungs-ID gefunden.'); return; }
 
-    const isJoining = url.get('join') === 'true';
-
-    // Effektive Board/Deck-Werte aus URL / Boot / Sitzung bestimmen und normalisieren
-    const rawBoard = url.get('board') || (window.CC_BOOT && window.CC_BOOT.board) || (window.sessionData && window.sessionData.boardId) || 'board1';
-    const rawDeck  = url.get('deck')  || (window.CC_BOOT && window.CC_BOOT.deck)  || 'deck1';
+    // Board/Deck aus URL oder aus CC_BOOT (vom Token-Wrapper)
+    const rawBoard = url.get('board') || window.CC_BOOT?.board || window.CC_BOOT?.session?.board || 'board1';
+    const rawDeck  = url.get('deck')  || window.CC_BOOT?.deck  || window.CC_BOOT?.session?.deck  || 'deck1';
     let effBoard = canonBoardSlug(rawBoard);
     let effDeck  = canonDeckSlug(rawDeck);
     if (!['board1','boardTest'].includes(effBoard)) effBoard = 'board1';
     if (!effDeck) effDeck = 'deck1';
 
-    // Sitzung laden (oder Stub für externen Join)
-    const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-    let s = sessions.find(x => String(x.id) === String(sid)) || null;
-    if (isJoining && !s) {
-      s = { id: sid, name: 'Sitzung', boardName: effBoard, boardId: effBoard, participants: [] };
-    }
-    if (!s) { showError('Die angeforderte Sitzung existiert nicht.'); return; }
+    // Sessiondaten minimal belegen (Name kommt aus CC_BOOT.session)
+    window.sessionData = window.sessionData || {
+      id: sid,
+      name: window.CC_BOOT?.session?.name || 'Sitzung'
+    };
+    window.boardType = effBoard;
 
-    // Globals belegen (wichtig: KEIN "let" davor, wir schreiben auf window.*)
-    window.sessionData = s;
-    window.boardType   = effBoard;
+    // Titel setzen
+    if (boardTitle) boardTitle.textContent = window.CC_BOOT?.session?.name || window.sessionData.name || 'Sitzung';
 
-    // Zugriff nur prüfen, wenn NICHT im externen Join-Flow
-    if (!isJoining) {
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-      const isOwner       = !!window.sessionData?.participants?.some(p => p.id === currentUser?.id && p.role === 'owner');
-      const isParticipant = !!window.sessionData?.participants?.some(p => p.id === currentUser?.id);
-      if (!isOwner && !isParticipant) {
-        showError('Sie haben keinen Zugriff auf diese Sitzung.');
-        if (window.top === window.self) setTimeout(() => { window.location.href = '/kartensets/dashboard/'; }, 3000);
-        return;
-      }
-    }
-
-    // UI füllen (wenn Variablen vorhanden sind)
-    // Titel setzen – zuerst Name aus CC_BOOT, dann Fallback auf sessionData
-    try {
-      const fromBoot = window.CC_BOOT?.session?.name;
-      if (boardTitle) boardTitle.textContent = fromBoot || (window.sessionData?.name || 'Sitzung');
-    } catch {}
-    try { if (typeof boardTypeElement !== 'undefined' && boardTypeElement) boardTypeElement.textContent = window.sessionData.boardName || window.sessionData.boardId || effBoard; } catch{}
-
-    // Metadatum & Board aufbauen
-    try { if (typeof updateLastAccess === 'function') updateLastAccess(); } catch {}
+    // Board aufbauen + Zustand laden
     if (typeof initializeBoard === 'function') initializeBoard();
-
-    // Zustand laden (nach dem Aufbau)
-    setTimeout(() => {
-      try { if (typeof loadSavedBoardState === 'function') loadSavedBoardState(); } catch(e) { console.warn('loadSavedBoardState fehlgeschlagen:', e); }
-    }, 0);
-
-    // Lokaler Join-Dialog nur außerhalb des externen Join-Flows
-    try { if (!isJoining && typeof handleSessionJoin === 'function') handleSessionJoin(); } catch {}
-
-    // Debug (optional)
-    try { if (typeof debugLocalStorage === 'function') setTimeout(() => debugLocalStorage(), 1000); } catch {}
+    setTimeout(() => { try { loadSavedBoardState(); } catch(e) { console.warn(e); } }, 0);
   }
-
-
-
-  // Letzten Zugriff auf die Sitzung aktualisieren
-  const updateLastAccess = () => {
-    if (!sessionData) return;
-
-    const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-    const updatedSessions = sessions.map(session => {
-      if (session.id === sessionId) {
-        return {...session, lastOpened: new Date().toISOString()
-        };
-      }
-      return session;
-    });
-
-    localStorage.setItem('kartensets_sessions', JSON.stringify(updatedSessions));
-  };
+  
 
   // Board mit Karten und Notizen initialisieren
   const initializeBoard = () => {
@@ -2564,13 +2491,6 @@ document.addEventListener('DOMContentLoaded', function() {
     confirmButton.addEventListener('click', async () => {
       closeDialog();
 
-      // 1) Lokal sichern (LocalStorage)
-      try { 
-        if (typeof saveCurrentBoardState === 'function') {
-          saveCurrentBoardState(); // speichert den erfassten Board-State lokal
-        }
-      } catch (e) { console.warn('Lokales Speichern fehlgeschlagen:', e); }
-
       // 2) (optional) Server-Persistierung – funktioniert, wenn Punkt 2 unten umgesetzt ist
       try {
         if (typeof persistStateToServer === 'function') {
@@ -2701,37 +2621,15 @@ document.addEventListener('DOMContentLoaded', function() {
   // Speichert den aktuellen Zustand in die Sitzung
   function saveCurrentBoardState() {
     try {
-      // Session-ID aus URL holen
-      const urlParams = new URLSearchParams(window.location.search);
-      const sessionId = urlParams.get('id');
-      
-      if (!sessionId) {
-        console.error("Keine Sitzungs-ID gefunden");
-        return false;
-      }
-      
-      // Board-Zustand erfassen
-      const boardState = captureBoardState();
-      
-      // Sitzungen aus dem localStorage laden
-      const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-      
-      // Sitzung mit der angegebenen ID finden und aktualisieren
-      const updatedSessions = sessions.map(session => {
-        if (session.id === sessionId) {
-          return {...session, boardState: boardState, lastEdited: new Date().toISOString()
-          };
-        }
-        return session;
-      });
-      
-      // Aktualisierte Sitzungen im localStorage speichern
-      localStorage.setItem('kartensets_sessions', JSON.stringify(updatedSessions));
-      
-      console.log(`Board-Zustand für Sitzung ${sessionId} erfolgreich gespeichert`);
+      const sessionId = new URLSearchParams(location.search).get('id');
+      if (!sessionId) return false;
+
+      const state = captureBoardState();
+      // fire-and-forget – blockiert UI nicht
+      persistStateToServer(state);
       return true;
-    } catch (error) {
-      console.error("Fehler beim Speichern des Board-Zustands:", error);
+    } catch (e) {
+      console.warn('saveCurrentBoardState() fehlgeschlagen:', e);
       return false;
     }
   }
@@ -2756,45 +2654,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
   // Lädt den gespeicherten Zustand aus der Sitzung
-  function loadSavedBoardState() {
+  async function loadSavedBoardState() {
     try {
-      // Session-ID aus URL holen
-      const urlParams = new URLSearchParams(window.location.search);
-      const sessionId = urlParams.get('id');
-      
-      if (!sessionId) {
-        console.error("[DEBUG] loadSavedBoardState: Keine Sitzungs-ID gefunden");
+      const sessionId = new URLSearchParams(location.search).get('id');
+      if (!sessionId) return false;
+
+      const res = await fetch(`/api/state?id=${encodeURIComponent(sessionId)}`);
+      if (!res.ok) throw new Error(await res.text());
+      const { state_b64 } = await res.json();
+
+      if (!state_b64) {
+        console.log('[DEBUG] Kein Zustand in der DB vorhanden.');
         return false;
       }
-      
-      // Sitzungsdaten laden
-      const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-      const session = sessions.find(s => s.id === sessionId);
-      
-      if (!session) {
-        console.error("[DEBUG] loadSavedBoardState: Sitzung nicht gefunden:", sessionId);
-        return false;
-      }
-      
-      console.log("[DEBUG] loadSavedBoardState: Sitzung gefunden:", session);
-      
-      if (!session.boardState) {
-        console.warn("[DEBUG] loadSavedBoardState: Kein gespeicherter Board-Zustand gefunden");
-        return false;
-      }
-      
-      console.log("[DEBUG] loadSavedBoardState: Gespeicherter Board-Zustand vorhanden:", session.boardState);
-      
-      // Zustand wiederherstellen
-      const restoreResult = restoreBoardState(session.boardState);
-      console.log("[DEBUG] loadSavedBoardState: Board-Zustand wiederhergestellt:", restoreResult);
-      
-      return restoreResult;
-    } catch (error) {
-      console.error("[DEBUG] loadSavedBoardState: Fehler beim Laden des Board-Zustands:", error);
+
+      const json = atob(state_b64);
+      const state = JSON.parse(json);
+      return restoreBoardState(state);
+    } catch (e) {
+      console.warn('[DEBUG] Laden aus DB fehlgeschlagen:', e);
       return false;
     }
   }
+
 
   // Stellt den Board-Zustand wieder her
   function restoreBoardState(boardState) {
@@ -3026,30 +2908,44 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function setupAutoSave() {
-    // Automatisches Speichern in regelmäßigen Abständen
-    const autoSaveInterval = setInterval(() => {
-      if (saveCurrentBoardState()) {
-        console.log("Automatische Speicherung erfolgreich");
+    const autoSaveInterval = setInterval(async () => {
+      try {
+        const sid = new URLSearchParams(location.search).get('id');
+        if (!sid) return;
+        await persistStateToServer(captureBoardState());
+        console.log('[Autosave] Zustand in DB gespeichert');
+      } catch(e) {
+        console.warn('[Autosave] Fehler:', e);
       }
-    }, 60000); // Alle 60 Sekunden
-  
-    // Speichern bei Verlassen der Seite
+    }, 60000); // alle 60s
+
+    // Verlassen der Seite: möglichst zuverlässig speichern
     window.addEventListener('beforeunload', () => {
-      saveCurrentBoardState();
+      try {
+        const sid = new URLSearchParams(location.search).get('id');
+        if (!sid || !navigator.sendBeacon) return;
+        const payload = new Blob(
+          [JSON.stringify({ session_id: Number(sid), state: captureBoardState() })],
+          { type: 'application/json' }
+        );
+        navigator.sendBeacon('/api/state', payload);
+      } catch {}
     });
-    
-    // Speichern bei Tastenkombination Strg+S
-    document.addEventListener('keydown', (e) => {
+
+    // Ctrl/Cmd+S
+    document.addEventListener('keydown', async (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault(); // Verhindert das Browser-Speichern
-        if (saveCurrentBoardState()) {
-          showSaveNotification("Board wurde gespeichert");
-        }
+        e.preventDefault();
+        const sid = new URLSearchParams(location.search).get('id');
+        if (!sid) return;
+        const ok = await persistStateToServer(captureBoardState());
+        if (ok) showSaveNotification('Board in DB gespeichert');
       }
     });
-  
+
     return autoSaveInterval;
   }
+
 
   // Benachrichtigung anzeigen
   function showSaveNotification(message = "Sitzung wurde gespeichert") {
@@ -3158,7 +3054,7 @@ document.addEventListener('DOMContentLoaded', function() {
     saveCurrentBoardState();
     
     // Markieren, dass das Dashboard neu geladen werden soll
-    localStorage.setItem('dashboard_reload_requested', 'true');
+    sessionStorage.setItem('dashboard_reload_requested', 'true');
   });
 });
 
@@ -3193,63 +3089,6 @@ window.showError = showError || function(message) {
   }, 5000);
 };
 
-function enhancedSaveCurrentBoardState() {
-  try {
-    // Prüfen, ob localStorage verfügbar ist
-    if (!window.localStorage) {
-      console.error('localStorage nicht verfügbar');
-      return false;
-    }
-
-    // Session-ID aus URL extrahieren
-    const urlParams = new URLSearchParams(window.location.search);
-    const sessionId = urlParams.get('id');
-
-    if (!sessionId) {
-      console.error('Keine gültige Sitzungs-ID gefunden');
-      return false;
-    }
-
-    // Board-Zustand erfassen
-    const boardState = captureBoardState();
-
-    // Zusätzliche Validierung des Board-Zustands
-    if (!isValidBoardState(boardState)) {
-      console.warn('Ungültiger Board-Zustand. Speichern abgebrochen.');
-      return false;
-    }
-
-    // Sitzungen laden und aktualisieren
-    const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-    const updatedSessions = sessions.map(session => {
-      if (session.id === sessionId) {
-        return {
-          ...session,
-          boardState: boardState,
-          lastEdited: new Date().toISOString()
-        };
-      }
-      return session;
-    });
-
-    // Speichern mit Größenüberprüfung
-    if (StorageManager && StorageManager.saveWithSizeCheck) {
-      StorageManager.saveWithSizeCheck('kartensets_sessions', updatedSessions);
-    } else {
-      localStorage.setItem('kartensets_sessions', JSON.stringify(updatedSessions));
-    }
-
-    console.log(`Board-Zustand für Sitzung ${sessionId} gespeichert`);
-    return true;
-  } catch (error) {
-    console.error('Fehler beim Speichern des Board-Zustands:', error);
-    
-    // Fallback-Benachrichtigung für den Benutzer
-    showErrorNotification('Fehler beim Speichern der Sitzung');
-    
-    return false;
-  }
-}
 
 // Validierung des Board-Zustands
 function isValidBoardState(boardState) {
@@ -3294,88 +3133,4 @@ function showErrorNotification(message) {
     document.body.removeChild(notification);
   }, 3000);
 }
-
-function cleanupOldSessions() {
-  const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-  
-  // Nach Datum sortieren und älteste Sitzungen entfernen
-  const sortedSessions = sessions.sort((a, b) => 
-    new Date(a.created) - new Date(b.created)
-  );
-  
-  // Entferne älteste Sitzungen, bis Speicherplatz ausreicht
-  while (sortedSessions.length > 5) {
-    sortedSessions.shift();
-  }
-  
-  localStorage.setItem('kartensets_sessions', JSON.stringify(sortedSessions));
-}
-
-document.addEventListener('DOMContentLoaded', checkLocalStorageSpace);
-
-function debugLocalStorage() {
-  try {
-    // Session-ID aus URL holen
-    const urlParams = new URLSearchParams(window.location.search);
-    const sessionId = urlParams.get('id');
-    
-    if (!sessionId) {
-      console.error("[DEBUG] Keine Sitzungs-ID gefunden");
-      return;
-    }
-    
-    // Sitzungsdaten laden
-    const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-    const session = sessions.find(s => s.id === sessionId);
-    
-    if (!session) {
-      console.error("[DEBUG] Sitzung nicht gefunden:", sessionId);
-      return;
-    }
-    
-    console.log("[DEBUG] Sitzung gefunden:", session);
-    console.log("[DEBUG] BoardState vorhanden:", !!session.boardState);
-    
-    if (session.boardState) {
-      console.log("[DEBUG] BoardState Inhalt:", session.boardState);
-      console.log("[DEBUG] FocusNote:", session.boardState.focusNote);
-      console.log("[DEBUG] Anzahl Notizen:", session.boardState.notes?.length);
-      console.log("[DEBUG] Anzahl Karten:", session.boardState.cards?.length);
-    }
-    
-    // Prüfen, ob localStorage überhaupt funktioniert
-    const testKey = 'test_' + Date.now();
-    localStorage.setItem(testKey, 'test');
-    const testValue = localStorage.getItem(testKey);
-    localStorage.removeItem(testKey);
-    
-    console.log("[DEBUG] localStorage funktioniert:", testValue === 'test');
-    
-    // Gesamtgröße des localStorage überprüfen
-    let totalSize = 0;
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      const value = localStorage.getItem(key);
-      totalSize += (key.length + value.length) * 2; // Ungefähre Größe in Bytes
-    }
-    
-    console.log("[DEBUG] localStorage Gesamtgröße:", Math.round(totalSize / 1024), "KB");
-    
-  } catch (error) {
-    console.error("[DEBUG] Fehler bei LocalStorage-Diagnose:", error);
-  }
-}
-
-// Die checkLocalStorageSpace Funktion hinzufügen oder entfernen
-function checkLocalStorageSpace() {
-  console.log("[DEBUG] Überprüfe localStorage...");
-  // Keine weiteren Aktionen, um Fehler zu vermeiden
-}
-
-
-
-
-
-
-
 
