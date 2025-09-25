@@ -3075,7 +3075,8 @@ document.addEventListener('DOMContentLoaded', function() {
     errorContainer.classList.remove('hidden');
   };
 
-
+  loadSession();
+  loadSavedBoardState();
   // CSS für Speicherbenachrichtigungen hinzufügen
   addSaveToastStyles(); 
 
