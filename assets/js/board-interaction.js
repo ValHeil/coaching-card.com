@@ -37,29 +37,35 @@ function canonDeckSlug(s='') {
   return s || 'deck1';
 }
 
-function resolveCardElement(cardStateOrId){
-  const obj = (typeof cardStateOrId === 'string') ? { id: cardStateOrId } : (cardStateOrId || {});
-  const num = (obj.cardId || (obj.id && String(obj.id).match(/card-?(\d+)/)?.[1]) || obj.domId)?.toString();
-  const candidates = [
-    obj.id,
-    obj.domId,
-    num ? `card-${num}` : null,
-    num ? `card${num}`  : null
-  ].filter(Boolean);
-
-  // 1) Versuche IDs (mit/ohne Dash)
-  for (const id of candidates){
-    const el = document.getElementById(id);
-    if (el) return el;
-  }
-  // 2) Fallback: data-card-id (optional, falls vorhanden)
-  if (num){
-    const el = document.querySelector(`[data-card-id="${num}"]`);
-    if (el) return el;
-  }
-  console.warn('Karte nicht gefunden:', obj.id || obj.domId || num);
-  return null;
+// --- helpers für Karten-IDs + readiness -------------------------
+function normalizeCardId(raw) {
+  if (!raw) return null;
+  const m = String(raw).match(/card-?(\d+)/i);
+  return m ? Number(m[1]) : null;
 }
+
+function resolveCardElement(cardLike) {
+  const num = normalizeCardId(cardLike?.id || cardLike?.cardId || cardLike);
+  if (!num) return null;
+  // probiere: #card-36  /  #card36  /  data-card-id="36"
+  return (
+    document.getElementById(`card-${num}`) ||
+    document.getElementById(`card${num}`)  ||
+    document.querySelector(`.card[data-card-id="${num}"]`)
+  );
+}
+
+// wartet bis der Stapel und mind. 1 Karte existiert
+async function waitForCards(maxMs = 4000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < maxMs) {
+    if (document.getElementById('card-stack') &&
+        document.querySelectorAll('.card').length) return true;
+    await new Promise(r => setTimeout(r, 50));
+  }
+  return false;
+}
+
 
 //richtige Codierung sicherstellen
 function jsonToBase64UTF8(obj){
@@ -2707,22 +2713,26 @@ document.addEventListener('DOMContentLoaded', function() {
       const sessionId = new URLSearchParams(location.search).get('id');
       if (!sessionId) return false;
 
+      // Karten abwarten (wichtig!)
+      await waitForCards();
+
       const res = await fetch(`/api/state?id=${encodeURIComponent(sessionId)}`);
       if (!res.ok) throw new Error(await res.text());
+
       const { state_b64 } = await res.json();
       if (!state_b64) {
         console.log('[DEBUG] Kein Zustand in der DB vorhanden.');
         return false;
       }
 
-      const state = base64ToJSONUTF8(state_b64);   // ← UTF-8 korrekt decodieren
+      const state = base64ToJSONUTF8(state_b64); // UTF-8 sicher
       return restoreBoardState(state);
-
     } catch (e) {
       console.warn('[DEBUG] Laden aus DB fehlgeschlagen:', e);
       return false;
     }
-  }
+}
+
 
 
   // Stellt den Board-Zustand wieder her
@@ -2805,47 +2815,53 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const cardStack = document.getElementById('card-stack');
     const boardArea = document.querySelector('.board-area');
+    const total = document.querySelectorAll('.card').length;
 
     cardsState.forEach((cardData) => {
-      // ← findet sowohl "card-36" als auch "card36"
+      const num = normalizeCardId(cardData.id || cardData.cardId);
+      if (!num || (total && num > total)) {
+        console.warn('Karte existiert in diesem Deck nicht:', cardData.id || cardData.cardId);
+        return;
+      }
+
       const el = resolveCardElement(cardData);
       if (!el) {
         console.warn('Karte nicht gefunden:', cardData.id || cardData.cardId);
-        return; // im forEach mit 'return' statt 'continue' überspringen
-      }
-      const card = el;
-
-      // Position/Z-Index wiederherstellen
-      if (cardData.left)   card.style.left   = cardData.left;
-      if (cardData.top)    card.style.top    = cardData.top;
-      if (cardData.zIndex) card.style.zIndex = cardData.zIndex;
-
-      // Flip-Status angleichen
-      const isFlipped = card.classList.contains('flipped');
-      if (typeof cardData.isFlipped === 'boolean' && cardData.isFlipped !== isFlipped) {
-        flipCard(card);
+        return; // forEach → return überspringt nur dieses Element
       }
 
-      // Zwischen Stapel und Board umhängen
-      if (cardData.inStack === false && cardStack && cardStack.contains(card)) {
-        cardStack.removeChild(card);
-        if (boardArea) boardArea.appendChild(card);
-      } else if (cardData.inStack === true && boardArea && boardArea.contains(card)) {
-        // optional: zurück in den Stapel
-        returnCardToStack(card);
+      // Position/Z-Index
+      if (cardData.left)   el.style.left   = cardData.left;
+      if (cardData.top)    el.style.top    = cardData.top;
+      if (cardData.zIndex) el.style.zIndex = cardData.zIndex;
+
+      // Flip anpassen
+      if (typeof cardData.isFlipped === 'boolean') {
+        const isFlipped = el.classList.contains('flipped');
+        if (cardData.isFlipped !== isFlipped && typeof flipCard === 'function') {
+          flipCard(el);
+        }
+      }
+
+      // Zwischen Stapel ↔ Board umhängen
+      if (cardData.inStack === false && cardStack?.contains(el)) {
+        cardStack.removeChild(el);
+        boardArea?.appendChild(el);
+      } else if (cardData.inStack === true && boardArea?.contains(el)) {
+        returnCardToStack?.(el);
       }
 
       // Platzhalter-Status
       if (cardData.placedAt) {
-        card.dataset.placedAt = cardData.placedAt;
+        el.dataset.placedAt = cardData.placedAt;
         const ph = document.getElementById(cardData.placedAt);
         if (ph) ph.classList.add('filled');
       }
     });
 
-    // für Hover-Tracking usw.
     document.dispatchEvent(new Event('boardStateUpdated'));
   }
+
 
 
   // Erweiterte Funktion für den "Sitzung beenden" Button
@@ -3059,9 +3075,7 @@ document.addEventListener('DOMContentLoaded', function() {
     errorContainer.classList.remove('hidden');
   };
 
-  // Seite initialisieren
-  loadSession();
-  loadSavedBoardState();
+
   // CSS für Speicherbenachrichtigungen hinzufügen
   addSaveToastStyles(); 
 
