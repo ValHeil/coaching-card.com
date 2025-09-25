@@ -37,6 +37,54 @@ function canonDeckSlug(s='') {
   return s || 'deck1';
 }
 
+function resolveCardElement(cardStateOrId){
+  const obj = (typeof cardStateOrId === 'string') ? { id: cardStateOrId } : (cardStateOrId || {});
+  const num = (obj.cardId || (obj.id && String(obj.id).match(/card-?(\d+)/)?.[1]) || obj.domId)?.toString();
+  const candidates = [
+    obj.id,
+    obj.domId,
+    num ? `card-${num}` : null,
+    num ? `card${num}`  : null
+  ].filter(Boolean);
+
+  // 1) Versuche IDs (mit/ohne Dash)
+  for (const id of candidates){
+    const el = document.getElementById(id);
+    if (el) return el;
+  }
+  // 2) Fallback: data-card-id (optional, falls vorhanden)
+  if (num){
+    const el = document.querySelector(`[data-card-id="${num}"]`);
+    if (el) return el;
+  }
+  console.warn('Karte nicht gefunden:', obj.id || obj.domId || num);
+  return null;
+}
+
+//richtige Codierung sicherstellen
+function jsonToBase64UTF8(obj){
+  const json = JSON.stringify(obj);
+  if (window.TextEncoder) {
+    const bytes = new TextEncoder().encode(json);
+    let bin = ''; bytes.forEach(b => bin += String.fromCharCode(b));
+    return btoa(bin);
+  }
+  // Fallback
+  return btoa(unescape(encodeURIComponent(json)));
+}
+
+function base64ToJSONUTF8(b64){
+  const bin = atob(b64 || '');
+  if (window.TextDecoder) {
+    const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+  // Fallback
+  return JSON.parse(decodeURIComponent(escape(bin)));
+}
+
+
+
 // kleine Boot-Konfig (vom Token-Host per postMessage optional gesetzt)
 window.CC_BOOT = window.CC_BOOT || {};
 
@@ -2600,10 +2648,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const cardElements = document.querySelectorAll('.card');
     
     cardElements.forEach(card => {
+      const rawId = el.id || '';
+      const cardNum = (rawId.match(/card-?(\d+)/)?.[1]) || el.dataset.cardId || '';
       // Position, Zustand (umgedreht/nicht umgedreht) und andere Eigenschaften erfassen
       const cardData = {
-        id: card.id,
-        cardId: card.dataset.cardId,
+        id: rawId,
+        cardId: cardNum,
         left: card.style.left,
         top: card.style.top,
         zIndex: card.style.zIndex,
@@ -2662,15 +2712,14 @@ document.addEventListener('DOMContentLoaded', function() {
       const res = await fetch(`/api/state?id=${encodeURIComponent(sessionId)}`);
       if (!res.ok) throw new Error(await res.text());
       const { state_b64 } = await res.json();
-
       if (!state_b64) {
         console.log('[DEBUG] Kein Zustand in der DB vorhanden.');
         return false;
       }
 
-      const json = atob(state_b64);
-      const state = JSON.parse(json);
+      const state = base64ToJSONUTF8(state_b64);   // ← UTF-8 korrekt decodieren
       return restoreBoardState(state);
+
     } catch (e) {
       console.warn('[DEBUG] Laden aus DB fehlgeschlagen:', e);
       return false;
@@ -2753,51 +2802,53 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // Stellt alle Karten wieder her
-  function restoreCards(cards) {
-    if (!cards || !cards.length) return;
-    
-    // Für jede gespeicherte Karte die entsprechende Karte finden und wiederherstellen
-    cards.forEach(cardData => {
-      const card = document.getElementById(cardData.id);
-      
-      if (!card) {
-        console.warn("Karte nicht gefunden:", cardData.id);
-        return;
+  function restoreCards(cardsState) {
+    if (!Array.isArray(cardsState) || !cardsState.length) return;
+
+    const cardStack = document.getElementById('card-stack');
+    const boardArea = document.querySelector('.board-area');
+
+    cardsState.forEach((cardData) => {
+      // ← findet sowohl "card-36" als auch "card36"
+      const el = resolveCardElement(cardData);
+      if (!el) {
+        console.warn('Karte nicht gefunden:', cardData.id || cardData.cardId);
+        return; // im forEach mit 'return' statt 'continue' überspringen
       }
-      
-      // Position und Z-Index wiederherstellen
-      card.style.left = cardData.left;
-      card.style.top = cardData.top;
-      card.style.zIndex = cardData.zIndex;
-      
-      // Karte umdrehen, falls nötig
-      if (cardData.isFlipped && !card.classList.contains('flipped')) {
-        flipCard(card);
-      } else if (!cardData.isFlipped && card.classList.contains('flipped')) {
+      const card = el;
+
+      // Position/Z-Index wiederherstellen
+      if (cardData.left)   card.style.left   = cardData.left;
+      if (cardData.top)    card.style.top    = cardData.top;
+      if (cardData.zIndex) card.style.zIndex = cardData.zIndex;
+
+      // Flip-Status angleichen
+      const isFlipped = card.classList.contains('flipped');
+      if (typeof cardData.isFlipped === 'boolean' && cardData.isFlipped !== isFlipped) {
         flipCard(card);
       }
-      
-      // Falls Karte vom Stapel genommen wurde
-      const cardStack = document.getElementById('card-stack');
-      const boardArea = document.querySelector('.board-area');
-      
-      if (!cardData.inStack && cardStack && cardStack.contains(card)) {
-        // Karte aus dem Stapel entfernen
+
+      // Zwischen Stapel und Board umhängen
+      if (cardData.inStack === false && cardStack && cardStack.contains(card)) {
         cardStack.removeChild(card);
-        // Und zum Board-Bereich hinzufügen
-        boardArea.appendChild(card);
+        if (boardArea) boardArea.appendChild(card);
+      } else if (cardData.inStack === true && boardArea && boardArea.contains(card)) {
+        // optional: zurück in den Stapel
+        returnCardToStack(card);
       }
-      
-      // Wenn die Karte auf einem Platz liegt
+
+      // Platzhalter-Status
       if (cardData.placedAt) {
         card.dataset.placedAt = cardData.placedAt;
-        const placeholder = document.getElementById(cardData.placedAt);
-        if (placeholder) {
-          placeholder.classList.add('filled');
-        }
+        const ph = document.getElementById(cardData.placedAt);
+        if (ph) ph.classList.add('filled');
       }
     });
+
+    // für Hover-Tracking usw.
+    document.dispatchEvent(new Event('boardStateUpdated'));
   }
+
 
   // Erweiterte Funktion für den "Sitzung beenden" Button
   function setupSaveAndCloseButton() {
