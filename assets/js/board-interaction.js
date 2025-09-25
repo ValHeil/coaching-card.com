@@ -6,6 +6,48 @@ window.cards          = window.cards          || [];
 window.notes          = window.notes          || [];
 window.participants   = window.participants   || [];
 
+// ==== Debounced DB-Save (bündelt alle Saves & speichert nur bei Änderungen) ====
+let _saveTimer = null;
+let _saveInFlight = false;
+let _lastStateHash = '';
+
+function hashState(state) {
+  try { return JSON.stringify(state); } catch { return String(Date.now()); }
+}
+
+async function _doSave(reason = 'auto') {
+  if (_saveInFlight) return false;
+  const sid = new URLSearchParams(location.search).get('id');
+  if (!sid) return false;
+
+  const state = captureBoardState();
+  const h = hashState(state);
+  if (h === _lastStateHash && reason !== 'force') return false; // nichts geändert
+
+  _lastStateHash = h;
+  _saveInFlight = true;
+  try {
+    await persistStateToServer(state);
+    return true;
+  } finally {
+    _saveInFlight = false;
+  }
+}
+
+// Sammelpunkt für alle Save-Auslöser
+function saveCurrentBoardState(reason = 'auto') {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => { _doSave(reason); }, 400);
+  return true;
+}
+
+// Sofort speichern (z. B. beim Sitzungsende)
+async function flushSaveNow() {
+  clearTimeout(_saveTimer);
+  return _doSave('force');
+}
+
+
 // CC_INIT vom Token-Wrapper entgegennehmen (Name/Board/Deck)
 window.addEventListener('message', (ev) => {
   const d = ev.data || {};
@@ -2543,11 +2585,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // 2) (optional) Server-Persistierung – funktioniert, wenn Punkt 2 unten umgesetzt ist
       try {
-        if (typeof persistStateToServer === 'function') {
-          const state = captureBoardState();
-          await persistStateToServer(state);
-        }
-      } catch (e) { console.warn('Server-Speichern fehlgeschlagen:', e); }
+        await flushSaveNow();  // synchron sichern, bevor Tab zugeht
+      } catch (e) {
+        console.warn('Flush-Save fehlgeschlagen:', e);
+      }
 
       // 3) Tab schließen (nur möglich, wenn per JS geöffnet) – sonst freundlich umleiten
       try {
@@ -2669,19 +2710,10 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // Speichert den aktuellen Zustand in die Sitzung
-  function saveCurrentBoardState() {
-    try {
-      const sessionId = new URLSearchParams(location.search).get('id');
-      if (!sessionId) return false;
-
-      const state = captureBoardState();
-      // fire-and-forget – blockiert UI nicht
-      persistStateToServer(state);
-      return true;
-    } catch (e) {
-      console.warn('saveCurrentBoardState() fehlgeschlagen:', e);
-      return false;
-    }
+  function saveCurrentBoardState(reason = 'auto') {
+    clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(() => { _doSave(reason); }, 400);
+    return true;
   }
 
   // (NEU) Zustand an den Node-Server posten – greift Punkt 2b (/api/state) auf
