@@ -137,6 +137,49 @@ function base64ToJSONUTF8(b64){
   return JSON.parse(decodeURIComponent(escape(bin)));
 }
 
+  async function persistStateToServer(boardState) {
+    try {
+      const sessionId = new URLSearchParams(location.search).get('id');
+      if (!sessionId) return false;
+      const res = await fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: Number(sessionId), state: boardState })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return true;
+    } catch (e) {
+      console.warn('PersistStateToServer fehlgeschlagen:', e);
+      return false;
+    }
+  }
+
+
+  // Lädt den gespeicherten Zustand aus der Sitzung
+  async function loadSavedBoardState() {
+    try {
+      const sessionId = new URLSearchParams(location.search).get('id');
+      if (!sessionId) return false;
+
+      // Karten abwarten (wichtig!)
+      await waitForCards();
+
+      const res = await fetch(`/api/state?id=${encodeURIComponent(sessionId)}`);
+      if (!res.ok) throw new Error(await res.text());
+
+      const { state_b64 } = await res.json();
+      if (!state_b64) {
+        console.log('[DEBUG] Kein Zustand in der DB vorhanden.');
+        return false;
+      }
+
+      const state = base64ToJSONUTF8(state_b64); // UTF-8 sicher
+      return restoreBoardState(state);
+    } catch (e) {
+      console.warn('[DEBUG] Laden aus DB fehlgeschlagen:', e);
+      return false;
+    }
+}
 
 
 // kleine Boot-Konfig (vom Token-Host per postMessage optional gesetzt)
@@ -2715,59 +2758,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     return cardsArray;
   }
-
-  // Speichert den aktuellen Zustand in die Sitzung
-  function saveCurrentBoardState(reason = 'auto') {
-    clearTimeout(_saveTimer);
-    _saveTimer = setTimeout(() => { _doSave(reason); }, 400);
-    return true;
-  }
-
-  // (NEU) Zustand an den Node-Server posten – greift Punkt 2b (/api/state) auf
-  async function persistStateToServer(boardState) {
-    try {
-      const sessionId = new URLSearchParams(location.search).get('id');
-      if (!sessionId) return false;
-      const res = await fetch('/api/state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: Number(sessionId), state: boardState })
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return true;
-    } catch (e) {
-      console.warn('PersistStateToServer fehlgeschlagen:', e);
-      return false;
-    }
-  }
-
-
-  // Lädt den gespeicherten Zustand aus der Sitzung
-  async function loadSavedBoardState() {
-    try {
-      const sessionId = new URLSearchParams(location.search).get('id');
-      if (!sessionId) return false;
-
-      // Karten abwarten (wichtig!)
-      await waitForCards();
-
-      const res = await fetch(`/api/state?id=${encodeURIComponent(sessionId)}`);
-      if (!res.ok) throw new Error(await res.text());
-
-      const { state_b64 } = await res.json();
-      if (!state_b64) {
-        console.log('[DEBUG] Kein Zustand in der DB vorhanden.');
-        return false;
-      }
-
-      const state = base64ToJSONUTF8(state_b64); // UTF-8 sicher
-      return restoreBoardState(state);
-    } catch (e) {
-      console.warn('[DEBUG] Laden aus DB fehlgeschlagen:', e);
-      return false;
-    }
-}
-
 
 
   // Stellt den Board-Zustand wieder her
