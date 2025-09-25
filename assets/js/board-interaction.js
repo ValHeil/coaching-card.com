@@ -373,10 +373,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Titel setzen
     if (boardTitle) boardTitle.textContent = window.CC_BOOT?.session?.name || window.sessionData.name || 'Sitzung';
-
-    // Board aufbauen + Zustand laden
-    if (typeof initializeBoard === 'function') initializeBoard();
-    setTimeout(() => { try { loadSavedBoardState(); } catch(e) { console.warn(e); } }, 0);
   }
   
 
@@ -3076,7 +3072,6 @@ document.addEventListener('DOMContentLoaded', function() {
   };
 
   loadSession();
-  loadSavedBoardState();
   // CSS für Speicherbenachrichtigungen hinzufügen
   addSaveToastStyles(); 
 
