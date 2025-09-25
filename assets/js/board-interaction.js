@@ -20,6 +20,12 @@ async function _doSave(reason = 'auto') {
   const sid = new URLSearchParams(location.search).get('id');
   if (!sid) return false;
 
+  // ← WICHTIG: erst speichern, wenn die Funktion existiert
+  if (typeof captureBoardState !== 'function') {
+    console.warn('[Autosave] captureBoardState fehlt (noch)');
+    return false;
+  }
+
   const state = captureBoardState();
   const h = hashState(state);
   if (h === _lastStateHash && reason !== 'force') return false; // nichts geändert
@@ -2649,6 +2655,7 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log("Erfasster Board-Zustand:", boardState);
     return boardState;
   }
+  window.captureBoardState = captureBoardState;
 
   // Erfasst den Inhalt der Focus Note
   function captureFocusNote() {
