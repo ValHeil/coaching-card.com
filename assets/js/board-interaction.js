@@ -2643,15 +2643,15 @@ document.addEventListener('DOMContentLoaded', function() {
   }   
 
   // Erfasst alle Karten und ihre Eigenschaften
-  function captureAllCards() {
+  function captureAllCards(){
     const cardsArray = [];
     const cardElements = document.querySelectorAll('.card');
-    
+
     cardElements.forEach(card => {
-      const rawId = el.id || '';
-      const cardNum = (rawId.match(/card-?(\d+)/)?.[1]) || el.dataset.cardId || '';
-      // Position, Zustand (umgedreht/nicht umgedreht) und andere Eigenschaften erfassen
-      const cardData = {
+      const rawId  = card.id || '';
+      const cardNum = (rawId.match(/card-?(\d+)/)?.[1]) || card.dataset.cardId || '';
+
+      cardsArray.push({
         id: rawId,
         cardId: cardNum,
         left: card.style.left,
@@ -2660,11 +2660,9 @@ document.addEventListener('DOMContentLoaded', function() {
         isFlipped: card.classList.contains('flipped'),
         inStack: card.closest('#card-stack') !== null,
         placedAt: card.dataset.placedAt || null
-      };
-      
-      cardsArray.push(cardData);
+      });
     });
-    
+
     return cardsArray;
   }
 
