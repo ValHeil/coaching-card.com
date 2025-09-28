@@ -2631,19 +2631,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // Sitzung-beenden-Button
     confirmButton.addEventListener('click', async () => {
       closeDialog();
-
-      // Zustand sicher speichern
       try { await flushSaveNow(); } catch (e) { console.warn('Flush-Save fehlgeschlagen:', e); }
 
-      const fallback = () => location.replace('/kartensets/dashboard/?closed=1');
-
       // Schließen versuchen
-      window.open('', '_self');   // Safari-Workaround
+      window.open('', '_self');  // Safari-Workaround
       window.close();
 
-      // Wenn der Browser das Schließen still ignoriert, nach kurzer Zeit fallbacken
+      // Falls blockiert, weich auf about:blank aus (keine 404)
       setTimeout(() => {
-        if (!window.closed) fallback();
+        try { if (!window.closed) location.replace('about:blank'); } catch (_) {}
       }, 250);
     });
     
