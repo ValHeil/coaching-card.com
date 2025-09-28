@@ -3100,17 +3100,39 @@ document.addEventListener('DOMContentLoaded', function() {
     errorContainer.classList.remove('hidden');
   };
 
+  // Sitzung laden (setzt u.a. window.sessionData)
   loadSession();
-  // CSS für Speicherbenachrichtigungen hinzufügen
-  addSaveToastStyles(); 
 
-  // Automatisches Speichern einrichten
+  // 1) Board/Deck ermitteln und Board aufbauen
+  const resolved = (typeof resolveBoardAndDeck === 'function')
+    ? resolveBoardAndDeck()
+    : { board: (window.boardType || 'board1'), deck: (window.deck || 'deck1') };
+
+  window.boardType = resolved.board;
+  window.deck      = resolved.deck;
+
+  initializeBoard();     // <— fehlte, baut Stapel, Notizblock, Layout etc.
+
+  // 2) Zustand aus DB wiederherstellen, sobald Karten existieren
+  if (typeof waitForCards === 'function' && typeof loadSavedBoardState === 'function') {
+    waitForCards().then(() => { try { loadSavedBoardState(); } catch(e) { console.warn(e); } });
+  }
+
+  // UI-Helfer
+  addSaveToastStyles();
+
+  // 3) Autosave NACH dem Aufbau starten (sonst speicherst du leere Zustände)
   const autoSaveInterval = setupAutoSave();
 
-  // Prüfen, ob es sich um einen Beitritt handelt
+  // (optional) Button-Handler neu setzen
+  if (typeof setupEndSessionButton === 'function') setupEndSessionButton();
+
+  // Join-/Passwort-Flow initialisieren (wie bisher)
   if (window.addPasswordPromptStyles) window.addPasswordPromptStyles();
   if (window.initializeParticipantJoin) window.initializeParticipantJoin();
   if (window.handleSessionJoin) window.handleSessionJoin();
+    // CSS für Speicherbenachrichtigungen hinzufügen
+    addSaveToastStyles(); 
 
   // Bestehende Notizen/Notes initial beobachten (AutoGrow + Resize)
   document.querySelectorAll('.notiz, .note').forEach(n => {
@@ -3137,7 +3159,7 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
     // In board-interaction.js am Ende der DOMContentLoaded-Funktion
-  window.addEventListener('beforeunload', function() {
+    window.addEventListener('beforeunload', function() {
     // Aktuellen Zustand speichern
     saveCurrentBoardState();
     
