@@ -2632,21 +2632,17 @@ document.addEventListener('DOMContentLoaded', function() {
     confirmButton.addEventListener('click', async () => {
       closeDialog();
 
-      // 2) (optional) Server-Persistierung – funktioniert, wenn Punkt 2 unten umgesetzt ist
-      try {
-        await flushSaveNow();  // synchron sichern, bevor Tab zugeht
-      } catch (e) {
-        console.warn('Flush-Save fehlgeschlagen:', e);
-      }
+      // 1) Zustand sicher speichern
+      try { await flushSaveNow(); } catch(e) { console.warn('Flush-Save fehlgeschlagen:', e); }
 
-      // 3) Tab schließen (nur möglich, wenn per JS geöffnet) – sonst freundlich umleiten
+      // 2) Tab schließen (funktioniert, wenn das Board per JS in neuem Tab geöffnet wurde)
       try {
         window.open('', '_self'); // Safari-Workaround
         window.close();
         return;
-      } catch (e) {}
+      } catch(e) {}
 
-      // Fallback: sichere Weiterleitung (keine 404)
+      // 3) Fallback: auf eine sichere Seite leiten (keine 404)
       location.replace('/kartensets/dashboard/?closed=1');
     });
     
