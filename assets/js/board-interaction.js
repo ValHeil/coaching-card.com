@@ -2629,29 +2629,46 @@ document.addEventListener('DOMContentLoaded', function() {
     cancelButton.addEventListener('click', closeDialog);
     
     // Sitzung-beenden-Button
-    confirmButton.addEventListener('click', async () => {
+    confirmButton.addEventListener('click', () => {
       closeDialog();
-      try { await flushSaveNow(); } catch (e) { console.warn('Flush-Save fehlgeschlagen:', e); }
 
-      // Schließen versuchen
-      window.open('', '_self');  // Safari-Workaround
+      // 1) Speichern "fire-and-forget" (ohne await, damit User-Aktivierung erhalten bleibt)
+      try {
+        const sid = new URLSearchParams(location.search).get('id');
+        if (sid) {
+          const state = (typeof captureBoardState === 'function') ? captureBoardState() : null;
+          if (navigator.sendBeacon && state) {
+            const payload = new Blob(
+              [JSON.stringify({ session_id: Number(sid), state })],
+              { type: 'application/json' }
+            );
+            navigator.sendBeacon('/api/state', payload);
+          } else if (state) {
+            // keepalive: true erlaubt das Senden auch beim Schließen/Navigieren
+            fetch('/api/state', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ session_id: Number(sid), state }),
+              keepalive: true
+            }).catch(() => {});
+          }
+        }
+      } catch (e) {
+        console.warn('Save-on-close (non-blocking) fehlgeschlagen:', e);
+      }
+
+      // 2) Jetzt SOFORT schließen (innerhalb der User-Geste)
+      window.open('', '_self');   // Safari-Workaround
       window.close();
 
-      // Falls blockiert, weich auf about:blank aus (keine 404)
+      // 3) Harte Rückfallebene, falls Browser das Schließen blockt
       setTimeout(() => {
-        try { if (!window.closed) location.replace('about:blank'); } catch (_) {}
-      }, 250);
+        if (!window.closed) {
+          // neutraler Fallback ohne 404
+          location.replace('about:blank');
+        }
+      }, 400);
     });
-    
-    // ESC-Taste zum Schließen des Dialogs
-    document.addEventListener('keydown', function escHandler(e) {
-      if (e.key === 'Escape') {
-        closeDialog();
-        document.removeEventListener('keydown', escHandler);
-      }
-    });
-    
-    return dialogContainer;
   }
 
   // Funktion, um den "Sitzung beenden" Button zu aktualisieren
