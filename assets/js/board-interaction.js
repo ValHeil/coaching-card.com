@@ -2777,6 +2777,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     return true;
   }
+  window.restoreBoardState = restoreBoardState;
 
   // Stellt die Focus Note wieder her
   function restoreFocusNote(focusNoteContent) {
@@ -2833,6 +2834,7 @@ document.addEventListener('DOMContentLoaded', function() {
       enhanceDraggableNote(notiz);
     });
   }
+  window.restoreNotes = restoreNotes;
 
   // Stellt alle Karten wieder her
   function restoreCards(cardsState) {
@@ -2886,6 +2888,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.dispatchEvent(new Event('boardStateUpdated'));
   }
+  window.restoreCards = restoreCards;
 
 
 
