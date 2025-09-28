@@ -2632,25 +2632,19 @@ document.addEventListener('DOMContentLoaded', function() {
     confirmButton.addEventListener('click', async () => {
       closeDialog();
 
-      // 1) Zustand sicher speichern
-      try { await flushSaveNow(); } catch(e) { console.warn('Flush-Save fehlgeschlagen:', e); }
+      // Zustand sicher speichern
+      try { await flushSaveNow(); } catch (e) { console.warn('Flush-Save fehlgeschlagen:', e); }
 
-      // 2) Tab schließen (funktioniert, wenn das Board per JS in neuem Tab geöffnet wurde)
-      try {
-        window.open('', '_self'); // Safari-Workaround
-        window.close();
-        return;
-      } catch(e) {}
+      const fallback = () => location.replace('/kartensets/dashboard/?closed=1');
 
-      // 3) Fallback: auf eine sichere Seite leiten (keine 404)
-      location.replace('/kartensets/dashboard/?closed=1');
-    });
-    
-    // Schließen bei Klick außerhalb des Dialogs
-    dialogContainer.addEventListener('click', (e) => {
-      if (e.target === dialogContainer) {
-        closeDialog();
-      }
+      // Schließen versuchen
+      window.open('', '_self');   // Safari-Workaround
+      window.close();
+
+      // Wenn der Browser das Schließen still ignoriert, nach kurzer Zeit fallbacken
+      setTimeout(() => {
+        if (!window.closed) fallback();
+      }, 250);
     });
     
     // ESC-Taste zum Schließen des Dialogs
