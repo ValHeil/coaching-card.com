@@ -1002,18 +1002,48 @@ html, body { height: 100%; margin: 0; overflow: hidden !important; }
   overflow: visible !important;  /* nichts abschneiden */
 }
 
-/* Seite selbst soll nicht scrollen */
-html, body {
-  height: 100%;
-  margin: 0;
-  overflow: hidden;          /* keine Scrollbalken der Seite */
-}
-
 /* Footer-Slot sicherheitshalber ausblenden */
 .board-footer { display: none !important; }
 
 .board-header-area { position: relative; z-index: 2; }
 .board-main-area   { position: relative; z-index: 1; }
 
+/* 1) Seite wirklich “fest” machen – nie scrollen */
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;        /* killt auch den 1–2 px Mini-Scroll */
+}
 
+/* 2) Das eigentliche Board nimmt genau den Viewport ein */
+#session-board.board-area {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden !important;  /* kein internes Scrollen */
+  position: relative;
+}
 
+/* 3) Footer darf keine zusätzliche Seitenhöhe erzeugen */
+footer.board-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;               /* nimmt keinen Platz im Layout ein */
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  pointer-events: none;    /* blockiert nichts – siehe Button unten */
+}
+
+/* 4) “Sitzung beenden” immer sichtbar über allem, klickbar */
+.end-session-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 10010;          /* vor Board/Notes/Karten */
+  pointer-events: auto;    /* trotz pointer-events:none auf dem Footer */
+}
