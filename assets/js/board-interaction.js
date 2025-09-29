@@ -2660,31 +2660,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!closed) {
           try { window.open('', '_self'); window.close(); closed = window.closed; } catch {}
         }
-
-        // 4) Letzter Fallback (ohne User Activation ok)
-        if (!closed) {
-          const ov = document.createElement('div');
-          ov.id = 'force-close-overlay';
-          ov.style.cssText = `
-            position:fixed; inset:0; background:rgba(0,0,0,.6);
-            display:flex; align-items:center; justify-content:center; z-index:999999;
-          `;
-          ov.innerHTML = `
-            <div style="background:#fff; padding:20px 24px; border-radius:12px; max-width:420px; text-align:center;">
-              <h3 style="margin:0 0 10px;">Tab kann nicht automatisch geschlossen werden</h3>
-              <p style="margin:0 0 16px;">Das liegt vermutlich an Brave. Tippen Sie unten, um den Tab zu schließen.</p>
-              <button id="force-close-btn" class="dialog-button confirm-button">Tab jetzt schließen</button>
-            </div>`;
-          document.body.appendChild(ov);
-
-          const btn = ov.querySelector('#force-close-btn');
-          btn.addEventListener('click', () => {
-            try { if (window.opener && !window.opener.closed) window.opener.postMessage({ t:'CC_REQUEST_CLOSE' }, '*'); } catch {}
-            try { window.open('', '_self'); } catch {}
-            try { window.close(); } catch {}
-            setTimeout(() => { if (!window.closed) location.replace('about:blank'); }, 150);
-          });
-        }
       } catch (_) {}
     });
 
