@@ -18,14 +18,6 @@ body {
   overflow: none; /* Verhindert Scrollen am Hauptcontainer */
 }
 
-.board-area {
-  flex-grow: 1;
-  overflow: none; /* Ermöglicht Scrollen im Board-Bereich bei Bedarf */
-  display: flex;
-  flex-direction: column; /* Stellt sicher, dass Inhalte vertikal angeordnet sind */
-  min-height: 0;
-}
-
 /* Zentraler Titel */
 .board-title-container {
   text-align: center;
@@ -912,13 +904,6 @@ html, body { height: 100%; margin: 0; }
 
 .board-title-only #board-type { display: none; }
 
-/* Board nimmt restliche Höhe */
-.board-area {
-  height: calc(100vh - 60px);
-  width: 100%;
-  overflow: none;
-  padding: 16px 24px;
-}
 
 /* Sicherheit: alte Steuer-Elemente ausblenden, falls noch im DOM */
 .board-controls,
@@ -935,13 +920,7 @@ html, body { height: 100%; margin: 0; }
 html, body { height: 100%; overflow: hidden; }
 .board-container { height: 100dvh; overflow: hidden; }
 
-/* Board nimmt die volle Höhe ein; Inhalte vertikal anordnen */
-.board-area {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;      /* wichtig für flex children */
-  height: 100%;
-}
+
 
 /* --- kompakter Header / Titel oben --- */
 .board-header-area { 
@@ -989,8 +968,6 @@ html, body { height: 100%; }
 
 .board-container { height: 100dvh; overflow: hidden; }
 
-.board-area { height: 100%; }
-
 .board-type-board1,
 .board-type-boardTest { min-height: 100%; }
 
@@ -1015,15 +992,21 @@ header.board-title-only,
 /* Seite auf Viewport pinnen + Scrollen komplett aus */
 html, body { height: 100%; margin: 0; overflow: hidden !important; }
 
-/* Board flächig und ohne Innenabstand */
-.board-area{
-  position: fixed;     /* füllt den Bildschirm */
-  inset: 0;            /* top/right/bottom/left = 0 */
-  width: auto !important;
-  height: auto !important;
-  padding: 0 !important;   /* entfernt den linken „Rand“ */
+.board-area {
+  position: relative;        /* NICHT fixed */
+  inset: auto;
+  width: 100%;
+  height: 100%;
   margin: 0 !important;
-  overflow: hidden !important;
+  padding: 0 !important;
+  overflow: visible !important;  /* nichts abschneiden */
+}
+
+/* Seite selbst soll nicht scrollen */
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;          /* keine Scrollbalken der Seite */
 }
 
 /* Footer-Slot sicherheitshalber ausblenden */
