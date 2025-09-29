@@ -2632,46 +2632,47 @@ document.addEventListener('DOMContentLoaded', function() {
     confirmButton.addEventListener('click', () => {
       closeDialog();
 
-        // 1) Speichern "fire-and-forget"
       try {
         const sid = new URLSearchParams(location.search).get('id');
         const state = (typeof captureBoardState === 'function') ? captureBoardState() : null;
+
         if (sid && state) {
+          const payload = JSON.stringify({ session_id: Number(sid), state });
+
+          // 1) Bevorzugt: sendBeacon (Navigation kann sofort passieren)
           if (navigator.sendBeacon) {
-            const payload = new Blob([JSON.stringify({ session_id: Number(sid), state })], { type: 'application/json' });
-            navigator.sendBeacon('/api/state', payload);
-          } else {
-            fetch('/api/state', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ session_id: Number(sid), state }),
-              keepalive: true
-            }).catch(()=>{});
+            const blob = new Blob([payload], { type: 'application/json' });
+            navigator.sendBeacon('/api/state', blob);
+            location.assign(getSessionsUrl());
+            return;
           }
-        }
 
-        // 2) Opener & Broadcast sofort informieren
-        try { new BroadcastChannel('cc-close').postMessage({ t: 'CC_REQUEST_CLOSE', sid }); } catch {}
-        try { if (window.opener && !window.opener.closed) window.opener.postMessage({ t: 'CC_REQUEST_CLOSE', sid }, '*'); } catch {}
-
-        // 3) Entscheidend: direkt schließen (noch im User-Click-Stack)
-        let closed = false;
-        try { window.close(); closed = window.closed; } catch {}
-        if (!closed) {
-          try { window.open('', '_self'); window.close(); closed = window.closed; } catch {}
+          // 2) Fallback: fetch mit keepalive (nicht awaiten)
+          fetch('/api/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+            keepalive: true
+          }).catch(()=>{});
         }
-      } catch (_) {}
+      } catch (e) {
+        console.warn('Save-on-exit:', e);
+      }
+
+      // 3) Zurück zur Übersicht – immer im selben Tab
+      location.assign(getSessionsUrl());
     });
+
 
   }
 
   // Funktion, um den "Sitzung beenden" Button zu aktualisieren
   function setupEndSessionButton() {
-    const btn = document.querySelector('.end-session-btn');
+    const btn = document.getElementById('close-session-btn') || document.querySelector('.end-session-btn');
     if (!btn) return;
-    const clone = btn.cloneNode(true);
-    btn.replaceWith(clone);
-    clone.addEventListener('click', () => createEndSessionDialog());
+    const fresh = btn.cloneNode(true);
+    btn.parentNode.replaceChild(fresh, btn);
+    fresh.addEventListener('click', createEndSessionDialog);
   }
 
   // Funktionen zum Speichern und Laden des Board-Zustands
@@ -3214,6 +3215,53 @@ function isValidBoardState(boardState) {
   
   return true;
 }
+
+function getSessionsUrl() {
+  // Bevorzugt über Konfig setzen (siehe Kommentar b) unten)
+  if (window.ccsConfig && ccsConfig.sessionsUrl) return ccsConfig.sessionsUrl;
+
+  // Falls Nutzer wirklich von "Meine Sessions" kam, dorthin zurück
+  try {
+    const ref = document.referrer ? new URL(document.referrer, location.origin) : null;
+    if (ref && /meine-sessions/i.test(ref.pathname)) return ref.href;
+  } catch {}
+
+  // Fallback: statischer Pfad
+  return '/kartensets/meine-sessions/';
+}
+
+async function endSessionAndReturn() {
+  try {
+    const sid   = new URLSearchParams(location.search).get('id');
+    const state = (typeof captureBoardState === 'function') ? captureBoardState() : null;
+    const back  = getSessionsUrl();
+
+    if (sid && state) {
+      const payload = JSON.stringify({ session_id: Number(sid), state });
+
+      // Bevorzugt sendBeacon (verlässt Seite sofort, Request läuft im Hintergrund weiter)
+      if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: 'application/json' });
+        navigator.sendBeacon('/api/state', blob);
+        location.assign(back);
+        return;
+      }
+
+      // Fallback: fetch mit keepalive
+      await fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true
+      });
+    }
+    location.assign(back);
+  } catch (e) {
+    console.warn('endSessionAndReturn():', e);
+    location.assign(getSessionsUrl());
+  }
+}
+
 
 
 // Fehler-Benachrichtigungsfunktion
