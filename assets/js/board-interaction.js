@@ -458,9 +458,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Sessiondaten minimal belegen (Name kommt aus CC_BOOT.session)
       window.sessionData = window.sessionData || {
-      id: sid,
-      name: window.CC_BOOT?.session?.name || nameFromUrl || 'Sitzung'
-    };
+        id: sid,
+        name: (window.CC_BOOT?.session?.name) || nameFromUrl || 'Sitzung'
+      };
 
     // Optionaler Zusatz: Name aus LocalStorage als weiterer Fallback
     if (!window.CC_BOOT?.session?.name && !nameFromUrl) {
@@ -472,9 +472,16 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Titel setzen – mit neuer Priorität
-    if (boardTitle) {
-      boardTitle.textContent =
-        window.CC_BOOT?.session?.name || nameFromUrl || window.sessionData.name || 'Sitzung';
+    const titleEl = document.getElementById('board-title');
+    if (titleEl) {
+      titleEl.textContent =
+        (window.CC_BOOT?.session?.name) ||
+        nameFromUrl ||
+        (window.sessionData && window.sessionData.name) ||
+        'Sitzung';
+
+      // Optional: auch den Browser-Tab aktualisieren
+      document.title = titleEl.textContent;
     }
   }
   
