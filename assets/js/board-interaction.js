@@ -208,23 +208,42 @@ function resolveBoardAndDeck() {
 /* Kompat: wird vom Token/Join-Flow ggf. gesetzt */
 window.CC_BOOT = window.CC_BOOT || {};
 
-/* --- REPLACE: handleSessionJoin (alte Version komplett ersetzen) -------- */
 function handleSessionJoin() {
-  const url = new URLSearchParams(location.search);
-  const sid = url.get('id');
-  if (!sid) { showError('Ungültiger Link: Keine Sitzungs-ID gefunden.'); return false; }
+  const qs   = new URLSearchParams(location.search);
+  const boot = (window.CC_BOOT && window.CC_BOOT.session) || {};
 
-  const sess = (window.CC_BOOT && window.CC_BOOT.session) || {};
-  const effectiveBoard = canonBoardSlug(url.get('board') || window.CC_BOOT?.board || sess.board || 'board1');
+  // Session-ID aus URL ODER (Token-Host) aus Boot-Kontext
+  const sid = qs.get('id') || boot.id;
+  if (!sid) {
+    if (typeof showError === 'function') {
+      showError('Ungültiger Link: Keine Sitzungs-ID gefunden.');
+    } else {
+      alert('Ungültiger Link: Keine Sitzungs-ID gefunden.');
+    }
+    return false;
+  }
 
+  // Board-Key ermitteln (QS > CC_BOOT.board > boot.board > Default)
+  const boardCandidate =
+    qs.get('board') ||
+    (window.CC_BOOT && window.CC_BOOT.board) ||
+    boot.board ||
+    'board1';
+
+  const effectiveBoard =
+    (typeof canonBoardSlug === 'function') ? canonBoardSlug(boardCandidate) : boardCandidate;
+
+  // minimale Sitzungsdaten bereitstellen (ohne Prompts)
   window.sessionData = {
     id: sid,
-    name: sess.name || 'Sitzung',
+    name: boot.name || 'Sitzung',
     boardId: effectiveBoard,
-    participants: [] // optional, wenn du später per REST nachlädst
+    participants: []
   };
+
   return true;
 }
+
 
 
 
