@@ -1012,7 +1012,8 @@ html, body { height: 100%; margin: 0; overflow: hidden !important; }
 html, body {
   height: 100%;
   margin: 0;
-  overflow: hidden;        /* killt auch den 1–2 px Mini-Scroll */
+  overflow: hidden;             /* Nie scrollen */
+  overscroll-behavior: none;    /* kein „Gummiscrollen“ auf Touch */
 }
 
 /* 2) Das eigentliche Board nimmt genau den Viewport ein */
@@ -1044,6 +1045,6 @@ footer.board-footer {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  z-index: 10010;          /* vor Board/Notes/Karten */
+  z-index: 99999;          /* vor Board/Notes/Karten */
   pointer-events: auto;    /* trotz pointer-events:none auf dem Footer */
 }

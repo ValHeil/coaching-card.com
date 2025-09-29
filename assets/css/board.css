@@ -60,13 +60,6 @@
   background-color: #ffe0e0;
 }
 
-/* Board Typen */
-.board-area {
-  position: relative;
-  flex: 1;
-  overflow: visible;
-  min-height: 0;
-}
 
 /* Allgemeine Grid-Layout-Einstellungen */
 .board-main-area, .board-header-area {
