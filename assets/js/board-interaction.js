@@ -2657,31 +2657,36 @@ document.addEventListener('DOMContentLoaded', function() {
         console.warn('Save-on-close (non-blocking) fehlgeschlagen:', e);
       }
 
+      // 2) Dem Opener Bescheid sagen – der soll schließen
       try {
         const sid = new URLSearchParams(location.search).get('id') || null;
         if (window.opener && !window.opener.closed) {
           window.opener.postMessage({ t: 'CC_REQUEST_CLOSE', sid }, '*');
-          try {
-            const sid = new URLSearchParams(location.search).get('id') || null;
-            const bc = new BroadcastChannel('cc-close');
-            bc.postMessage({ t: 'CC_REQUEST_CLOSE', sid });
-            // optional: bc.close();
-          } catch (_) {}
+
+          // Dem Opener kurz Zeit geben, das Tab zu schließen.
+          setTimeout(() => {
+            // 3) Fallback: Selbst schließen (nur wenn noch offen)
+            if (!window.closed) {
+              try { window.open('', '_self'); } catch {}
+              try { window.close(); } catch {}
+              setTimeout(() => {
+                if (!window.closed) location.replace('about:blank');
+              }, 400);
+            }
+          }, 250);
+
+          return; // wichtig: nicht sofort selbst schließen
         }
       } catch (_) {}
 
-      // 2) Jetzt SOFORT schließen (innerhalb der User-Geste)
-      window.open('', '_self');   // Safari-Workaround
-      window.close();
-
-      // 3) Harte Rückfallebene, falls Browser das Schließen blockt
+      // 4) Kein Opener? Direkt Selbst-Fallback
+      try { window.open('', '_self'); } catch {}
+      try { window.close(); } catch {}
       setTimeout(() => {
-        if (!window.closed) {
-          // neutraler Fallback ohne 404
-          location.replace('about:blank');
-        }
+        if (!window.closed) location.replace('about:blank');
       }, 400);
     });
+
   }
 
   // Funktion, um den "Sitzung beenden" Button zu aktualisieren
