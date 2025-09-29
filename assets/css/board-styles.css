@@ -1001,29 +1001,9 @@ html, body { height: 100%; }
 
 /* === OVERRIDES: kein Header, keine Ränder, keine Scrollbalken === */
 
-/* Header/Title komplett ausblenden (falls er noch irgendwo existiert) */
-.board-title-container,
-.board-title-only,
-header.board-title-only,
-#board-title { display: none !important; }
-
 /* Seite fix auf Viewport pinnen */
 html, body { height: 100%; margin: 0; overflow: hidden !important; }
 
-/* Board flächig, ohne Innenabstand & ohne Scrollen */
-.board-area {
-  position: fixed;       /* füllt den Bildschirm */
-  inset: 0;              /* top/right/bottom/left = 0 */
-  height: auto !important;
-  width: auto !important;
-  padding: 0 !important; /* linker „Rand“ verschwindet */
-  margin: 0 !important;
-  overflow: hidden !important;
-  box-sizing: border-box;
-}
-
-/* Falls der Footer minimal Höhe erzeugt: ausblenden */
-.board-footer { display: none !important; }
 
 
 
