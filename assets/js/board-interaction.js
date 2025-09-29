@@ -475,12 +475,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const titleEl = document.getElementById('board-title');
     if (titleEl) {
       titleEl.textContent =
-        (window.CC_BOOT?.session?.name) ||
         nameFromUrl ||
+        (window.CC_BOOT?.session?.name) ||
         (window.sessionData && window.sessionData.name) ||
         'Sitzung';
-
-      // Optional: auch den Browser-Tab aktualisieren
       document.title = titleEl.textContent;
     }
   }
@@ -718,7 +716,7 @@ document.addEventListener('DOMContentLoaded', function() {
       newEndSessionBtn.className = 'end-session-btn';
       newEndSessionBtn.textContent = 'Sitzung beenden';
       
-      document.querySelector('.board-footer').appendChild(newEndSessionBtn);
+      document.body.appendChild(newEndSessionBtn);
       
       // Direkt nach dem Hinzufügen den Event-Listener setzen:
       newEndSessionBtn.addEventListener('click', () => {
