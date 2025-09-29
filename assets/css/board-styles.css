@@ -915,7 +915,7 @@ html, body { height: 100%; margin: 0; }
 .board-area {
   height: calc(100vh - 60px);
   width: 100%;
-  overflow: visible;
+  overflow: none;
   padding: 16px 24px;
 }
 
