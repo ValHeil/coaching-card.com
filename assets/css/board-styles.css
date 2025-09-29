@@ -1005,7 +1005,29 @@ html, body { height: 100%; }
 html, body { height: 100%; margin: 0; overflow: hidden !important; }
 
 
+/* — Fix: kein Header, keine Ränder, keine Scrollbalken — */
+.board-title-container,
+.board-title-only,
+header.board-title-only,
+#board-title { display: none !important; }   /* falls noch vorhanden */
 
+/* Seite auf Viewport pinnen + Scrollen komplett aus */
+html, body { height: 100%; margin: 0; overflow: hidden !important; }
+
+/* Board flächig und ohne Innenabstand */
+.board-area{
+  position: fixed;     /* füllt den Bildschirm */
+  inset: 0;            /* top/right/bottom/left = 0 */
+  width: auto !important;
+  height: auto !important;
+  padding: 0 !important;   /* entfernt den linken „Rand“ */
+  margin: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box;
+}
+
+/* Footer-Slot sicherheitshalber ausblenden */
+.board-footer { display: none !important; }
 
 
 
