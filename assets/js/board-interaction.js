@@ -2657,6 +2657,19 @@ document.addEventListener('DOMContentLoaded', function() {
         console.warn('Save-on-close (non-blocking) fehlgeschlagen:', e);
       }
 
+      try {
+        const sid = new URLSearchParams(location.search).get('id') || null;
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage({ t: 'CC_REQUEST_CLOSE', sid }, '*');
+          try {
+            const sid = new URLSearchParams(location.search).get('id') || null;
+            const bc = new BroadcastChannel('cc-close');
+            bc.postMessage({ t: 'CC_REQUEST_CLOSE', sid });
+            // optional: bc.close();
+          } catch (_) {}
+        }
+      } catch (_) {}
+
       // 2) Jetzt SOFORT schließen (innerhalb der User-Geste)
       window.open('', '_self');   // Safari-Workaround
       window.close();
