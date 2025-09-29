@@ -446,6 +446,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const url = new URLSearchParams(window.location.search);
     const sid = url.get('id');
     if (!sid) { showError('Keine gültige Sitzungs-ID gefunden.'); return; }
+    const nameFromUrl = url.get('name') || url.get('n');
 
     // Board/Deck aus URL oder aus CC_BOOT (vom Token-Wrapper)
     const rawBoard = url.get('board') || window.CC_BOOT?.board || window.CC_BOOT?.session?.board || 'board1';
@@ -456,14 +457,25 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!effDeck) effDeck = 'deck1';
 
     // Sessiondaten minimal belegen (Name kommt aus CC_BOOT.session)
-    window.sessionData = window.sessionData || {
+      window.sessionData = window.sessionData || {
       id: sid,
-      name: window.CC_BOOT?.session?.name || 'Sitzung'
+      name: window.CC_BOOT?.session?.name || nameFromUrl || 'Sitzung'
     };
-    window.boardType = effBoard;
 
-    // Titel setzen
-    if (boardTitle) boardTitle.textContent = window.CC_BOOT?.session?.name || window.sessionData.name || 'Sitzung';
+    // Optionaler Zusatz: Name aus LocalStorage als weiterer Fallback
+    if (!window.CC_BOOT?.session?.name && !nameFromUrl) {
+      try {
+        const list = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
+        const local = list.find(s => String(s.id) === String(sid));
+        if (local?.name) window.sessionData.name = local.name;
+      } catch {}
+    }
+
+    // Titel setzen – mit neuer Priorität
+    if (boardTitle) {
+      boardTitle.textContent =
+        window.CC_BOOT?.session?.name || nameFromUrl || window.sessionData.name || 'Sitzung';
+    }
   }
   
 
