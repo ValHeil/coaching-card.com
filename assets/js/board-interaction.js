@@ -3208,14 +3208,13 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
-// Am Ende der Datei hinzufügen
-window.handleSessionJoin = handleSessionJoin;
-window.handleParticipantJoin = handleParticipantJoin;
-window.showParticipantNamePrompt = showParticipantNamePrompt;
-window.showPasswordPrompt = showPasswordPrompt;
-window.addPasswordPromptStyles = addPasswordPromptStyles;
-window.addParticipantNamePromptStyles = addParticipantNamePromptStyles;
-window.joinSession = joinSession;
+window.handleSessionJoin              = window.handleSessionJoin              || handleSessionJoin;
+window.handleParticipantJoin          = window.handleParticipantJoin          || handleParticipantJoin;
+window.showParticipantNamePrompt      = window.showParticipantNamePrompt      || showParticipantNamePrompt;
+window.showPasswordPrompt             = window.showPasswordPrompt             || showPasswordPrompt;
+window.addPasswordPromptStyles        = window.addPasswordPromptStyles        || addPasswordPromptStyles;
+window.addParticipantNamePromptStyles = window.addParticipantNamePromptStyles || addParticipantNamePromptStyles;
+window.joinSession                    = window.joinSession                    || joinSession;
 
 // Fallback-Funktion für showError
 window.showError = showError || function(message) {

@@ -1,6 +1,6 @@
 // participant-join.js — owner-aware
 // Signatur für Debug
-window.__PJ_VERSION__ = 'owner-aware-1';
+window.__PJ_VERSION__ = 'owner-aware-2';
 
 // --------- kleine Helfer ---------
 function qs() { return new URLSearchParams(window.location.search); }
@@ -64,6 +64,8 @@ function showPasswordPrompt(session) {
 
 // ---------------- Teilnehmer-Flow (bestehend) ----------------
 function showParticipantNamePrompt(session) {
+  var isOwner = new URLSearchParams(location.search).get('owner') === '1';
+  if (isOwner) { return true; }
   // Vorhandene Abfrage entfernen
   const existingPrompt = document.getElementById('participant-name-prompt');
   if (existingPrompt) existingPrompt.remove();
