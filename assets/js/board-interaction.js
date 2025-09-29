@@ -3227,7 +3227,7 @@ function getSessionsUrl() {
   } catch {}
 
   // Fallback: statischer Pfad
-  return '/kartensets/meine-sessions/';
+  return '/meine-sessions/';
 }
 
 async function endSessionAndReturn() {
