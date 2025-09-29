@@ -100,7 +100,8 @@ body {
   font-size: 20px;
   color: #333;
   box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-  min-height: clamp(160px, 22vh, 260px);
+  min-height: calc(var(--card-h) + 24px); /* war clamp(..., 22vh, 260px) */
+  overflow: visible;
 }
 
 /* Board1 Beschreibungs-Box (Problem-Lösung) */
@@ -1028,7 +1029,8 @@ html, body { height: 100%; margin: 0; overflow: hidden !important; }
 /* Footer-Slot sicherheitshalber ausblenden */
 .board-footer { display: none !important; }
 
-
+.board-header-area { position: relative; z-index: 2; }
+.board-main-area   { position: relative; z-index: 1; }
 
 
 
