@@ -36,7 +36,7 @@
 <body>
   <div class="board-container">
     <header class="board-title-only">
-      <h1 id="board-title">Baum</h1>
+      <h1 id="board-title">Sitzung</h1>
       <div id="error-container" class="error-message hidden">
         <p id="error-message"></p>
       </div>
@@ -65,17 +65,20 @@
   </div>
 
   <script>
-    // Minimal-Bootstrap für das Board: Standard-Board/-Deck + Sitzungsname
     (function () {
       const qs = new URLSearchParams(location.search);
-      window.CC_BOOT = {
-        board: 'board1',            // Standard-Board, kann später per URL überschrieben werden (?board=boardTest)
-        deck:  'deck1',             // Standard-Deck
-        session: {
-          id:   qs.get('id') || qs.get('session') || null,
-          name: document.getElementById('board-title')?.textContent || 'Sitzung'
-        }
-      };
+      const nameFromUrl = qs.get('name') || qs.get('n');
+      const h1 = document.getElementById('board-title');
+
+      if (nameFromUrl && h1) h1.textContent = nameFromUrl;
+
+      // CC_BOOT vorbereiten, damit nachladende Skripte denselben Namen sehen
+      window.CC_BOOT = window.CC_BOOT || {};
+      window.CC_BOOT.session = Object.assign(
+        { id: qs.get('id') || qs.get('session') || null },
+        window.CC_BOOT.session || {},
+        nameFromUrl ? { name: nameFromUrl } : {}
+      );
     })();
   </script>
 
