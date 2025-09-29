@@ -2643,7 +2643,12 @@ document.addEventListener('DOMContentLoaded', function() {
           if (navigator.sendBeacon) {
             const blob = new Blob([payload], { type: 'application/json' });
             navigator.sendBeacon('/api/state', blob);
-            location.assign(getSessionsUrl());
+            const dest = getSessionsUrl();
+            if (window.top && window.top !== window) {
+              window.top.location.href = dest;   // im iframe → Tab-URL umschalten
+            } else {
+              window.location.href = dest;       // normaler Fall
+            }
             return;
           }
 
@@ -2660,7 +2665,12 @@ document.addEventListener('DOMContentLoaded', function() {
       }
 
       // 3) Zurück zur Übersicht – immer im selben Tab
-      location.assign(getSessionsUrl());
+      const dest = getSessionsUrl();
+      if (window.top && window.top !== window) {
+        window.top.location.href = dest;   // im iframe → Tab-URL umschalten
+      } else {
+        window.location.href = dest;       // normaler Fall
+      }
     });
 
 
