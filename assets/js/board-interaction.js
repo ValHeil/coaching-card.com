@@ -3217,51 +3217,24 @@ function isValidBoardState(boardState) {
 }
 
 function getSessionsUrl() {
-  // Bevorzugt über Konfig setzen (siehe Kommentar b) unten)
+  // a) Serverseitig gesetzt (empfohlen)
   if (window.ccsConfig && ccsConfig.sessionsUrl) return ccsConfig.sessionsUrl;
 
-  // Falls Nutzer wirklich von "Meine Sessions" kam, dorthin zurück
+  // b) Optional per postMessage übergeben
+  if (window.CC_BOOT && (window.CC_BOOT.sessionsUrl || window.CC_BOOT.returnUrl)) {
+    return window.CC_BOOT.sessionsUrl || window.CC_BOOT.returnUrl;
+  }
+
+  // c) Wenn das Board aus "Meine Sessions" geöffnet wurde: komplette Referrer-URL inkl. Token nehmen
   try {
-    const ref = document.referrer ? new URL(document.referrer, location.origin) : null;
-    if (ref && /meine-sessions/i.test(ref.pathname)) return ref.href;
+    const ref = document.referrer ? new URL(document.referrer) : null;
+    if (ref && /\/meine-sessions\//i.test(ref.pathname)) return ref.href;
   } catch {}
 
-  // Fallback: statischer Pfad
-  return '/meine-sessions/';
+  // d) Fallback: "board." aus der Hostname entfernen und absolute URL bauen
+  const host = location.hostname.replace(/^board\./, '');
+  return `${location.protocol}//${host}/meine-sessions/`;
 }
-
-async function endSessionAndReturn() {
-  try {
-    const sid   = new URLSearchParams(location.search).get('id');
-    const state = (typeof captureBoardState === 'function') ? captureBoardState() : null;
-    const back  = getSessionsUrl();
-
-    if (sid && state) {
-      const payload = JSON.stringify({ session_id: Number(sid), state });
-
-      // Bevorzugt sendBeacon (verlässt Seite sofort, Request läuft im Hintergrund weiter)
-      if (navigator.sendBeacon) {
-        const blob = new Blob([payload], { type: 'application/json' });
-        navigator.sendBeacon('/api/state', blob);
-        location.assign(back);
-        return;
-      }
-
-      // Fallback: fetch mit keepalive
-      await fetch('/api/state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: payload,
-        keepalive: true
-      });
-    }
-    location.assign(back);
-  } catch (e) {
-    console.warn('endSessionAndReturn():', e);
-    location.assign(getSessionsUrl());
-  }
-}
-
 
 
 // Fehler-Benachrichtigungsfunktion
