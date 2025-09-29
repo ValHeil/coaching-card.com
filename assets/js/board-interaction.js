@@ -2673,18 +2673,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Funktion, um den "Sitzung beenden" Button zu aktualisieren
   function setupEndSessionButton() {
-    const endSessionBtn = document.querySelector('.end-session-btn');
-    
-    if (endSessionBtn) {
-      // Vorhandene Event-Listener entfernen
-      const newEndSessionBtn = endSessionBtn.cloneNode(true);
-      endSessionBtn.parentNode.replaceChild(newEndSessionBtn, endSessionBtn);
-      
-      // Neuen Event-Listener hinzufügen
-      newEndSessionBtn.addEventListener('click', () => {
-        createEndSessionDialog();
-      });
-    }
+    const newCloseSessionBtn = closeSessionBtn.cloneNode(true);
+    closeSessionBtn.parentNode.replaceChild(newCloseSessionBtn, closeSessionBtn);
+
+    newCloseSessionBtn.addEventListener('click', () => {
+        if (saveCurrentBoardState()){
+          createEndSessionDialog();
+        } else {
+          alert("Es gab ein Problem beim Speichern der SItzung. Möchten sie trotzdem fortfahren?")
+        }
+    });
   }
 
   // Funktionen zum Speichern und Laden des Board-Zustands
