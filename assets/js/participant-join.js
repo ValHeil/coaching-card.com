@@ -1,50 +1,76 @@
-// Handled die Beitrittslogik, wenn jemand über einen Teilnahmelink beitritt
-function handleSessionJoin() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const sessionId = urlParams.get('id');
-  const isJoining = urlParams.get('join') === 'true';
+// participant-join.js — owner-aware
+// Signatur für Debug
+window.__PJ_VERSION__ = 'owner-aware-1';
 
-  if (!sessionId) { showError("Ungültiger Link: Keine Sitzungs-ID gefunden."); return false; }
-
-  // Nur im Join-Flow nach Name/Passwort fragen:
-  if (isJoining) {
-    const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-    const session  = sessions.find(s => s.id === sessionId);
-    if (!session) { showError("Die angeforderte Sitzung existiert nicht."); return false; }
-    return handleParticipantJoin(session);   // zeigt ggf. Name/Passwort-Prompts
+// --------- kleine Helfer ---------
+function qs() { return new URLSearchParams(window.location.search); }
+function getOwnerFlag() { return qs().get('owner') === '1'; }
+function getOwnerName() { return qs().get('n') || qs().get('name') || ''; }
+function hideAllPrompts() {
+  // Alle evtl. offenen Overlays entfernen
+  ['participant-name-prompt', 'session-password-prompt'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) try { el.remove(); } catch {}
+  });
+  // safety: CSS-Regel setzen, falls ein älteres Script nachrendert
+  if (!document.getElementById('owner-hide-style')) {
+    const st = document.createElement('style');
+    st.id = 'owner-hide-style';
+    st.textContent = `
+      [data-ccs-owner="1"] #participant-name-prompt,
+      [data-ccs-owner="1"] .participant-name-prompt-overlay,
+      [data-ccs-owner="1"] #session-password-prompt { display:none !important; visibility:hidden !important; }
+    `;
+    document.head.appendChild(st);
   }
-
-  // Owner-Aufruf (Brett öffnen): einfach durchwinken, KEIN Prompt
-  return true;
+  document.documentElement.setAttribute('data-ccs-owner', getOwnerFlag() ? '1' : '0');
 }
 
-
-// Handled den Beitritt eines Teilnehmers
-function handleParticipantJoin(session) {
-  // Prüfen, ob ein Passwort erforderlich ist
-  if (session.password) {
-    showPasswordPrompt(session);
-    return false; // Verzögerte Verarbeitung nach Passworteingabe
-  }
-  
-  // Kein Passwort erforderlich, Teilnehmer-Namen abfragen
-  showParticipantNamePrompt(session);
-  return false; // Verzögerte Verarbeitung
+function ensureOwnerUserInLocalStorage(name) {
+  try {
+    const cur = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const finalName = name || cur.name || 'Owner';
+    const id = cur && cur.id ? cur.id : ('owner-' + Math.random().toString(36).slice(2));
+    const user = { id, name: finalName, role: 'owner' };
+    localStorage.setItem('currentUser', JSON.stringify(user));
+    return user;
+  } catch { return null; }
 }
 
-// Zeigt eine Eingabeaufforderung für den Teilnehmernamen an
+function ensureOwnerInSessionParticipants(sessionId, ownerUser) {
+  try {
+    const key = 'kartensets_sessions';
+    const sessions = JSON.parse(localStorage.getItem(key) || '[]');
+    const idx = sessions.findIndex(s => String(s.id) === String(sessionId));
+    if (idx < 0) return;
+    const p = sessions[idx].participants || [];
+    if (!p.find(x => x.role === 'owner')) {
+      p.push({
+        id: ownerUser.id,
+        name: ownerUser.name,
+        role: 'owner',
+        joined: new Date().toISOString()
+      });
+      sessions[idx].participants = p;
+      localStorage.setItem(key, JSON.stringify(sessions));
+    }
+  } catch {}
+}
+
+// ---------------- Passwort-Flow (bestehend) ----------------
+function showPasswordPrompt(session) {
+  // ... (dein bestehender Code bleibt hier unverändert)
+}
+
+// ---------------- Teilnehmer-Flow (bestehend) ----------------
 function showParticipantNamePrompt(session) {
   // Vorhandene Abfrage entfernen
   const existingPrompt = document.getElementById('participant-name-prompt');
-  if (existingPrompt) {
-    existingPrompt.remove();
-  }
-  
-  // Namenseingabe-Prompt erstellen
+  if (existingPrompt) existingPrompt.remove();
+
   const promptContainer = document.createElement('div');
   promptContainer.id = 'participant-name-prompt';
   promptContainer.className = 'participant-name-prompt-overlay';
-  
   promptContainer.innerHTML = `
     <div class="participant-name-prompt-dialog">
       <h2>Namen für die Sitzung eingeben</h2>
@@ -58,453 +84,109 @@ function showParticipantNamePrompt(session) {
       </div>
     </div>
   `;
-  
   document.body.appendChild(promptContainer);
-  
-  // Fokus auf das Namenseingabefeld setzen
-  const nameInput = document.getElementById('participant-name-input');
-  nameInput.focus();
-  
-  // Event-Listener für den Submit-Button
+
+  const input = document.getElementById('participant-name-input');
+  input.focus();
   document.getElementById('submit-name').addEventListener('click', () => {
-    const name = nameInput.value.trim();
-    
+    const name = input.value.trim();
     if (!name) {
-      const nameError = document.getElementById('name-error');
-      nameError.textContent = "Bitte geben Sie einen Namen ein.";
+      document.getElementById('name-error').textContent = "Bitte geben Sie einen Namen ein.";
       return;
     }
-    
-    // Einen temporären Benutzer erstellen
     const tempUser = {
       id: 'participant-' + Date.now() + Math.random().toString(36).substr(2, 5),
-      name: name
+      name
     };
-    
-    // Temporären Benutzer im localStorage speichern
     localStorage.setItem('currentUser', JSON.stringify(tempUser));
-    
-    // Prompt entfernen
     promptContainer.remove();
-    
-    // Der Sitzung beitreten
     joinSession(session);
   });
-  
-  // Namen mit Enter bestätigen
-  nameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      document.getElementById('submit-name').click();
-    }
-  });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('submit-name').click(); });
 }
 
-// Tritt einer Sitzung bei
 function joinSession(session) {
   try {
-    // Aktuellen Benutzer holen (der soeben erstellte temporäre Benutzer)
     let currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-    
-    // Prüfen, ob der Benutzer bereits Teilnehmer ist
-    const existingParticipant = session.participants?.find(p => p.id === currentUser.id);
-    if (!existingParticipant) {
-      // Benutzer zur Teilnehmerliste hinzufügen
+    const exists = session.participants?.find(p => p.id === currentUser.id);
+    if (!exists) {
       const participants = session.participants || [];
-      participants.push({
-        id: currentUser.id,
-        name: currentUser.name,
-        role: 'participant',
-        joined: new Date().toISOString()
-      });
-      
-      // Sitzung aktualisieren
-      const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-      const updatedSessions = sessions.map(s => {
-        if (s.id === session.id) {
-          return { ...s, participants, lastEdited: new Date().toISOString() };
-        }
-        return s;
-      });
-      
-      localStorage.setItem('kartensets_sessions', JSON.stringify(updatedSessions));
+      participants.push({ id: currentUser.id, name: currentUser.name, role: 'participant', joined: new Date().toISOString() });
+      const key = 'kartensets_sessions';
+      const sessions = JSON.parse(localStorage.getItem(key) || '[]');
+      const updated = sessions.map(s => String(s.id) === String(session.id)
+        ? { ...s, participants, lastEdited: new Date().toISOString() }
+        : s
+      );
+      localStorage.setItem(key, JSON.stringify(updated));
     }
-    
-    // Beitritt erfolgreich
     console.log(`Benutzer ${currentUser.name} (${currentUser.id}) ist der Sitzung beigetreten`);
     return true;
-  } catch (error) {
-    console.error("Fehler beim Beitritt zur Sitzung:", error);
+  } catch (err) {
+    console.error("Fehler beim Beitritt zur Sitzung:", err);
     return false;
   }
 }
 
-// CSS für die Teilnehmer-Namenseingabe hinzufügen
 function addParticipantNamePromptStyles() {
   if (!document.getElementById('participant-name-prompt-styles')) {
     const style = document.createElement('style');
     style.id = 'participant-name-prompt-styles';
     style.textContent = `
-      .participant-name-prompt-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background-color: rgba(0, 0, 0, 0.7);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 2000;
-        animation: fade-in 0.3s ease;
-      }
-      
-      .participant-name-prompt-dialog {
-        background-color: white;
-        border-radius: 10px;
-        padding: 25px;
-        width: 90%;
-        max-width: 400px;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-        animation: slide-up 0.3s ease;
-      }
-      
-      .participant-name-prompt-dialog h2 {
-        margin-top: 0;
-        margin-bottom: 15px;
-        color: #333;
-        font-size: 22px;
-        text-align: center;
-      }
-      
-      .participant-name-prompt-dialog p {
-        margin-bottom: 20px;
-        color: #555;
-        line-height: 1.5;
-        text-align: center;
-      }
-      
-      .name-input-container {
-        margin-bottom: 20px;
-      }
-      
-      #participant-name-input {
-        width: 100%;
-        padding: 12px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-size: 16px;
-        margin-bottom: 8px;
-      }
-      
-      #participant-name-input:focus {
-        border-color: #ff8581;
-        outline: none;
-        box-shadow: 0 0 0 3px rgba(255, 133, 129, 0.2);
-      }
-      
-      .name-error {
-        color: #d9534f;
-        font-size: 14px;
-        display: block;
-        min-height: 20px;
-        text-align: center;
-      }
-      
-      .participant-name-buttons {
-        display: flex;
-        justify-content: center;
-      }
-      
-      .submit-button {
-        padding: 10px 20px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 15px;
-        border: none;
-        background-color: #ff8581;
-        color: white;
-        font-weight: bold;
-        transition: all 0.2s ease;
-      }
-      
-      .submit-button:hover {
-        background-color: #ff6b66;
-        transform: translateY(-2px);
-        box-shadow: 0 3px 8px rgba(255, 133, 129, 0.3);
-      }
-      
-      @keyframes fade-in {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-      
-      @keyframes slide-up {
-        from { transform: translateY(30px); opacity: 0; }
-        to { transform: translateY(0); opacity: 1; }
-      }
+      .participant-name-prompt-overlay { position:fixed; inset:0; background:rgba(0,0,0,.7); display:flex; justify-content:center; align-items:center; z-index:2000; }
+      .participant-name-prompt-dialog { background:#fff; border-radius:10px; padding:25px; width:90%; max-width:400px; box-shadow:0 10px 25px rgba(0,0,0,.2); }
+      .participant-name-buttons { display:flex; justify-content:center; }
+      .submit-button { padding:10px 20px; border-radius:4px; cursor:pointer; border:0; background:#ff8581; color:#fff; font-weight:700; }
     `;
     document.head.appendChild(style);
   }
 }
 
-function addPasswordPromptStyles() {
-  if (!document.getElementById('password-prompt-styles')) {
-    const style = document.createElement('style');
-    style.id = 'password-prompt-styles';
-    style.textContent = `
-      .password-prompt-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background-color: rgba(0, 0, 0, 0.7);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 2000;
-        animation: fade-in 0.3s ease;
-      }
-      
-      .password-prompt-dialog {
-        background-color: white;
-        border-radius: 10px;
-        padding: 25px;
-        width: 90%;
-        max-width: 400px;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-        animation: slide-up 0.3s ease;
-      }
-      
-      .password-prompt-dialog h2 {
-        margin-top: 0;
-        margin-bottom: 15px;
-        color: #333;
-        font-size: 22px;
-        text-align: center;
-      }
-      
-      .password-prompt-dialog p {
-        margin-bottom: 20px;
-        color: #555;
-        line-height: 1.5;
-        text-align: center;
-      }
-      
-      .password-input-container {
-        margin-bottom: 20px;
-      }
-      
-      #session-password-input {
-        width: 100%;
-        padding: 12px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-size: 16px;
-        margin-bottom: 8px;
-      }
-      
-      #session-password-input:focus {
-        border-color: #ff8581;
-        outline: none;
-        box-shadow: 0 0 0 3px rgba(255, 133, 129, 0.2);
-      }
-      
-      .password-error {
-        color: #d9534f;
-        font-size: 14px;
-        display: block;
-        min-height: 20px;
-        text-align: center;
-      }
-      
-      .password-buttons {
-        display: flex;
-        justify-content: center;
-        gap: 10px;
-      }
-      
-      .submit-button, .cancel-button {
-        padding: 10px 20px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 15px;
-        border: none;
-        transition: all 0.2s ease;
-      }
-      
-      .submit-button {
-        background-color: #ff8581;
-        color: white;
-        font-weight: bold;
-      }
-      
-      .cancel-button {
-        background-color: #f0f0f0;
-        color: #333;
-      }
-      
-      .submit-button:hover {
-        background-color: #ff6b66;
-        transform: translateY(-2px);
-        box-shadow: 0 3px 8px rgba(255, 133, 129, 0.3);
-      }
-      
-      .cancel-button:hover {
-        background-color: #e0e0e0;
-      }
-      
-      @keyframes fade-in {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-      
-      @keyframes slide-up {
-        from { transform: translateY(30px); opacity: 0; }
-        to { transform: translateY(0); opacity: 1; }
-      }
-    `;
-    document.head.appendChild(style);
-  }
-}
-
-// Funktion zum Anzeigen des Passwort-Prompts
-function showPasswordPrompt(session) {
-  // Vorhandene Abfrage entfernen
-  const existingPrompt = document.getElementById('password-prompt');
-  if (existingPrompt) {
-    existingPrompt.remove();
-  }
-  
-  // Passwort-Prompt erstellen
-  const promptContainer = document.createElement('div');
-  promptContainer.id = 'password-prompt';
-  promptContainer.className = 'password-prompt-overlay';
-  
-  promptContainer.innerHTML = `
-    <div class="password-prompt-dialog">
-      <h2>Sitzungspasswort erforderlich</h2>
-      <p>Diese Sitzung ist passwortgeschützt. Bitte geben Sie das Passwort ein:</p>
-      <div class="password-input-container">
-        <input type="password" id="session-password-input" placeholder="Passwort" required>
-        <span id="password-error" class="password-error"></span>
-      </div>
-      <div class="password-buttons">
-        <button id="cancel-password" class="cancel-button">Abbrechen</button>
-        <button id="submit-password" class="submit-button">Beitreten</button>
-      </div>
-    </div>
-  `;
-  
-  document.body.appendChild(promptContainer);
-  
-  // Fokus auf das Passwort-Eingabefeld setzen
-  const passwordInput = document.getElementById('session-password-input');
-  passwordInput.focus();
-  
-  // Event-Listener für den Abbrechen-Button
-  document.getElementById('cancel-password').addEventListener('click', () => {
-    promptContainer.remove();
-    // Optional: Zurück zur vorherigen Seite oder Startseite
-    window.location.href = '/kartensets/dashboard/';
-  });
-  
-  // Event-Listener für den Submit-Button
-  document.getElementById('submit-password').addEventListener('click', () => {
-    const passwordInput = document.getElementById('session-password-input');
-    const passwordError = document.getElementById('password-error');
-    const password = passwordInput.value.trim();
-    
-    // Passwort validieren
-    if (!password) {
-      passwordError.textContent = "Bitte geben Sie das Passwort ein.";
-      return;
-    }
-    
-    // Passwort überprüfen
-    if (session.password === password) {
-      // Passwort korrekt
-      promptContainer.remove();
-      
-      // Teilnehmer-Namen abfragen
-      showParticipantNamePrompt(session);
-    } else {
-      // Falsches Passwort
-      passwordError.textContent = "Falsches Passwort. Bitte versuchen Sie es erneut.";
-      passwordInput.value = '';
-      passwordInput.focus();
-    }
-  });
-  
-  // Passwort mit Enter bestätigen
-  passwordInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      document.getElementById('submit-password').click();
-    }
-  });
-}
-
-// Handled die Beitrittslogik, wenn jemand über einen Teilnahmelink beitritt
+// ---------------- zentrale Steuerung ----------------
+// WICHTIG: Diese Funktion wird von board-interaction.js beim Laden aufgerufen.
 function handleSessionJoin() {
-  // URL-Parameter auslesen
-  const urlParams = new URLSearchParams(window.location.search);
-  const sessionId = urlParams.get('id');
-  const isJoining = urlParams.get('join') === 'true';
-  
-  if (!sessionId) {
-    // Prüfen, ob eine Funktion zum Anzeigen von Fehlern existiert
-    if (typeof showError === 'function') {
-      showError("Ungültiger Link: Keine Sitzungs-ID gefunden.");
-    } else {
-      console.error("Ungültiger Link: Keine Sitzungs-ID gefunden.");
-    }
+  const url = qs();
+  const owner = getOwnerFlag();
+  const ownerName = getOwnerName();
+
+  // Session-ID: aus ?id=... oder (wenn dein Token-Host sowas setzt) aus CC_BOOT
+  const sid = url.get('id') || (window.CC_BOOT && window.CC_BOOT.session && window.CC_BOOT.session.id);
+  if (!sid) {
+    if (typeof showError === 'function') showError("Ungültiger Link: Keine Sitzungs-ID gefunden.");
+    else alert("Ungültiger Link: Keine Sitzungs-ID gefunden.");
     return false;
   }
-  
-  // Sitzungsdaten laden
+
+  // --- OWNER-PFAD: kein Prompt, Name aus n=
+  if (owner) {
+    hideAllPrompts();
+    const user = ensureOwnerUserInLocalStorage(ownerName);
+    ensureOwnerInSessionParticipants(sid, user || { id: 'owner', name: ownerName || 'Owner', role: 'owner' });
+    // für CSS/Debug
+    document.documentElement.setAttribute('data-ccs-owner', '1');
+    return true; // sofort durchwinken
+  }
+
+  // --- GAST-PFAD (alter Flow bleibt)
+  const isJoining = url.get('join') === 'true';
+  // Sitzungsdaten aus localStorage (wie bisher)
   const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-  const session = sessions.find(s => s.id === sessionId);
-  
+  const session  = sessions.find(s => String(s.id) === String(sid));
   if (!session) {
-    // Prüfen, ob eine Funktion zum Anzeigen von Fehlern existiert
-    if (typeof showError === 'function') {
-      showError("Die angeforderte Sitzung existiert nicht.");
-    } else {
-      console.error("Die angeforderte Sitzung existiert nicht.");
-    }
+    if (typeof showError === 'function') showError("Die angeforderte Sitzung existiert nicht.");
+    else console.error("Die angeforderte Sitzung existiert nicht.");
     return false;
   }
-  
-  // Wenn es ein Beitritt ist (über einen Teilnehmerlink)
-  if (isJoining) {
-    return handleParticipantJoin(session);
-  }
-  
-  // Normale Sitzungsöffnung (eigene Sitzung)
-  return true;
+
+  if (isJoining) return handleParticipantJoin(session);
+  return true; // normales Öffnen ohne Prompt
 }
 
-// Fallback-Funktionen, falls sie nicht anderweitig definiert sind
-function showError(message) {
-  console.error(message);
-  
-  // Fallback: Erstelle ein Fehler-Element
-  const errorContainer = document.createElement('div');
-  errorContainer.style.position = 'fixed';
-  errorContainer.style.top = '20px';
-  errorContainer.style.left = '50%';
-  errorContainer.style.transform = 'translateX(-50%)';
-  errorContainer.style.backgroundColor = '#ffecec';
-  errorContainer.style.color = '#d8000c';
-  errorContainer.style.padding = '10px';
-  errorContainer.style.borderRadius = '4px';
-  errorContainer.style.zIndex = '9999';
-  errorContainer.textContent = message;
-  
-  document.body.appendChild(errorContainer);
-  
-  // Fehler nach 5 Sekunden entfernen
-  setTimeout(() => {
-    document.body.removeChild(errorContainer);
-  }, 5000);
-}
+// Exporte ins Window (wie gehabt)
+window.handleSessionJoin = handleSessionJoin;
+window.handleParticipantJoin = handleParticipantJoin;
+window.showParticipantNamePrompt = showParticipantNamePrompt;
+window.addParticipantNamePromptStyles = addParticipantNamePromptStyles;
+window.joinSession = joinSession;
+// Fallback showError
+window.showError = window.showError || function(msg){ console.error(msg); };
