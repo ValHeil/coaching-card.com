@@ -32,6 +32,23 @@
   </script>
 </head>
 
+<!-- OWNER-KILL-SWITCH: VOR allen anderen Scripts einfügen -->
+<script>
+(function(){
+  var p = new URLSearchParams(location.search);
+  if (p.get('owner') === '1') {
+    document.documentElement.setAttribute('data-ccs-owner','1');
+    var st = document.createElement('style');
+    st.textContent =
+      '[data-ccs-owner="1"] #participant-name-prompt,'+
+      '[data-ccs-owner="1"] .participant-name-prompt-overlay,'+
+      '[data-ccs-owner="1"] #session-password-prompt{display:none!important;visibility:hidden!important}';
+    document.head.appendChild(st);
+  } else {
+    document.documentElement.setAttribute('data-ccs-owner','0');
+  }
+})();
+</script>
 
 <body>
     <div id="error-container" class="error-message hidden">
@@ -53,29 +70,12 @@
     <footer class="board-footer">
       <div id="participants-container" class="participants-container"></div>
     </footer>
-  
-
-  <script>
-    (function () {
-      const qs = new URLSearchParams(location.search);
-      const nameFromUrl = qs.get('name') || qs.get('n');
-      const h1 = document.getElementById('board-title');
-
-      if (nameFromUrl && h1) h1.textContent = nameFromUrl;
-
-      // CC_BOOT vorbereiten, damit nachladende Skripte denselben Namen sehen
-      window.CC_BOOT = window.CC_BOOT || {};
-      window.CC_BOOT.session = Object.assign(
-        { id: qs.get('id') || qs.get('session') || null },
-        window.CC_BOOT.session || {},
-        nameFromUrl ? { name: nameFromUrl } : {}
-      );
-    })();
-  </script>
 
   <!-- Sound-Effekte -->
   <audio id="shuffle-sound" src="assets/sounds/shuffle.mp3" preload="auto"></audio>
   <audio id="card-flip-sound" src="assets/sounds/card-flip.mp3" preload="auto"></audio>
+
+
 
   <!-- JavaScript einbinden -->
   <script src="/app/assets/js/session-storage.js"></script>
