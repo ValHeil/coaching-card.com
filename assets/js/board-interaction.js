@@ -2632,59 +2632,45 @@ document.addEventListener('DOMContentLoaded', function() {
     confirmButton.addEventListener('click', () => {
       closeDialog();
 
-      // 1) Speichern "fire-and-forget" (ohne await, damit User-Aktivierung erhalten bleibt)
+        // 1) Speichern "fire-and-forget"
       try {
         const sid = new URLSearchParams(location.search).get('id');
-        if (sid) {
-          const state = (typeof captureBoardState === 'function') ? captureBoardState() : null;
-          if (navigator.sendBeacon && state) {
-            const payload = new Blob(
-              [JSON.stringify({ session_id: Number(sid), state })],
-              { type: 'application/json' }
-            );
+        const state = (typeof captureBoardState === 'function') ? captureBoardState() : null;
+        if (sid && state) {
+          if (navigator.sendBeacon) {
+            const payload = new Blob([JSON.stringify({ session_id: Number(sid), state })], { type: 'application/json' });
             navigator.sendBeacon('/api/state', payload);
-          } else if (state) {
-            // keepalive: true erlaubt das Senden auch beim Schließen/Navigieren
+          } else {
             fetch('/api/state', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ session_id: Number(sid), state }),
               keepalive: true
-            }).catch(() => {});
+            }).catch(()=>{});
           }
         }
-      } catch (e) {
-        console.warn('Save-on-close (non-blocking) fehlgeschlagen:', e);
-      }
 
-      // 2) Dem Opener Bescheid sagen – der soll schließen
-      try {
-        const sid = new URLSearchParams(location.search).get('id') || null;
-        if (window.opener && !window.opener.closed) {
-          window.opener.postMessage({ t: 'CC_REQUEST_CLOSE', sid }, '*');
+        // 2) Opener & Broadcast sofort informieren
+        try { new BroadcastChannel('cc-close').postMessage({ t: 'CC_REQUEST_CLOSE', sid }); } catch {}
+        try { if (window.opener && !window.opener.closed) window.opener.postMessage({ t: 'CC_REQUEST_CLOSE', sid }, '*'); } catch {}
 
-          // Dem Opener kurz Zeit geben, das Tab zu schließen.
+        // 3) Entscheidend: direkt schließen (noch im User-Click-Stack)
+        let closed = false;
+        try { window.close(); closed = window.closed; } catch {}
+        if (!closed) {
+          try { window.open('', '_self'); window.close(); closed = window.closed; } catch {}
+        }
+
+        // 4) Letzter Fallback (ohne User Activation ok)
+        if (!closed) {
           setTimeout(() => {
-            // 3) Fallback: Selbst schließen (nur wenn noch offen)
             if (!window.closed) {
-              try { window.open('', '_self'); } catch {}
-              try { window.close(); } catch {}
-              setTimeout(() => {
-                if (!window.closed) location.replace('about:blank');
-              }, 400);
+              try { location.replace('about:blank'); } catch {}
+              setTimeout(() => { try { window.close(); } catch {} }, 150);
             }
-          }, 250);
-
-          return; // wichtig: nicht sofort selbst schließen
+          }, 50);
         }
       } catch (_) {}
-
-      // 4) Kein Opener? Direkt Selbst-Fallback
-      try { window.open('', '_self'); } catch {}
-      try { window.close(); } catch {}
-      setTimeout(() => {
-        if (!window.closed) location.replace('about:blank');
-      }, 400);
     });
 
   }
