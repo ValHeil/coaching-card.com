@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Sitzung</title>
+  <title>Baum</title>
 
   <!-- Assets kommen von /app/, unabhängig davon wo die HTML-Datei liegt -->
   <base href="/app/">
@@ -63,6 +63,21 @@
       <div id="participants-container" class="participants-container"></div>
     </footer>
   </div>
+
+  <script>
+    // Minimal-Bootstrap für das Board: Standard-Board/-Deck + Sitzungsname
+    (function () {
+      const qs = new URLSearchParams(location.search);
+      window.CC_BOOT = {
+        board: 'board1',            // Standard-Board, kann später per URL überschrieben werden (?board=boardTest)
+        deck:  'deck1',             // Standard-Deck
+        session: {
+          id:   qs.get('id') || qs.get('session') || null,
+          name: document.getElementById('board-title')?.textContent || 'Sitzung'
+        }
+      };
+    })();
+  </script>
 
   <!-- Sound-Effekte -->
   <audio id="shuffle-sound" src="assets/sounds/shuffle.mp3" preload="auto"></audio>
