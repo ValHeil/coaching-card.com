@@ -1023,7 +1023,6 @@ html, body { height: 100%; margin: 0; overflow: hidden !important; }
   padding: 0 !important;   /* entfernt den linken „Rand“ */
   margin: 0 !important;
   overflow: hidden !important;
-  box-sizing: border-box;
 }
 
 /* Footer-Slot sicherheitshalber ausblenden */
