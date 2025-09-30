@@ -256,6 +256,10 @@ function initializeParticipantJoin() {
 
 document.addEventListener('DOMContentLoaded', function() {
   // Elemente auswählen
+  const ok =
+    (window.handleSessionJoinOwnerAware && window.handleSessionJoinOwnerAware()) ||
+    (window.handleSessionJoin && window.handleSessionJoin());
+    if (ok === false) return; // falls Link ungültig o.ä.
   const boardTitle = document.getElementById('board-title');
   const boardTypeElement  = document.getElementById('board-type');
   const cardsContainer = document.getElementById('cards-container');

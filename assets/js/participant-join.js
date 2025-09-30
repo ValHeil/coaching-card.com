@@ -1,5 +1,21 @@
 // participant-join.js — owner-aware
 // Signatur für Debug
+// OWNER KILL SWITCH – läuft sofort beim Laden dieser Datei
+(function () {
+  var p = new URLSearchParams(location.search);
+  var isOwner = p.get('owner') === '1';
+  document.documentElement.setAttribute('data-ccs-owner', isOwner ? '1' : '0');
+  if (!isOwner) return;
+  var st = document.createElement('style');
+  st.id = 'owner-hide-style';
+  st.textContent =
+    '[data-ccs-owner="1"] #participant-name-prompt,' +
+    '[data-ccs-owner="1"] .participant-name-prompt-overlay,' +
+    '[data-ccs-owner="1"] #session-password-prompt' +
+    '{display:none!important;visibility:hidden!important}';
+  document.head.appendChild(st);
+})();
+
 window.__PJ_VERSION__ = 'owner-aware-2';
 
 // --------- kleine Helfer ---------
@@ -190,5 +206,6 @@ window.handleParticipantJoin = handleParticipantJoin;
 window.showParticipantNamePrompt = showParticipantNamePrompt;
 window.addParticipantNamePromptStyles = addParticipantNamePromptStyles;
 window.joinSession = joinSession;
+window.handleSessionJoinOwnerAware = handleSessionJoin;
 // Fallback showError
 window.showError = window.showError || function(msg){ console.error(msg); };
