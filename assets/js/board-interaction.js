@@ -11,6 +11,69 @@ let _saveTimer = null;
 let _saveInFlight = false;
 let _lastStateHash = '';
 
+// -------- Presence / Cursor UI (baut auf RT aus Schritt 2 auf) --------
+const Presence = (() => {
+  let layer;
+  const peers = new Map(); // id -> { el, color, label }
+
+  function ensureLayer(){
+    if (!layer) {
+      layer = document.getElementById('rt-cursor-layer');
+      if (!layer) {
+        layer = document.createElement('div');
+        layer.id = 'rt-cursor-layer';
+        document.body.appendChild(layer);
+      }
+    }
+    return layer;
+  }
+
+  function ensureCursorEl(id, color, label){
+    ensureLayer();
+    let p = peers.get(id);
+    if (!p) {
+      const el = document.createElement('div');
+      el.className = 'rt-cursor';
+      el.innerHTML = `<span class="dot"></span><span class="label"></span>`;
+      layer.appendChild(el);
+      p = { el, color: color || '#888', label: label || ('User '+id) };
+      peers.set(id, p);
+    }
+    const dot = p.el.querySelector('.dot');
+    const lab = p.el.querySelector('.label');
+    if (color) p.color = color;
+    if (label) p.label = label;
+    dot.style.background = p.color;
+    lab.textContent = p.label;
+    return p;
+  }
+
+  function move(id, x, y, color, label){
+    const p = ensureCursorEl(id, color, label);
+    const boardEl = document.querySelector('.board-area') || document.body;
+    const r = boardEl.getBoundingClientRect();
+    // x,y kommen RELATIV zur board-area:
+    const absX = r.left + x;
+    const absY = r.top  + y;
+    p.el.style.left = absX + 'px';
+    p.el.style.top  = absY + 'px';
+  }
+
+  function remove(id){
+    const p = peers.get(id);
+    if (!p) return;
+    try { p.el.remove(); } catch{}
+    peers.delete(id);
+  }
+
+  function clearAll(){
+    for (const id of peers.keys()) remove(id);
+  }
+
+  return { ensureCursorEl, move, remove, clearAll };
+})();
+
+
 // ---- Realtime Core (WS) -----------------------------------------------------
 const RT = { ws:null, sid:null, uid:null, name:'', role:'participant' };
 
@@ -46,14 +109,50 @@ async function initRealtime(config) {
   console.log('[RT] connecting ->', u.toString());
   RT.ws = new WebSocket(u.toString());
 
-  RT.ws.onopen = () =>  console.log('[RT] open');
+  RT.ws.onopen = () => {
+    console.log('[RT] open');
+
+    const boardEl = document.querySelector('.board-area') || document.body;
+    let last = 0;
+    boardEl.addEventListener('mousemove', (e) => {
+      const now = performance.now();
+      if (now - last < 33) return; // ~30/s
+      last = now;
+
+      const r = boardEl.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+
+      sendRT({ t:'cursor', x, y });
+    }, { passive: true });
+  };
   RT.ws.onclose = () => console.log('[RT] close');
   RT.ws.onerror = (e) => console.warn('[RT] error', e);
 
   RT.ws.onmessage = (ev) => {
-    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
-    // Vorläufig nur Logging – Verarbeitung folgt in den nächsten Schritten
-    console.log('[RT] msg:', msg);
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+
+    // Cursor/Präsenz:
+    if (m.t === 'hello') {
+      // optional: eigene Farbe aus m.color beachten
+      return;
+    }
+    if (m.t === 'presence') {
+      // jemand Neues ist da – sofort Label/Farbe setzen
+      Presence.ensureCursorEl(m.id, m.color, m.label);
+      return;
+    }
+    if (m.t === 'cursor') {
+      // Cursor-Position RELATIV zur board-area
+      Presence.move(m.id, m.x, m.y, m.color, m.label);
+      return;
+    }
+    if (m.t === 'leave') {
+      Presence.remove(m.id);
+      return;
+    }
+
+    // (weitere Events folgen in den nächsten Schritten)
   };
 }
 
