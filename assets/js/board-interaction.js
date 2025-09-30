@@ -11,6 +11,38 @@ let _saveTimer = null;
 let _saveInFlight = false;
 let _lastStateHash = '';
 
+// ---- RT-Owner-Priorität & Koordinaten-Helper ---------------------
+const RT_PRI = () => (isOwner() ? 2 : 1); // Owner gewinnt bei Kollisionen
+const RT_LAST = new Map(); // objectId -> { prio, ts }
+
+// 150ms-Fenster: wenn in diesem Fenster bereits etwas Höherwertiges passierte, ignorieren
+function shouldApply(objId, incomingPrio, now = performance.now()) {
+  const last = RT_LAST.get(objId);
+  if (!last) { RT_LAST.set(objId, { prio: incomingPrio, ts: now }); return true; }
+  const fresh = (now - last.ts) <= 150;
+  const ok = !fresh || (incomingPrio > last.prio);
+  if (ok) RT_LAST.set(objId, { prio: incomingPrio, ts: now });
+  return ok;
+}
+
+// Board-Rechteck holen
+function getBoardRect() {
+  const el = document.querySelector('.board-area') || document.body;
+  return { el, r: el.getBoundingClientRect() };
+}
+
+// Pixel -> normiert (0..1)
+function toNorm(px, py) {
+  const { r } = getBoardRect();
+  return { nx: px / r.width, ny: py / r.height };
+}
+
+// normiert -> Pixel
+function fromNorm(nx, ny) {
+  const { r } = getBoardRect();
+  return { x: nx * r.width, y: ny * r.height };
+}
+
 // -------- Presence / Cursor UI (baut auf RT aus Schritt 2 auf) --------
 const Presence = (() => {
   let layer;
@@ -155,8 +187,78 @@ async function initRealtime(config) {
       Presence.remove(m.id);
       return;
     }
+    
+    if (m.t === 'card_move') {
+      if (!shouldApply(m.id, m.prio || 1)) return;
+      const el = document.getElementById(m.id);
+      if (!el) return;
+      const { x, y } = (typeof m.nx === 'number') ? fromNorm(m.nx, m.ny) : { x: m.x, y: m.y };
+      el.style.left = (x|0) + 'px';
+      el.style.top  = (y|0) + 'px';
+      if (m.z !== undefined && m.z !== '') el.style.zIndex = m.z;
+      return;
+    }
 
-    // (weitere Events folgen in den nächsten Schritten)
+    if (m.t === 'card_flip') {
+      if (!shouldApply(m.id, m.prio || 1)) return;
+      const el = document.getElementById(m.id);
+      if (!el) return;
+      el.classList.toggle('flipped', !!m.flipped);
+      return;
+    }
+
+    // ---- Notizen ----
+    if (m.t === 'note_create') {
+      if (!shouldApply(m.id, m.prio || 1)) return;
+
+      let note = document.getElementById(m.id);
+      if (!note) {
+        // Falls deine App einen eigenen Notiz-Factory hat, die nutzen:
+        // note = createNoteElement(m.id) ...
+        note = document.createElement('div');
+        note.id = m.id;
+        note.className = 'note';
+        (document.querySelector('.board-area') || document.body).appendChild(note);
+      }
+      const { x, y } = (typeof m.nx === 'number') ? fromNorm(m.nx, m.ny) : { x: m.x, y: m.y };
+      note.style.left = (x|0) + 'px';
+      note.style.top  = (y|0) + 'px';
+      if (m.z !== undefined && m.z !== '') note.style.zIndex = m.z;
+      if (m.w) note.style.width  = (m.w|0) + 'px';
+      if (m.h) note.style.height = (m.h|0) + 'px';
+      if (m.color) { note.dataset.color = m.color; }
+      if (m.content !== undefined) { note.textContent = m.content; }
+      return;
+    }
+
+    if (m.t === 'note_move') {
+      if (!shouldApply(m.id, m.prio || 1)) return;
+      const note = document.getElementById(m.id);
+      if (!note) return;
+      const { x, y } = (typeof m.nx === 'number') ? fromNorm(m.nx, m.ny) : { x: m.x, y: m.y };
+      note.style.left = (x|0) + 'px';
+      note.style.top  = (y|0) + 'px';
+      if (m.z !== undefined && m.z !== '') note.style.zIndex = m.z;
+      return;
+    }
+
+    if (m.t === 'note_update') {
+      if (!shouldApply(m.id, m.prio || 1)) return;
+      const note = document.getElementById(m.id);
+      if (!note) return;
+      if (m.content !== undefined) note.textContent = m.content;
+      if (m.color) note.dataset.color = m.color;
+      if (m.w) note.style.width  = (m.w|0) + 'px';
+      if (m.h) note.style.height = (m.h|0) + 'px';
+      return;
+    }
+
+    if (m.t === 'note_delete') {
+      if (!shouldApply(m.id, m.prio || 1)) return;
+      const note = document.getElementById(m.id);
+      if (note) note.remove();
+      return;
+    }
   };
 
   RT.ws.onclose = () => {
@@ -265,18 +367,6 @@ function resolveCardElement(cardLike) {
     document.querySelector(`.card[data-card-id="${num}"]`)
   );
 }
-
-// wartet bis der Stapel und mind. 1 Karte existiert
-async function waitForCards(maxMs = 4000) {
-  const t0 = Date.now();
-  while (Date.now() - t0 < maxMs) {
-    if (document.getElementById('card-stack') &&
-        document.querySelectorAll('.card').length) return true;
-    await new Promise(r => setTimeout(r, 50));
-  }
-  return false;
-}
-
 
 //richtige Codierung sicherstellen
 function jsonToBase64UTF8(obj){
@@ -1544,6 +1634,26 @@ document.addEventListener('DOMContentLoaded', function() {
         notes.push(notiz);
       }
       
+      {
+      const px = parseFloat(notiz.style.left) || 0;
+      const py = parseFloat(notiz.style.top)  || 0;
+      const { nx, ny } = toNorm(px, py);
+      const content = notiz.querySelector('.notiz-content')?.textContent || '';
+      const rect = notiz.getBoundingClientRect();
+      sendRT({
+        t: 'note_create',
+        id: notiz.id,
+        nx, ny,
+        z: notiz.style.zIndex || '',
+        content,
+        color: notiz.style.backgroundColor || (notiz.dataset.color || ''),
+        w: Math.round(rect.width),
+        h: Math.round(rect.height),
+        prio: RT_PRI(),
+        ts: Date.now()
+      });
+     }
+
       // Speichern des Board-Zustands nach dem Erstellen einer neuen Notiz
       if (typeof saveCurrentBoardState === 'function') {
         saveCurrentBoardState();
@@ -1572,6 +1682,19 @@ document.addEventListener('DOMContentLoaded', function() {
   // Einrichten der Bearbeitungs-Handler für eine Notiz
   function setupNoteEditingHandlers(notiz) {
     const content = notiz.querySelector('.notiz-content');
+    let _rtNoteDeb = null;
+    content.addEventListener('input', () => {
+      clearTimeout(_rtNoteDeb);
+      _rtNoteDeb = setTimeout(() => {
+        sendRT({
+          t: 'note_update',
+          id: notiz.id,
+          content: content.textContent,
+          prio: RT_PRI(),
+          ts: Date.now()
+        });
+      }, 120);
+    });
     
     // Doppelklick zum Bearbeiten
     notiz.addEventListener('dblclick', (e) => {
@@ -1653,6 +1776,14 @@ document.addEventListener('DOMContentLoaded', function() {
           indicator.remove();
         }
         
+        sendRT({
+          t: 'note_update',
+          id: notiz.id,
+          content: content.textContent,
+          prio: RT_PRI(),
+          ts: Date.now()
+        });
+
         // Wenn der Inhalt nach dem Bearbeiten leer ist, entferne den Notizzettel
         if (content.textContent.trim() === '') {
           notiz.remove();
@@ -1826,6 +1957,20 @@ document.addEventListener('DOMContentLoaded', function() {
             trashItem.classList.remove('note-deleted');
           }, 500);
           
+          {
+          const px = parseFloat(note.style.left) || 0;
+          const py = parseFloat(note.style.top)  || 0;
+          const { nx, ny } = toNorm(px, py);
+          sendRT({
+            t: 'note_move',
+            id: note.id,
+            nx, ny,
+            z: note.style.zIndex || '',
+            prio: RT_PRI(),
+            ts: Date.now()
+          });
+          }
+
           // Board-Zustand speichern
           if (typeof saveCurrentBoardState === 'function') {
             saveCurrentBoardState();
@@ -1925,7 +2070,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return true;
           });
         }
-        
+        sendRT({ t: 'note_delete', id: notiz.id, prio: RT_PRI(), ts: Date.now() });
         console.log("Notiz erfolgreich gelöscht!");
         
         // Aktuellen Board-Zustand speichern
@@ -2192,6 +2337,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!card) return;
     
     card.classList.toggle('flipped');
+    sendRT({
+      t: 'card_flip',
+      id: card.id,
+      flipped: card.classList.contains('flipped'),
+      prio: RT_PRI(),
+      ts: Date.now()
+    });
     
     // Sound abspielen
     if (cardFlipSound) {
@@ -2285,6 +2437,21 @@ document.addEventListener('DOMContentLoaded', function() {
         createNote(left, top);
       });
     }
+    const px = parseFloat(note.style.left) || 0;
+    const py = parseFloat(note.style.top)  || 0;
+    const { nx, ny } = toNorm(px, py);
+
+    sendRT({
+      t: 'note_create',
+      id: note.id,
+      nx, ny,
+      z: note.style.zIndex || '',
+      content: note.textContent || '',
+      color: note.dataset.color || '',
+      w: (parseFloat(note.style.width)  || note.offsetWidth  || 0),
+      h: (parseFloat(note.style.height) || note.offsetHeight || 0),
+      prio: RT_PRI(), ts: Date.now()
+    });
     
     // Sitzung schließen
     const endSessionBtn = document.querySelector('.end-session-btn');
@@ -2447,8 +2614,10 @@ document.addEventListener('DOMContentLoaded', function() {
       document.body.appendChild(contextMenu);
       
       contextMenu.querySelector('.delete-note').addEventListener('click', () => {
+        const id = target.id;
         target.remove();
         notes = notes.filter(n => n !== target);
+        sendRT({ t: 'note_delete', id, prio: RT_PRI(), ts: Date.now() });
         contextMenu.remove();
       });
       
@@ -2667,6 +2836,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Board-Zustand speichern
         if (typeof saveCurrentBoardState === 'function') {
+          {
+          const px = parseFloat(element.style.left) || 0;
+          const py = parseFloat(element.style.top)  || 0;
+          const { nx, ny } = toNorm(px, py);
+          sendRT({
+            t: 'card_move',
+            id: element.id,
+            nx, ny,
+            z: element.style.zIndex || '',
+            prio: RT_PRI(),
+            ts: Date.now()
+          });
+        }
           saveCurrentBoardState();
         }
       }
@@ -2725,9 +2907,25 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function closeDragElement() {
       // Event-Handler entfernen
+      // RT: card_move bei generischem Drag-Ende
+      {
+        const px = parseFloat(element.style.left) || 0;
+        const py = parseFloat(element.style.top)  || 0;
+        const { nx, ny } = toNorm(px, py);
+        sendRT({
+          t: 'card_move',
+          id: element.id,
+          nx, ny,
+          z: element.style.zIndex || '',
+          prio: RT_PRI(),
+          ts: Date.now()
+        });
+      }
       document.removeEventListener('mousemove', elementDrag);
       document.removeEventListener('mouseup', closeDragElement);
     }
+
+
   }
 
   // Hilfsfunktionen für den Stack-Hover-Tooltip
