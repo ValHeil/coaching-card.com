@@ -26,21 +26,50 @@ function shouldApply(objId, incomingPrio, now = performance.now()) {
 }
 
 // Board-Rechteck holen
-function getBoardRect() {
-  const el = document.querySelector('.board-area') || document.body;
-  return { el, r: el.getBoundingClientRect() };
+function getStage(){
+  return document.getElementById('session-board')
+      || document.querySelector('.board-area')
+      || document.body;
 }
+function getStageRect(){ return getStage().getBoundingClientRect(); }
 
-// Pixel -> normiert (0..1)
+// Pixel -> normiert (0..1) relativ zur Stage
 function toNorm(px, py) {
-  const { r } = getBoardRect();
+  const r = getStageRect();
   return { nx: px / r.width, ny: py / r.height };
 }
-
-// normiert -> Pixel
+// normiert -> Pixel relativ zur Stage
 function fromNorm(nx, ny) {
-  const { r } = getBoardRect();
+  const r = getStageRect();
   return { x: nx * r.width, y: ny * r.height };
+}
+
+
+// ---- NOTE/NOTIZ: robustes Erzeugen & Selektieren -----------------
+function ensureNotesContainer() {
+  return document.getElementById('notes-container')
+      || document.querySelector('.notes-container')
+      || document.getElementById('session-board')  // Fallback
+      || document.querySelector('.board-area');
+}
+
+function ensureNoteEl(id) {
+  let el = document.getElementById(id);
+  if (!el) {
+    el = document.createElement('div');
+    // Bevorzugt „notiz“ (deine Styles); fallback „note“
+    el.className = 'notiz';
+    el.id = id;
+    const content = document.createElement('div');
+    // Erst .notiz-content, fallback .note-content
+    content.className = 'notiz-content';
+    content.setAttribute('contenteditable', 'false');
+    el.appendChild(content);
+    ensureNotesContainer().appendChild(el);
+  }
+  // Content-Element finden (robust)
+  const content = el.querySelector('.notiz-content') || el.querySelector('.note-content');
+  return { el, content };
 }
 
 // -------- Presence / Cursor UI (baut auf RT aus Schritt 2 auf) --------
@@ -210,46 +239,36 @@ async function initRealtime(config) {
     // ---- Notizen ----
     if (m.t === 'note_create') {
       if (!shouldApply(m.id, m.prio || 1)) return;
-
-      let note = document.getElementById(m.id);
-      if (!note) {
-        // Falls deine App einen eigenen Notiz-Factory hat, die nutzen:
-        // note = createNoteElement(m.id) ...
-        note = document.createElement('div');
-        note.id = m.id;
-        note.className = 'note';
-        (document.querySelector('.board-area') || document.body).appendChild(note);
-      }
+      const { el, content } = ensureNoteEl(m.id);
+      // Position
       const { x, y } = (typeof m.nx === 'number') ? fromNorm(m.nx, m.ny) : { x: m.x, y: m.y };
-      note.style.left = (x|0) + 'px';
-      note.style.top  = (y|0) + 'px';
-      if (m.z !== undefined && m.z !== '') note.style.zIndex = m.z;
-      if (m.w) note.style.width  = (m.w|0) + 'px';
-      if (m.h) note.style.height = (m.h|0) + 'px';
-      if (m.color) { note.dataset.color = m.color; }
-      if (m.content !== undefined) { note.textContent = m.content; }
+      el.style.left = Math.round(x) + 'px';
+      el.style.top  = Math.round(y) + 'px';
+      if (m.z !== undefined && m.z !== '') el.style.zIndex = m.z;
+      if (m.w) el.style.width  = Math.round(m.w) + 'px';
+      if (m.h) el.style.height = Math.round(m.h) + 'px';
+      if (m.color) { el.dataset.color = m.color; el.style.backgroundColor = m.color; }
+      if (typeof m.content === 'string') content.textContent = m.content;
       return;
     }
 
     if (m.t === 'note_move') {
       if (!shouldApply(m.id, m.prio || 1)) return;
-      const note = document.getElementById(m.id);
-      if (!note) return;
+      const { el } = ensureNoteEl(m.id);
       const { x, y } = (typeof m.nx === 'number') ? fromNorm(m.nx, m.ny) : { x: m.x, y: m.y };
-      note.style.left = (x|0) + 'px';
-      note.style.top  = (y|0) + 'px';
-      if (m.z !== undefined && m.z !== '') note.style.zIndex = m.z;
+      el.style.left = Math.round(x) + 'px';
+      el.style.top  = Math.round(y) + 'px';
+      if (m.z !== undefined && m.z !== '') el.style.zIndex = m.z;
       return;
     }
 
     if (m.t === 'note_update') {
       if (!shouldApply(m.id, m.prio || 1)) return;
-      const note = document.getElementById(m.id);
-      if (!note) return;
-      if (m.content !== undefined) note.textContent = m.content;
-      if (m.color) note.dataset.color = m.color;
-      if (m.w) note.style.width  = (m.w|0) + 'px';
-      if (m.h) note.style.height = (m.h|0) + 'px';
+      const { el, content } = ensureNoteEl(m.id);
+      if (typeof m.content === 'string') content.textContent = m.content;
+      if (m.color) { el.dataset.color = m.color; el.style.backgroundColor = m.color; }
+      if (m.w) el.style.width  = Math.round(m.w) + 'px';
+      if (m.h) el.style.height = Math.round(m.h) + 'px';
       return;
     }
 
@@ -3553,6 +3572,48 @@ document.addEventListener('DOMContentLoaded', function() {
     // Markieren, dass das Dashboard neu geladen werden soll
     sessionStorage.setItem('dashboard_reload_requested', 'true');
   });
+
+  function isTextEditingTarget(t){
+    return (t && (
+      t.isContentEditable ||
+      /^(INPUT|TEXTAREA|SELECT)$/i.test(t.tagName)
+    ));
+  }
+
+  window.addEventListener('keydown', (e)=>{
+    // 1) Nur wenn nicht in einem Eingabe-/Edit-Feld
+    if (isTextEditingTarget(e.target)) return;
+
+    // 2) Karte bestimmen – NUTZE deine vorhandene Logik:
+    //    bevorzugt: aktuell gezogene oder zuletzt fokussierte Karte
+    const card = window.getActiveCard?.()    // falls du so eine Helferfunktion hast
+              || document.querySelector('.card.being-dragged')
+              || document.querySelector('.card:last-of-type'); // sehr grobes Fallback
+    if (!card) return;
+
+    const k = e.key.toLowerCase();
+    if (k === 'f') {
+      // flip
+      if (typeof flipCard === 'function') flipCard(card);
+      sendRT({ t:'card_flip', id: card.id, flipped: card.classList.contains('flipped'), prio: RT_PRI(), ts: Date.now() });
+      e.preventDefault(); return;
+    }
+    if (k === 'm') {
+      // deck mixen – benutze deine Funktion, dann RT signalisieren
+      if (typeof shuffleDeck === 'function') shuffleDeck();
+      sendRT({ t:'deck_shuffle', prio: RT_PRI(), ts: Date.now() });
+      e.preventDefault(); return;
+    }
+    if (k === 'b') {
+      // z-Index / nach hinten – falls du so etwas hast
+      if (typeof sendCardToBack === 'function') sendCardToBack(card);
+      sendRT({ t:'card_sendback', id: card.id, prio: RT_PRI(), ts: Date.now() });
+      e.preventDefault(); return;
+    }
+  }, { capture:true });
+
+
+
 });
 
 window.handleSessionJoin              = window.handleSessionJoin              || handleSessionJoin;
