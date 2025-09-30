@@ -90,9 +90,12 @@ async function initRealtime(config) {
   // 2) Nutzer aus localStorage + Rolle ableiten
   let cur = {};
   try { cur = JSON.parse(localStorage.getItem('currentUser') || '{}'); } catch {}
+
+  const nameFromQS = qs.get('n') || qs.get('name') || '';
+
   RT.uid  = cur.id   || ('u-' + Math.random().toString(36).slice(2));
-  RT.name = cur.name || (isOwner() ? 'Owner' : 'Gast');
   RT.role = isOwner() ? 'owner' : 'participant';
+  RT.name = cur.name || nameFromQS || (isOwner() ? 'Owner' : 'Gast');
 
   // 3) WS-URL bauen (CC_CONFIG liefert wsUrl + token)
   const base = (config && config.wsUrl)
@@ -119,15 +122,13 @@ async function initRealtime(config) {
       if (now - last < 33) return; // ~30/s
       last = now;
 
-      const r = boardEl.getBoundingClientRect();
-      const x = e.clientX - r.left;
-      const y = e.clientY - r.top;
+      const r  = boardEl.getBoundingClientRect();
+      const nx = (e.clientX - r.left) / r.width;   // 0..1
+      const ny = (e.clientY - r.top)  / r.height;  // 0..1
 
-      sendRT({ t:'cursor', x, y });
+      sendRT({ t: 'cursor', nx, ny });
     }, { passive: true });
   };
-  RT.ws.onclose = () => console.log('[RT] close');
-  RT.ws.onerror = (e) => console.warn('[RT] error', e);
 
   RT.ws.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
@@ -143,8 +144,11 @@ async function initRealtime(config) {
       return;
     }
     if (m.t === 'cursor') {
-      // Cursor-Position RELATIV zur board-area
-      Presence.move(m.id, m.x, m.y, m.color, m.label);
+      const boardEl = document.querySelector('.board-area') || document.body;
+      const r = boardEl.getBoundingClientRect();
+      const px = (typeof m.nx === 'number') ? (m.nx * r.width)  : m.x;
+      const py = (typeof m.ny === 'number') ? (m.ny * r.height) : m.y;
+      Presence.move(m.id, px, py, m.color, m.label);
       return;
     }
     if (m.t === 'leave') {
@@ -154,6 +158,13 @@ async function initRealtime(config) {
 
     // (weitere Events folgen in den nächsten Schritten)
   };
+
+  RT.ws.onclose = () => {
+    console.log('[RT] close');
+    Presence.clearAll();
+  };
+
+  RT.ws.onerror = (e) => console.warn('[RT] error', e);
 }
 
 function hashState(state) {
