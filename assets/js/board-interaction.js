@@ -2672,45 +2672,35 @@ document.addEventListener('DOMContentLoaded', function() {
     confirmButton.addEventListener('click', () => {
       closeDialog();
 
+      // 3) Tab schließen (wenn via window.open geöffnet) – mit Fallback
       try {
-        const sid = new URLSearchParams(location.search).get('id');
-        const state = (typeof captureBoardState === 'function') ? captureBoardState() : null;
+        // a) Direkt versuchen, den Tab zu schließen
+        window.close();
 
-        if (sid && state) {
-          const payload = JSON.stringify({ session_id: Number(sid), state });
-
-          // 1) Bevorzugt: sendBeacon (Navigation kann sofort passieren)
-          if (navigator.sendBeacon) {
-            const blob = new Blob([payload], { type: 'application/json' });
-            navigator.sendBeacon('/api/state', blob);
-            const dest = getSessionsUrl();
-            if (window.top && window.top !== window) {
-              window.top.location.href = dest;   // im iframe → Tab-URL umschalten
-            } else {
-              window.location.href = dest;       // normaler Fall
-            }
-            return;
-          }
-
-          // 2) Fallback: fetch mit keepalive (nicht awaiten)
-          fetch('/api/state', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: payload,
-            keepalive: true
-          }).catch(()=>{});
+        // b) Falls das Schließen blockiert ist: dem Opener Bescheid sagen
+        if (window.opener && !window.opener.closed) {
+          const sid = new URLSearchParams(location.search).get('id');
+          window.opener.postMessage(
+            { type: 'CCS_CLOSE_BOARD_TAB', sessionId: sid },
+            '*' // oder deine konkrete Origin des Openers
+          );
         }
       } catch (e) {
-        console.warn('Save-on-exit:', e);
+        // ignoriere
       }
 
-      // 3) Zurück zur Übersicht – immer im selben Tab
-      const dest = getSessionsUrl();
-      if (window.top && window.top !== window) {
-        window.top.location.href = dest;   // im iframe → Tab-URL umschalten
-      } else {
-        window.location.href = dest;       // normaler Fall
-      }
+      // c) Letzter Fallback: wenn der Tab noch lebt, zurück zur Übersicht navigieren
+      setTimeout(() => {
+        // Wenn die Seite nicht geschlossen wurde (Heuristik)
+        if (!document.hidden) {
+          const dest = getSessionsUrl();
+          if (window.top && window.top !== window) {
+            window.top.location.href = dest;
+          } else {
+            window.location.href = dest;
+          }
+        }
+      }, 150);
     });
 
 
