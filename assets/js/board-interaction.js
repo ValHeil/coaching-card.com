@@ -11,11 +11,61 @@ let _saveTimer = null;
 let _saveInFlight = false;
 let _lastStateHash = '';
 
+// ---- Realtime Core (WS) -----------------------------------------------------
+const RT = { ws:null, sid:null, uid:null, name:'', role:'participant' };
+
+function sendRT(payload) {
+  try { if (RT.ws && RT.ws.readyState === 1) RT.ws.send(JSON.stringify(payload)); } catch {}
+}
+
+async function initRealtime(config) {
+  // 1) Session-ID ermitteln
+  const qs = new URLSearchParams(location.search);
+  RT.sid = Number(qs.get('id') || 0);
+  if (!RT.sid) { console.warn('[RT] keine sid in URL'); return; }
+
+  // 2) Nutzer aus localStorage + Rolle ableiten
+  let cur = {};
+  try { cur = JSON.parse(localStorage.getItem('currentUser') || '{}'); } catch {}
+  RT.uid  = cur.id   || ('u-' + Math.random().toString(36).slice(2));
+  RT.name = cur.name || (isOwner() ? 'Owner' : 'Gast');
+  RT.role = isOwner() ? 'owner' : 'participant';
+
+  // 3) WS-URL bauen (CC_CONFIG liefert wsUrl + token)
+  const base = (config && config.wsUrl)
+    ? config.wsUrl
+    : ((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws');
+
+  const u = new URL(base);
+  u.searchParams.set('token', (config && config.token) || ''); // Token-Check schalten wir später scharf
+  u.searchParams.set('sid',   String(RT.sid));
+  u.searchParams.set('uid',   RT.uid);
+  u.searchParams.set('name',  RT.name);
+  u.searchParams.set('role',  RT.role);
+
+  console.log('[RT] connecting ->', u.toString());
+  RT.ws = new WebSocket(u.toString());
+
+  RT.ws.onopen = () =>  console.log('[RT] open');
+  RT.ws.onclose = () => console.log('[RT] close');
+  RT.ws.onerror = (e) => console.warn('[RT] error', e);
+
+  RT.ws.onmessage = (ev) => {
+    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+    // Vorläufig nur Logging – Verarbeitung folgt in den nächsten Schritten
+    console.log('[RT] msg:', msg);
+  };
+}
+
 function hashState(state) {
   try { return JSON.stringify(state); } catch { return String(Date.now()); }
 }
+function isOwner() {
+  return document.documentElement.getAttribute('data-ccs-owner') === '1';
+}
 
 async function _doSave(reason = 'auto') {
+  if (!isOwner()) return false; // nur der Owner persistiert
   if (_saveInFlight) return false;
   const sid = new URLSearchParams(location.search).get('id');
   if (!sid) return false;
@@ -69,6 +119,9 @@ window.addEventListener('message', (ev) => {
   }
   if (sess.board) window.boardType = (typeof canonBoardSlug === 'function') ? canonBoardSlug(sess.board) : (sess.board||'board1');
   if (sess.deck)  window.deck      = (typeof canonDeckSlug  === 'function') ? canonDeckSlug(sess.deck)  : (sess.deck||'deck1');
+  
+  try { initRealtime(d.config); } catch(e) { console.warn('[RT] init failed', e); }
+
 });
 
 // Kanonische Slugs -> interne Keys
