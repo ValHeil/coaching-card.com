@@ -72,6 +72,24 @@ function ensureNoteEl(id) {
   return { el, content };
 }
 
+// --- Notiz-Text robust auslesen/setzen -----------------------------
+function getNoteContentEl(note) {
+  return note.querySelector('.notiz-content') || note.querySelector('.note-content');
+}
+
+function getNoteText(note) {
+  const el = getNoteContentEl(note);
+  if (!el) return '';
+  // &nbsp; → Space, CRLF → LF, echte Zeilenumbrüche aus innerText
+  return el.innerText.replace(/\u00A0/g, ' ').replace(/\r\n/g, '\n');
+}
+
+function setNoteText(note, text) {
+  const el = getNoteContentEl(note);
+  if (el) el.textContent = text || '';
+}
+
+
 // -------- Presence / Cursor UI (baut auf RT aus Schritt 2 auf) --------
 const Presence = (() => {
   let layer;
@@ -134,6 +152,16 @@ const Presence = (() => {
   return { ensureCursorEl, move, remove, clearAll };
 })();
 
+function cardStageRect(){
+  const el = document.getElementById('cards-container') || document.querySelector('.cards-container') || document.getElementById('session-board');
+  return el.getBoundingClientRect();
+}
+function toNormCard(px, py){
+  const r = cardStageRect(); return { nx: px / r.width, ny: py / r.height };
+}
+function fromNormCard(nx, ny){
+  const r = cardStageRect(); return { x: nx * r.width, y: ny * r.height };
+}
 
 // ---- Realtime Core (WS) -----------------------------------------------------
 const RT = { ws:null, sid:null, uid:null, name:'', role:'participant' };
@@ -217,6 +245,34 @@ async function initRealtime(config) {
       return;
     }
     
+    if (m.t === 'focus_update') {
+      const focusEl = document.getElementById('focus-note-editable');
+      if (!focusEl) return;
+
+      // Owner-Vorrang: Wenn ich gerade tippe UND ich kein Owner bin,
+      // aber die Nachricht vom Owner kommt -> Owner gewinnt, sonst lokale Eingabe bevorzugen.
+      const iAmOwner = isOwner && typeof isOwner === 'function' ? isOwner() : false;
+      const isEditingLocally = (document.activeElement === focusEl);
+      const msgFromOwner = (m.role === 'owner');
+
+      if (isEditingLocally && !iAmOwner && !msgFromOwner) {
+        // Ich (Gast) tippe grade selbst; ignorier Teilnehmer-Updates
+        return;
+      }
+      // Wenn ich (Gast) tippe, aber Owner schickt Update -> anwenden
+      // Wenn ich Owner bin -> einfach anwenden
+
+      const txt = (typeof m.content === 'string') ? m.content : '';
+      if (typeof window.__ccSetFocusNote === 'function') {
+        window.__ccSetFocusNote(txt);  // setzt ohne Echo
+      } else {
+        if ('value' in focusEl) focusEl.value = txt;
+        else focusEl.innerText = txt;
+      }
+      return;
+    }
+
+    
     if (m.t === 'card_move') {
       if (!shouldApply(m.id, m.prio || 1)) return;
       const el = document.getElementById(m.id);
@@ -229,10 +285,26 @@ async function initRealtime(config) {
     }
 
     if (m.t === 'card_flip') {
-      if (!shouldApply(m.id, m.prio || 1)) return;
+      // WICHTIG: flips nicht vom letzten MOVE blockieren lassen → eigener Key
+      const gateKey = `flip:${m.id}`;
+      if (!shouldApply(gateKey, m.prio || 1)) return;
+
       const el = document.getElementById(m.id);
       if (!el) return;
-      el.classList.toggle('flipped', !!m.flipped);
+
+      const want = !!m.flipped;
+      const has  = el.classList.contains('flipped');
+      if (want !== has) {
+        el.classList.toggle('flipped', want);
+
+        // optional: Flip-Sound auch bei Remote-Flip abspielen
+        try {
+          if (typeof cardFlipSound !== 'undefined' && cardFlipSound) {
+            cardFlipSound.currentTime = 0;
+            cardFlipSound.play().catch(()=>{});
+          }
+        } catch {}
+      }
       return;
     }
 
@@ -240,6 +312,12 @@ async function initRealtime(config) {
     if (m.t === 'note_create') {
       if (!shouldApply(m.id, m.prio || 1)) return;
       const { el, content } = ensureNoteEl(m.id);
+      if (typeof enhanceDraggableNote === 'function') {
+        enhanceDraggableNote(el);
+      }
+      if (typeof enhanceDraggableNote === 'function') {
+        enhanceDraggableNote(el);
+      }
       // Position
       const { x, y } = (typeof m.nx === 'number') ? fromNorm(m.nx, m.ny) : { x: m.x, y: m.y };
       el.style.left = Math.round(x) + 'px';
@@ -248,7 +326,7 @@ async function initRealtime(config) {
       if (m.w) el.style.width  = Math.round(m.w) + 'px';
       if (m.h) el.style.height = Math.round(m.h) + 'px';
       if (m.color) { el.dataset.color = m.color; el.style.backgroundColor = m.color; }
-      if (typeof m.content === 'string') content.textContent = m.content;
+      if (typeof m.content === 'string') setNoteText(el, m.content);
       return;
     }
 
@@ -265,7 +343,7 @@ async function initRealtime(config) {
     if (m.t === 'note_update') {
       if (!shouldApply(m.id, m.prio || 1)) return;
       const { el, content } = ensureNoteEl(m.id);
-      if (typeof m.content === 'string') content.textContent = m.content;
+      if (typeof m.content === 'string') setNoteText(el, m.content);
       if (m.color) { el.dataset.color = m.color; el.style.backgroundColor = m.color; }
       if (m.w) el.style.width  = Math.round(m.w) + 'px';
       if (m.h) el.style.height = Math.round(m.h) + 'px';
@@ -278,6 +356,20 @@ async function initRealtime(config) {
       if (note) note.remove();
       return;
     }
+
+    if (m.t === 'note_lock') {
+      const { el } = ensureNoteEl(m.id);
+      el.dataset.locked = '1';
+      el.classList.add('is-editing');   // optional fürs Styling
+      return;
+    }
+
+if (m.t === 'note_unlock') {
+  const { el } = ensureNoteEl(m.id);
+  delete el.dataset.locked;
+  el.classList.remove('is-editing');
+  return;
+}
   };
 
   RT.ws.onclose = () => {
@@ -1454,8 +1546,10 @@ document.addEventListener('DOMContentLoaded', function() {
       // M: nur mischen, wenn Cursor über dem Stapel (nicht über einzelner Karte)
       if (key === 'm') {
         e.stopImmediatePropagation();
-        if (window.isHoveringStack) {
+        if (window.isHoveringCard && !window.hoveredCard) {
           shuffleCards();
+          // <<< NEU: Broadcast
+          sendRT({ t: 'deck_shuffle', prio: RT_PRI(), ts: Date.now() });
         }
         return;
       }
@@ -1465,6 +1559,8 @@ document.addEventListener('DOMContentLoaded', function() {
         e.stopImmediatePropagation();
         if (window.hoveredCard) {
           returnCardToStack(window.hoveredCard);
+          // <<< NEU: Broadcast
+          sendRT({ t: 'card_sendback', id: window.hoveredCard.id, prio: RT_PRI(), ts: Date.now() });
         }
         return;
       }
@@ -1708,7 +1804,7 @@ document.addEventListener('DOMContentLoaded', function() {
         sendRT({
           t: 'note_update',
           id: notiz.id,
-          content: content.textContent,
+          content: getNoteText(notiz),
           prio: RT_PRI(),
           ts: Date.now()
         });
@@ -1742,6 +1838,9 @@ document.addEventListener('DOMContentLoaded', function() {
       
       // Fokus auf das Textfeld setzen
       content.focus();
+
+      notiz.dataset.locked = '1';
+      sendRT({ t: 'note_lock', id: notiz.id });
       
       // Wenn der Inhalt bereits Text enthält, den Cursor ans Ende setzen
       if (content.textContent.trim() !== '') {
@@ -1783,31 +1882,38 @@ document.addEventListener('DOMContentLoaded', function() {
     document.addEventListener('click', (e) => {
       if (!notiz.contains(e.target) && content.getAttribute('contenteditable') === 'true') {
         content.setAttribute('contenteditable', 'false');
-        
+
         // Visuelle Rückmeldung entfernen
         content.classList.remove('editing');
         content.classList.remove('blinking-cursor');
         notiz.classList.remove('is-editing');
-        
+
         // Bearbeitungsindikator entfernen
         const indicator = notiz.querySelector('.editing-indicator');
-        if (indicator) {
-          indicator.remove();
-        }
-        
+        if (indicator) indicator.remove();
+
+        // <<< NEU: lokal entsperren + Unlock broadcasten
+        delete notiz.dataset.locked;
+        sendRT({ t: 'note_unlock', id: notiz.id });
+
+        // <<< NEU: finalen Text robust ermitteln und broadcasten
+        const finalText = (typeof getNoteText === 'function')
+          ? getNoteText(notiz)
+          : (content.innerText || content.textContent || '');
+
         sendRT({
           t: 'note_update',
           id: notiz.id,
-          content: content.textContent,
+          content: finalText,
           prio: RT_PRI(),
           ts: Date.now()
         });
 
-        // Wenn der Inhalt nach dem Bearbeiten leer ist, entferne den Notizzettel
-        if (content.textContent.trim() === '') {
+        // Wenn der Inhalt nach dem Bearbeiten leer ist, Notiz entfernen …
+        if ((finalText || '').trim() === '') {
           notiz.remove();
           notes = notes.filter(n => n !== notiz);
-        } else{
+        } else {
           saveCurrentBoardState();
         }
       }
@@ -1831,65 +1937,81 @@ document.addEventListener('DOMContentLoaded', function() {
     let mouseDownTime = 0;
     let hasMoved = false;
     
+    // <<< NEU: Taktung für Live-RT (~30 FPS) oben in enhanceDraggableNote:
+    let _rtNoteDragTick = 0;
+
     note.addEventListener('mousedown', function(e) {
-      // Nur mit linker Maustaste
+      // Nicht ziehen, wenn gelockt (jemand editiert gerade)
+      if (note.dataset.locked === '1') return;
+
+      // Nur linke Maustaste
       if (e.button !== 0) return;
-      
-      // Wenn im Bearbeitungsmodus oder im Löschmodus, nicht ziehen
-      if (e.target.isContentEditable) return;
+
+      // Im Editiermodus/Löschmodus nicht ziehen
+      if (e.target && e.target.isContentEditable) return;
       const trashCan = document.querySelector('.trash-container');
       if (trashCan && trashCan.classList.contains('deletion-mode')) return;
-      
-      // Speichere die Zeit des mousedown Events um später zu erkennen,
-      // ob es ein Doppelklick war oder ein Drag
+
+      // Zeit & State für Doppelklick/Drag
       mouseDownTime = Date.now();
       hasMoved = false;
-      
-      // WICHTIG: NICHT e.stopPropagation() aufrufen, damit
-      // der Doppelklick durchkommt!
-      e.preventDefault(); // Nur preventDefault ist OK
-      
-      // Exakten Offset vom Klickpunkt zur Notizecke berechnen
+
+      e.preventDefault();
+
+      // Exakter Klick-Offset relativ zur Notiz
       const rect = note.getBoundingClientRect();
       offsetX = e.clientX - rect.left;
       offsetY = e.clientY - rect.top;
-      
-      // Startposition speichern für möglichen Mülleimer-Check später
+
+      // Startposition (für Trash-Check etc.)
       initialX = rect.left;
       initialY = rect.top;
-      
-      // Notiz nach vorne bringen
+
+      // nach vorne bringen
       note.style.zIndex = Math.max(getHighestInteractiveZIndex() + 1, 1200);
-      
-      // Ziehen noch NICHT starten - warten, ob es ein Doppelklick ist
-      
-      // Event-Listener zum Dokument hinzufügen
+
+      // Dokument-Listener binden
       document.addEventListener('mousemove', onMouseMove);
       document.addEventListener('mouseup', onMouseUp);
     });
+
     
     function onMouseMove(e) {
-      // Erst wenn etwas Bewegung stattgefunden hat, das Dragging starten
+      // Erst ab erster Bewegung Drag starten
       if (!hasMoved) {
         hasMoved = true;
         isDragging = true;
-        // Jetzt erst visuelles Feedback hinzufügen
         note.classList.add('being-dragged');
       }
-      
       if (!isDragging) return;
       e.preventDefault();
-      
-      // Neue Position relativ zum Elternelement berechnen
+
       const parentRect = note.parentNode.getBoundingClientRect();
-      // Positionen auf ganze Pixel runden, um subpixeliges Rendering zu vermeiden
       const newX = Math.round(e.clientX - parentRect.left - offsetX);
-      const newY = Math.round(e.clientY - parentRect.top - offsetY);
-      
-      // Neue Position setzen
+      const newY = Math.round(e.clientY - parentRect.top  - offsetY);
+
       note.style.position = 'absolute';
       note.style.left = newX + 'px';
-      note.style.top = newY + 'px';
+      note.style.top  = newY + 'px';
+
+      // <<< NEU: alle ~33ms Position relativ zur STAGE senden
+      const now = performance.now();
+      if (now - _rtNoteDragTick >= 33) {
+        _rtNoteDragTick = now;
+
+        const stageRect = getStageRect();        // #session-board / .board-area / body
+        const pxStage = parentRect.left + newX - stageRect.left;
+        const pyStage = parentRect.top  + newY - stageRect.top;
+        const { nx, ny } = toNorm(pxStage, pyStage);
+
+        sendRT({
+          t: 'note_move',
+          id: note.id,
+          nx, ny,
+          prio: RT_PRI(),
+          ts: Date.now()
+        });
+      }
       
       // Prüfen, ob die Notiz über dem Mülleimer ist
       if (trashItem) {
@@ -1998,13 +2120,26 @@ document.addEventListener('DOMContentLoaded', function() {
         
         isDraggingForTrash = false;
         return;
-      }
+       }
       
-      // Board-Zustand nach dem Verschieben speichern
-      if (typeof saveCurrentBoardState === 'function') {
-        saveCurrentBoardState();
+        const rect = note.getBoundingClientRect();
+        const stageRect = getStageRect();
+        const pxStage = Math.round(rect.left - stageRect.left);
+        const pyStage = Math.round(rect.top  - stageRect.top);
+        const { nx, ny } = toNorm(pxStage, pyStage);
+
+        sendRT({
+          t: 'note_move',
+          id: note.id,
+          nx, ny,
+          prio: RT_PRI(),
+          ts: Date.now()
+        });
+
+        if (typeof saveCurrentBoardState === 'function') {
+          saveCurrentBoardState();
+        }
       }
-    }
     
     // Stil für die Notizzettel anpassen
     note.style.cursor = 'grab';
@@ -2465,7 +2600,7 @@ document.addEventListener('DOMContentLoaded', function() {
       id: note.id,
       nx, ny,
       z: note.style.zIndex || '',
-      content: note.textContent || '',
+      content: getNoteText(notiz) || '',
       color: note.dataset.color || '',
       w: (parseFloat(note.style.width)  || note.offsetWidth  || 0),
       h: (parseFloat(note.style.height) || note.offsetHeight || 0),
@@ -2541,32 +2676,42 @@ document.addEventListener('DOMContentLoaded', function() {
     const contextMenu = document.createElement('div');
     contextMenu.className = 'context-menu';
     contextMenu.style.left = `${event.clientX}px`;
-    contextMenu.style.top = `${event.clientY}px`;
-    
-    // Menü für Karten
+    contextMenu.style.top  = `${event.clientY}px`;
+    // <<< NEU: sichtbar über allem
+    contextMenu.style.zIndex = '2147483600';
+    // (optional) Basestyles, falls deine CSS fehlt
+    contextMenu.style.position = 'fixed';
+    contextMenu.style.background = '#fff';
+    contextMenu.style.border = '1px solid #ddd';
+    contextMenu.style.borderRadius = '8px';
+    contextMenu.style.boxShadow = '0 8px 24px rgba(0,0,0,.15)';
+    contextMenu.style.overflow = 'hidden';
+
     contextMenu.innerHTML = `
-      <ul>
-        <li class="flip-card">Karte umdrehen (F)</li>
-        <li class="reset-card">Zurück zum Stapel (B)</li>
-        <li class="shuffle-cards">Karten mischen (M)</li>
+      <ul style="list-style:none;margin:0;padding:6px 0">
+        <li class="flip-card"     style="padding:8px 14px;cursor:pointer">Karte umdrehen (F)</li>
+        <li class="reset-card"    style="padding:8px 14px;cursor:pointer">Zurück zum Stapel (B)</li>
+        <li class="shuffle-cards" style="padding:8px 14px;cursor:pointer">Karten mischen (M)</li>
       </ul>
     `;
-    
     document.body.appendChild(contextMenu);
-    
-    // Event-Listener für Menüaktionen
+
     contextMenu.querySelector('.flip-card').addEventListener('click', () => {
-      flipCard(card);
+      flipCard(card); // flipCard broadcastet selbst
       contextMenu.remove();
     });
-    
+
     contextMenu.querySelector('.reset-card').addEventListener('click', () => {
       returnCardToStack(card);
+      // <<< NEU: Broadcast
+      sendRT({ t: 'card_sendback', id: card.id, prio: RT_PRI(), ts: Date.now() });
       contextMenu.remove();
     });
-    
+
     contextMenu.querySelector('.shuffle-cards').addEventListener('click', () => {
       shuffleCards();
+      // <<< NEU: Broadcast
+      sendRT({ t: 'deck_shuffle', prio: RT_PRI(), ts: Date.now() });
       contextMenu.remove();
     });
     
@@ -3267,10 +3412,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // Flip anpassen
       if (typeof cardData.isFlipped === 'boolean') {
-        const isFlipped = el.classList.contains('flipped');
-        if (cardData.isFlipped !== isFlipped && typeof flipCard === 'function') {
-          flipCard(el);
-        }
+        el.classList.toggle('flipped', !!cardData.isFlipped);
       }
 
       // Zwischen Stapel ↔ Board umhängen
@@ -3573,45 +3715,41 @@ document.addEventListener('DOMContentLoaded', function() {
     sessionStorage.setItem('dashboard_reload_requested', 'true');
   });
 
-  function isTextEditingTarget(t){
-    return (t && (
-      t.isContentEditable ||
-      /^(INPUT|TEXTAREA|SELECT)$/i.test(t.tagName)
-    ));
-  }
 
-  window.addEventListener('keydown', (e)=>{
-    // 1) Nur wenn nicht in einem Eingabe-/Edit-Feld
-    if (isTextEditingTarget(e.target)) return;
+  // ---- Focus Note: Senden ------------------------------------------
+  (function initFocusNoteSend(){
+    // Das Eingabefeld der Focus-Note (id kann bei dir ein <textarea> ODER ein contenteditable sein)
+    const focusEl = document.getElementById('focus-note-editable');
+    if (!focusEl) return;
 
-    // 2) Karte bestimmen – NUTZE deine vorhandene Logik:
-    //    bevorzugt: aktuell gezogene oder zuletzt fokussierte Karte
-    const card = window.getActiveCard?.()    // falls du so eine Helferfunktion hast
-              || document.querySelector('.card.being-dragged')
-              || document.querySelector('.card:last-of-type'); // sehr grobes Fallback
-    if (!card) return;
-
-    const k = e.key.toLowerCase();
-    if (k === 'f') {
-      // flip
-      if (typeof flipCard === 'function') flipCard(card);
-      sendRT({ t:'card_flip', id: card.id, flipped: card.classList.contains('flipped'), prio: RT_PRI(), ts: Date.now() });
-      e.preventDefault(); return;
+    // Echo-Schutz: Wenn wir programmgesteuert setzen, nicht erneut senden
+    let _focusSetByRemote = false;
+    function setFocusTextSilently(txt){
+      _focusSetByRemote = true;
+      if ('value' in focusEl) focusEl.value = txt;
+      else focusEl.innerText = txt;
+      // nach dem Setzen Flag in der nächsten Task wieder löschen
+      queueMicrotask(()=>{ _focusSetByRemote = false; });
     }
-    if (k === 'm') {
-      // deck mixen – benutze deine Funktion, dann RT signalisieren
-      if (typeof shuffleDeck === 'function') shuffleDeck();
-      sendRT({ t:'deck_shuffle', prio: RT_PRI(), ts: Date.now() });
-      e.preventDefault(); return;
-    }
-    if (k === 'b') {
-      // z-Index / nach hinten – falls du so etwas hast
-      if (typeof sendCardToBack === 'function') sendCardToBack(card);
-      sendRT({ t:'card_sendback', id: card.id, prio: RT_PRI(), ts: Date.now() });
-      e.preventDefault(); return;
-    }
-  }, { capture:true });
 
+    // Merke diese Setter-Funktion global (wir nutzen sie im Receiver)
+    window.__ccSetFocusNote = setFocusTextSilently;
+ 
+    let _deb = null;
+    const handler = () => {
+      if (_focusSetByRemote) return; // kein Echo
+      clearTimeout(_deb);
+      _deb = setTimeout(() => {
+        const txt = ('value' in focusEl) ? focusEl.value : focusEl.innerText;
+        sendRT({ t: 'focus_update', content: txt, prio: RT_PRI(), ts: Date.now() });
+      }, 120);
+    };
+
+    // robust: auf mehreren Events lauschen
+    ['input','keyup','change'].forEach(evt => {
+      focusEl.addEventListener(evt, handler);
+    });
+  })();
 
 
 });
