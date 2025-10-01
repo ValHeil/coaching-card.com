@@ -162,6 +162,15 @@ function addParticipantNamePromptStyles() {
 
 // ---------------- zentrale Steuerung ----------------
 // WICHTIG: Diese Funktion wird von board-interaction.js beim Laden aufgerufen.
+// Teilnehmer-Join: zeigt einfach den Namens-Prompt und lässt das Board weiterladen
+function handleParticipantJoin(session) {
+  try {
+    if (typeof addParticipantNamePromptStyles === 'function') addParticipantNamePromptStyles();
+    if (typeof showParticipantNamePrompt === 'function') showParticipantNamePrompt(session);
+  } catch (e) { console.error(e); }
+  return true; // Board darf weiter initialisieren, Overlay liegt oben drüber
+}
+
 function handleSessionJoin() {
   const url = qs();
   const owner = getOwnerFlag();

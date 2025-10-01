@@ -2648,21 +2648,6 @@ document.addEventListener('DOMContentLoaded', function() {
         createNote(left, top);
       });
     }
-    const px = parseFloat(note.style.left) || 0;
-    const py = parseFloat(note.style.top)  || 0;
-    const { nx, ny } = toNorm(px, py);
-
-    sendRT({
-      t: 'note_create',
-      id: note.id,
-      nx, ny,
-      z: note.style.zIndex || '',
-      content: getNoteText(notiz) || '',
-      color: note.dataset.color || '',
-      w: (parseFloat(note.style.width)  || note.offsetWidth  || 0),
-      h: (parseFloat(note.style.height) || note.offsetHeight || 0),
-      prio: RT_PRI(), ts: Date.now()
-    });
     
     // Sitzung schließen
     const endSessionBtn = document.querySelector('.end-session-btn');
@@ -3815,12 +3800,19 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 window.handleSessionJoin              = window.handleSessionJoin              || handleSessionJoin;
-window.handleParticipantJoin          = window.handleParticipantJoin          || handleParticipantJoin;
 window.showParticipantNamePrompt      = window.showParticipantNamePrompt      || showParticipantNamePrompt;
 window.showPasswordPrompt             = window.showPasswordPrompt             || showPasswordPrompt;
 window.addPasswordPromptStyles        = window.addPasswordPromptStyles        || addPasswordPromptStyles;
 window.addParticipantNamePromptStyles = window.addParticipantNamePromptStyles || addParticipantNamePromptStyles;
 window.joinSession                    = window.joinSession                    || joinSession;
+// Nur eine sichere Fallback-Funktion setzen – NICHT auf eine lokale Variable referenzieren
+if (typeof window.handleParticipantJoin !== 'function') {
+  window.handleParticipantJoin = function(session){
+    if (typeof window.addParticipantNamePromptStyles === 'function') window.addParticipantNamePromptStyles();
+    if (typeof window.showParticipantNamePrompt === 'function') window.showParticipantNamePrompt(session);
+    return true;
+  };
+}
 
 // Fallback-Funktion für showError
 window.showError = showError || function(message) {
