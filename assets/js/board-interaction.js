@@ -1997,9 +1997,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     note.addEventListener('mousedown', function(e) {
       // Nicht ziehen, wenn gelockt (jemand editiert gerade) – mit Lease/TTL
-      const until = Number(note.dataset.lockedUntil || 0);
-      const lockActive = note.dataset.locked === '1' && (until === 0 || Date.now() < until);
-      if (lockActive) return;
+      // (Nur wenn tatsächlich in den Text geklickt wurde, nicht ziehen)
+      if (e.target && e.target.isContentEditable) return;
+      // kein early return mehr bei data-locked
 
       // Nur linke Maustaste
       if (e.button !== 0) return;
