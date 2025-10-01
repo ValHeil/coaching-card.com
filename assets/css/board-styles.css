@@ -1077,3 +1077,16 @@ footer.board-footer {
   border: 1px solid rgba(0,0,0,.08);
   box-shadow: 0 1px 2px rgba(0,0,0,.08);
 }
+
+.notiz-content {
+  white-space: pre-wrap !important; /* Absätze/Zeilenumbrüche erhalten */
+}
+
+#cards-container, .cards-container { position: relative; }
+#notes-container, .notes-container { position: relative; }
+
+.notiz[data-locked="1"], .note[data-locked="1"] {
+  cursor: not-allowed;
+  /* optional: leichtes Visuelles Feedback */
+  box-shadow: 0 0 0 2px rgba(0,0,0,.05);
+}
