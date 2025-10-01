@@ -57,18 +57,28 @@ function ensureNoteEl(id) {
   let el = document.getElementById(id);
   if (!el) {
     el = document.createElement('div');
-    // Bevorzugt „notiz“ (deine Styles); fallback „note“
     el.className = 'notiz';
     el.id = id;
     const content = document.createElement('div');
-    // Erst .notiz-content, fallback .note-content
     content.className = 'notiz-content';
     content.setAttribute('contenteditable', 'false');
     el.appendChild(content);
     ensureNotesContainer().appendChild(el);
   }
-  // Content-Element finden (robust)
+
+  // Content-Element robust finden
   const content = el.querySelector('.notiz-content') || el.querySelector('.note-content');
+
+  // <<< NEU: immer die Handler/Beobachter setzen
+  try { attachNoteResizeObserver && attachNoteResizeObserver(el); } catch {}
+  try { attachNoteAutoGrow && attachNoteAutoGrow(el); } catch {}
+  try { setupNoteEditingHandlers && setupNoteEditingHandlers(el); } catch {}
+  try { enhanceDraggableNote && enhanceDraggableNote(el); } catch {}
+
+  // Falls versehentlich gelockt: entsperren (nur Erzeugung, kein Editing!)
+  delete el.dataset.locked;
+  el.classList.remove('is-editing');
+
   return { el, content };
 }
 
@@ -311,14 +321,10 @@ async function initRealtime(config) {
     // ---- Notizen ----
     if (m.t === 'note_create') {
       if (!shouldApply(m.id, m.prio || 1)) return;
-      const { el, content } = ensureNoteEl(m.id);
-      if (typeof enhanceDraggableNote === 'function') {
-        enhanceDraggableNote(el);
-      }
-      if (typeof enhanceDraggableNote === 'function') {
-        enhanceDraggableNote(el);
-      }
-      // Position
+
+      const { el } = ensureNoteEl(m.id); // bindet jetzt intern alle Handler
+
+      // Position setzen
       const { x, y } = (typeof m.nx === 'number') ? fromNorm(m.nx, m.ny) : { x: m.x, y: m.y };
       el.style.left = Math.round(x) + 'px';
       el.style.top  = Math.round(y) + 'px';
@@ -3737,7 +3743,10 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.notiz, .note').forEach(n => {
     attachNoteResizeObserver(n);
     attachNoteAutoGrow(n);
+    setupNoteEditingHandlers?.(n);
+    enhanceDraggableNote?.(n);
   });
+
 
   // Bei Fenstergrößenänderung Notizzettel ggf. auf Maximalgröße begrenzen
   window.addEventListener('resize', () => {
