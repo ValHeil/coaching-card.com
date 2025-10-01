@@ -360,16 +360,32 @@ async function initRealtime(config) {
     if (m.t === 'note_lock') {
       const { el } = ensureNoteEl(m.id);
       el.dataset.locked = '1';
-      el.classList.add('is-editing');   // optional fürs Styling
+      if (m.by) el.dataset.lockedBy = String(m.by);
+      const lease = (typeof m.lease === 'number' && m.lease > 0) ? m.lease : 8000;
+      el.dataset.lockedUntil = String(Date.now() + lease);
+      el.classList.add('is-editing');
+
+      // Auto-Expire falls unlock nie ankommt
+      clearTimeout(el._lockExpireTimer);
+      el._lockExpireTimer = setTimeout(() => {
+        delete el.dataset.locked;
+        delete el.dataset.lockedBy;
+        delete el.dataset.lockedUntil;
+        el.classList.remove('is-editing');
+      }, lease + 1000);
       return;
     }
 
-if (m.t === 'note_unlock') {
-  const { el } = ensureNoteEl(m.id);
-  delete el.dataset.locked;
-  el.classList.remove('is-editing');
-  return;
-}
+    if (m.t === 'note_unlock') {
+      const { el } = ensureNoteEl(m.id);
+      delete el.dataset.locked;
+      delete el.dataset.lockedBy;
+      delete el.dataset.lockedUntil;
+      el.classList.remove('is-editing');
+      clearTimeout(el._lockExpireTimer);
+      el._lockExpireTimer = null;
+      return;
+    }
   };
 
   RT.ws.onclose = () => {
@@ -1839,8 +1855,25 @@ document.addEventListener('DOMContentLoaded', function() {
       // Fokus auf das Textfeld setzen
       content.focus();
 
+      const LEASE_MS = 8000; // 8s gelten die Locks, erneuern wir im Intervall
       notiz.dataset.locked = '1';
-      sendRT({ t: 'note_lock', id: notiz.id });
+      notiz.dataset.lockedBy = (RT && RT.uid) ? RT.uid : '';
+      notiz.dataset.lockedUntil = String(Date.now() + LEASE_MS);
+
+      sendRT({ t: 'note_lock', id: notiz.id, lease: LEASE_MS, by: notiz.dataset.lockedBy });
+
+      // alle 4s Lock erneuern, solange noch editiert wird
+      clearInterval(notiz._lockRenew);
+      notiz._lockRenew = setInterval(() => {
+        if (content.getAttribute('contenteditable') === 'true') {
+          notiz.dataset.locked = '1';
+          notiz.dataset.lockedUntil = String(Date.now() + LEASE_MS);
+          sendRT({ t: 'note_lock', id: notiz.id, lease: LEASE_MS, by: notiz.dataset.lockedBy });
+        } else {
+          clearInterval(notiz._lockRenew);
+          notiz._lockRenew = null;
+        }
+      }, 4000);
       
       // Wenn der Inhalt bereits Text enthält, den Cursor ans Ende setzen
       if (content.textContent.trim() !== '') {
@@ -1879,45 +1912,61 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Bearbeitung beenden, wenn außerhalb geklickt wird
+    function endEditing() {
+      if (content.getAttribute('contenteditable') !== 'true') return;
+      content.setAttribute('contenteditable', 'false');
+      content.classList.remove('editing','blinking-cursor');
+      notiz.classList.remove('is-editing');
+      const indicator = notiz.querySelector('.editing-indicator');
+      if (indicator) indicator.remove();
+
+      // Lock-erneuerung stoppen
+      clearInterval(notiz._lockRenew);
+      notiz._lockRenew = null;
+
+      // lokal entsperren
+      delete notiz.dataset.locked;
+      delete notiz.dataset.lockedBy;
+      delete notiz.dataset.lockedUntil;
+
+      // Unlock Broadcast
+      sendRT({ t: 'note_unlock', id: notiz.id });
+
+      // Finalen Text broadcasten
+      const finalText = (typeof getNoteText === 'function')
+        ? getNoteText(notiz)
+        : (content.innerText || content.textContent || '');
+
+      sendRT({ t: 'note_update', id: notiz.id, content: finalText, prio: RT_PRI(), ts: Date.now() });
+
+      if ((finalText || '').trim() === '') {
+        notiz.remove();
+        notes = (Array.isArray(notes) ? notes.filter(n => n !== notiz) : notes);
+      } else {
+        saveCurrentBoardState?.();
+      }
+    }
+
+    // 1) Klick außerhalb
     document.addEventListener('click', (e) => {
       if (!notiz.contains(e.target) && content.getAttribute('contenteditable') === 'true') {
-        content.setAttribute('contenteditable', 'false');
-
-        // Visuelle Rückmeldung entfernen
-        content.classList.remove('editing');
-        content.classList.remove('blinking-cursor');
-        notiz.classList.remove('is-editing');
-
-        // Bearbeitungsindikator entfernen
-        const indicator = notiz.querySelector('.editing-indicator');
-        if (indicator) indicator.remove();
-
-        // <<< NEU: lokal entsperren + Unlock broadcasten
-        delete notiz.dataset.locked;
-        sendRT({ t: 'note_unlock', id: notiz.id });
-
-        // <<< NEU: finalen Text robust ermitteln und broadcasten
-        const finalText = (typeof getNoteText === 'function')
-          ? getNoteText(notiz)
-          : (content.innerText || content.textContent || '');
-
-        sendRT({
-          t: 'note_update',
-          id: notiz.id,
-          content: finalText,
-          prio: RT_PRI(),
-          ts: Date.now()
-        });
-
-        // Wenn der Inhalt nach dem Bearbeiten leer ist, Notiz entfernen …
-        if ((finalText || '').trim() === '') {
-          notiz.remove();
-          notes = notes.filter(n => n !== notiz);
-        } else {
-          saveCurrentBoardState();
-        }
+        endEditing();
       }
     });
+
+    // 2) Blur auf dem Content-Element
+    content.addEventListener('blur', () => {
+      if (content.getAttribute('contenteditable') === 'true') endEditing();
+    });
+
+    // 3) Sicherheitshalber: Tab/Seite verlässt
+    window.addEventListener('beforeunload', () => {
+      if (content.getAttribute('contenteditable') === 'true') {
+        // Nur Unlock senden – kein Text-Broadcast nötig
+        sendRT({ t: 'note_unlock', id: notiz.id });
+      }
+    });
+
   }
 
   function enhanceDraggableNote(note) {
@@ -1941,8 +1990,10 @@ document.addEventListener('DOMContentLoaded', function() {
     let _rtNoteDragTick = 0;
 
     note.addEventListener('mousedown', function(e) {
-      // Nicht ziehen, wenn gelockt (jemand editiert gerade)
-      if (note.dataset.locked === '1') return;
+      // Nicht ziehen, wenn gelockt (jemand editiert gerade) – mit Lease/TTL
+      const until = Number(note.dataset.lockedUntil || 0);
+      const lockActive = note.dataset.locked === '1' && (until === 0 || Date.now() < until);
+      if (lockActive) return;
 
       // Nur linke Maustaste
       if (e.button !== 0) return;
