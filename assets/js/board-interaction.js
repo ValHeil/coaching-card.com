@@ -1964,13 +1964,13 @@ document.addEventListener('DOMContentLoaded', function() {
       sendRT({ t: 'note_update', id: notiz.id, content: finalText, prio: RT_PRI(), ts: Date.now() });
 
       if ((finalText || '').trim() === '') {
+        sendRT({ t: 'note_delete', id: notiz.id, prio: RT_PRI(), ts: Date.now() });
         notiz.remove();
         notes = (Array.isArray(notes) ? notes.filter(n => n !== notiz) : notes);
       } else {
         saveCurrentBoardState?.();
       }
     }
-
     // 1) Klick außerhalb
     document.addEventListener('click', (e) => {
       if (!notiz.contains(e.target) && content.getAttribute('contenteditable') === 'true') {
@@ -1990,7 +1990,7 @@ document.addEventListener('DOMContentLoaded', function() {
         sendRT({ t: 'note_unlock', id: notiz.id });
       }
     });
-
+    
   }
 
   function enhanceDraggableNote(note) {
@@ -2178,10 +2178,8 @@ document.addEventListener('DOMContentLoaded', function() {
           const py = parseFloat(note.style.top)  || 0;
           const { nx, ny } = toNorm(px, py);
           sendRT({
-            t: 'note_move',
+            t: 'note_delete',
             id: note.id,
-            nx, ny,
-            z: note.style.zIndex || '',
             prio: RT_PRI(),
             ts: Date.now()
           });
@@ -2452,6 +2450,12 @@ document.addEventListener('DOMContentLoaded', function() {
         
         setTimeout(() => {
           noteElement.remove();
+          sendRT({
+            t: 'note_delete',
+            id: noteId,
+            prio: RT_PRI(),
+            ts: Date.now()
+          });
           
           // Array aktualisieren
           if (typeof notes !== 'undefined' && Array.isArray(notes)) {
