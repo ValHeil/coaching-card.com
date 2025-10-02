@@ -80,6 +80,11 @@ function showPasswordPrompt(session) {
 
 // ---------------- Teilnehmer-Flow (bestehend) ----------------
 function showParticipantNamePrompt(session) {
+  const p = new URLSearchParams(location.search);
+  const cur = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  if ((cur && cur.name) || p.get('n') || p.get('name')) {
+    return true; // Prompt gar nicht erst rendern
+  }
   var isOwner = new URLSearchParams(location.search).get('owner') === '1';
   if (isOwner) { return true; }
   // Vorhandene Abfrage entfernen
@@ -211,7 +216,22 @@ function handleSessionJoin() {
     // keine showError()-Meldung und kein return false
   }
 
-  if (isJoining) return handleParticipantJoin(session);
+  if (isJoining) {
+    const cur  = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const name = cur?.name || url.get('n') || url.get('name') || '';
+    if (name) {
+      // Sicherheitsnetz: falls noch keine ID existiert, eine stabile vergeben
+      if (!cur?.id) {
+        localStorage.setItem('currentUser', JSON.stringify({
+          id: 'u-' + Math.random().toString(36).slice(2),
+          name,
+          role: 'participant'
+        }));
+      }
+      return true; // KEIN Prompt mehr anzeigen
+    }
+    return handleParticipantJoin(session); // nur wenn noch kein Name da ist
+  }
   return true; // normales Öffnen ohne Prompt
 }
 
