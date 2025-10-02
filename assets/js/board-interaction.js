@@ -1609,31 +1609,24 @@ document.addEventListener('DOMContentLoaded', function() {
       if (key === 'm') {
         e.stopImmediatePropagation();
 
-        if (window.isHoveringStack === true) {
-          // IDs der Karten im Stapel holen
-          const ids = Array
-            .from(document.querySelectorAll('#card-stack > .card'))
-            .map(c => c.id);
+        if (window.isHoveringStack) {
+          const cardStack = document.getElementById('card-stack');
+          if (!cardStack) return;
 
-          // Fisher–Yates, um eine deterministische Reihenfolge zu erzeugen
+          // aktuelle IDs der Stapelkarten holen
+          const ids = Array.from(cardStack.querySelectorAll(':scope > .card')).map(c => c.id);
+
+          // Fisher–Yates auf der ID-Liste → deterministische Order zum Senden
           for (let i = ids.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [ids[i], ids[j]] = [ids[j], ids[i]];
           }
 
-          // Lokal anwenden (inkl. Animation & Sound)
+          // lokal anwenden (inkl. Animation/Sound) …
           shuffleCards(ids);
-
-          // Gate setzen, damit mein eigenes Echo nicht doppelt abspielt
+          // … und mitsenden
           shouldApply('deck', RT_PRI());
-
-          // Reihenfolge an alle senden
-          sendRT({
-            t: 'deck_shuffle',
-            order: ids,
-            prio: RT_PRI(),
-            ts: Date.now()
-          });
+          sendRT({ t: 'deck_shuffle', order: ids, prio: RT_PRI(), ts: Date.now() });
         }
         return;
       }
@@ -2820,9 +2813,19 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     contextMenu.querySelector('.shuffle-cards').addEventListener('click', () => {
-      shuffleCards();
-      // <<< NEU: Broadcast
-      sendRT({ t: 'deck_shuffle', prio: RT_PRI(), ts: Date.now() });
+      const cardStack = document.getElementById('card-stack');
+      if (!cardStack) { contextMenu.remove(); return; }
+
+      const ids = Array.from(cardStack.querySelectorAll(':scope > .card')).map(c => c.id);
+      for (let i = ids.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [ids[i], ids[j]] = [ids[j], ids[i]];
+      }
+
+      shuffleCards(ids);
+      shouldApply('deck', RT_PRI());
+      sendRT({ t: 'deck_shuffle', order: ids, prio: RT_PRI(), ts: Date.now() });
+
       contextMenu.remove();
     });
     
