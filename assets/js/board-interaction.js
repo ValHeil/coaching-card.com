@@ -523,48 +523,64 @@ function base64ToJSONUTF8(b64){
   return JSON.parse(decodeURIComponent(escape(bin)));
 }
 
-  async function persistStateToServer(boardState) {
-    try {
-      const sessionId = new URLSearchParams(location.search).get('id');
-      if (!sessionId) return false;
-      const res = await fetch('/api/state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: Number(sessionId), state: boardState })
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return true;
-    } catch (e) {
-      console.warn('PersistStateToServer fehlgeschlagen:', e);
-      return false;
-    }
+async function persistStateToServer(boardState) {
+  try {
+    const sessionId = new URLSearchParams(location.search).get('id');
+    if (!sessionId) return false;
+    const res = await fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: Number(sessionId), state: boardState })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return true;
+  } catch (e) {
+    console.warn('PersistStateToServer fehlgeschlagen:', e);
+    return false;
   }
+}
+
+// Wartet, bis der Kartenstapel im DOM existiert (oder timeout)
+function waitForCards(timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const ready = () => document.querySelector('#card-stack .card, .board-area .card');
+    if (ready()) return resolve();
+
+    const obs = new MutationObserver(() => {
+      if (ready()) { obs.disconnect(); resolve(); }
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+
+    setTimeout(() => { try { obs.disconnect(); } catch {} resolve(); }, timeoutMs);
+  });
+}
 
 
-  // Lädt den gespeicherten Zustand aus der Sitzung
-  async function loadSavedBoardState() {
-    try {
-      const sessionId = new URLSearchParams(location.search).get('id');
-      if (!sessionId) return false;
 
-      // Karten abwarten (wichtig!)
-      await waitForCards();
+// Lädt den gespeicherten Zustand aus der Sitzung
+async function loadSavedBoardState() {
+  try {
+    const sessionId = new URLSearchParams(location.search).get('id');
+    if (!sessionId) return false;
 
-      const res = await fetch(`/api/state?id=${encodeURIComponent(sessionId)}`);
-      if (!res.ok) throw new Error(await res.text());
+    // Karten abwarten (wichtig!)
+    await waitForCards();
 
-      const { state_b64 } = await res.json();
-      if (!state_b64) {
-        console.log('[DEBUG] Kein Zustand in der DB vorhanden.');
-        return false;
-      }
+    const res = await fetch(`/api/state?id=${encodeURIComponent(sessionId)}`);
+    if (!res.ok) throw new Error(await res.text());
 
-      const state = base64ToJSONUTF8(state_b64); // UTF-8 sicher
-      return restoreBoardState(state);
-    } catch (e) {
-      console.warn('[DEBUG] Laden aus DB fehlgeschlagen:', e);
+    const { state_b64 } = await res.json();
+    if (!state_b64) {
+      console.log('[DEBUG] Kein Zustand in der DB vorhanden.');
       return false;
     }
+
+    const state = base64ToJSONUTF8(state_b64); // UTF-8 sicher
+    return restoreBoardState(state);
+  } catch (e) {
+    console.warn('[DEBUG] Laden aus DB fehlgeschlagen:', e);
+    return false;
+  }
 }
 
 
@@ -3801,8 +3817,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
 window.handleSessionJoin              = window.handleSessionJoin              || handleSessionJoin;
 window.showParticipantNamePrompt      = window.showParticipantNamePrompt      || showParticipantNamePrompt;
-window.showPasswordPrompt             = window.showPasswordPrompt             || showPasswordPrompt;
-window.addPasswordPromptStyles        = window.addPasswordPromptStyles        || addPasswordPromptStyles;
 window.addParticipantNamePromptStyles = window.addParticipantNamePromptStyles || addParticipantNamePromptStyles;
 window.joinSession                    = window.joinSession                    || joinSession;
 // Nur eine sichere Fallback-Funktion setzen – NICHT auf eine lokale Variable referenzieren

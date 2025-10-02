@@ -198,11 +198,17 @@ function handleSessionJoin() {
   const isJoining = url.get('join') === 'true';
   // Sitzungsdaten aus localStorage (wie bisher)
   const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
-  const session  = sessions.find(s => String(s.id) === String(sid));
+  let session    = sessions.find(s => String(s.id) === String(sid));
+
+  // Fallback: LocalStorage leer? -> Minimal-Session aus URL/Boot ableiten,
+  // Board nicht blockieren – Zustand kommt ohnehin aus /api/state.
   if (!session) {
-    if (typeof showError === 'function') showError("Die angeforderte Sitzung existiert nicht.");
-    else console.error("Die angeforderte Sitzung existiert nicht.");
-    return false;
+    session = {
+      id: sid,
+      name: (window.CC_BOOT?.session?.name) ||
+            (new URLSearchParams(location.search).get('name')) || 'Sitzung'
+    };
+    // keine showError()-Meldung und kein return false
   }
 
   if (isJoining) return handleParticipantJoin(session);
