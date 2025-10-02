@@ -3000,6 +3000,9 @@ document.addEventListener('DOMContentLoaded', function() {
         element.style.position = 'absolute';
         element.style.left = newX + 'px';
         element.style.top = newY + 'px';
+
+        // pro Frame senden (~60fps)
+        queueRTCardMove();
         
         // NEUE FUNKTIONALITÄT: Überprüfen, ob Karte über dem Stapel schwebt
         const cardStack = document.getElementById('card-stack');
@@ -3112,7 +3115,7 @@ document.addEventListener('DOMContentLoaded', function() {
           {
           const px = parseFloat(element.style.left) || 0;
           const py = parseFloat(element.style.top)  || 0;
-          const { nx, ny } = toNorm(px, py);
+          const { nx, ny } = toNormCard(px, py);
           sendRT({
             t: 'card_move',
             id: element.id,
