@@ -287,7 +287,9 @@ async function initRealtime(config) {
       if (!shouldApply(m.id, m.prio || 1)) return;
       const el = document.getElementById(m.id);
       if (!el) return;
-      const { x, y } = (typeof m.nx === 'number') ? fromNorm(m.nx, m.ny) : { x: m.x, y: m.y };
+      const { x, y } = (typeof m.nx === 'number')
+        ? fromNormCard(m.nx, m.ny)  // <<< wichtig: Karten-Bühne
+        : { x: m.x, y: m.y };
       el.style.left = (x|0) + 'px';
       el.style.top  = (y|0) + 'px';
       if (m.z !== undefined && m.z !== '') el.style.zIndex = m.z;
@@ -2871,6 +2873,39 @@ document.addEventListener('DOMContentLoaded', function() {
       enhanceDraggableNote(element);
       return;
     }
+
+    let _rtRaf = null;
+    let _rtPending = false;
+
+    function queueRTCardMove(){
+      _rtPending = true;
+      if (_rtRaf) return;
+      _rtRaf = requestAnimationFrame(() => {
+        _rtRaf = null;
+        if (!_rtPending) return;
+        _rtPending = false;
+
+        // Position relativ zur Karten-Bühne ermitteln
+        const elRect    = element.getBoundingClientRect();
+        const stageRect = cardStageRect(); // nutzt #cards-container/#session-board
+        const px = Math.round(elRect.left - stageRect.left);
+        const py = Math.round(elRect.top  - stageRect.top);
+        const { nx, ny } = toNormCard(px, py);
+
+        // Gate setzen, damit Echo-Messages <150ms ignoriert werden
+        shouldApply(element.id, RT_PRI());
+
+        sendRT({
+          t: 'card_move',
+          id: element.id,
+          nx, ny,
+          z: element.style.zIndex || '',
+          prio: RT_PRI(),
+          ts: Date.now()
+        });
+      });
+    }
+
     
     // Für Karten, benutzerdefiniertes Drag-and-Drop implementieren
     if (element.classList.contains('card')) {
@@ -2905,18 +2940,38 @@ document.addEventListener('DOMContentLoaded', function() {
         // damit sie nicht hinter Focus Note/Notizzettel verschwindet
         const cardStack = document.getElementById('card-stack');
         const boardArea = document.querySelector('.board-area');
+        // ... im mousedown-Handler:
         if (initialParent === cardStack && boardArea) {
           const globalLeft = rect.left;
           const globalTop = rect.top;
           // Aus dem Stapel entfernen und dem Board hinzufügen
           try { cardStack.removeChild(element); } catch (_) {}
           boardArea.appendChild(element);
-          // Position relativ zum Board setzen, um keine "Sprünge" zu erzeugen
+          // Position relativ zum Board setzen
           const boardRect = boardArea.getBoundingClientRect();
           element.style.position = 'absolute';
           element.style.left = (globalLeft - boardRect.left) + 'px';
-          element.style.top = (globalTop - boardRect.top) + 'px';
+          element.style.top  = (globalTop  - boardRect.top)  + 'px';
+
+          // <<< 2d) RT einmalig senden – direkt nach dem Umhängen
+          {
+            const rect      = element.getBoundingClientRect();
+            const stageRect = cardStageRect();
+            const px = Math.round(rect.left - stageRect.left);
+            const py = Math.round(rect.top  - stageRect.top);
+            const { nx, ny } = toNormCard(px, py);
+            shouldApply(element.id, RT_PRI());
+            sendRT({
+              t: 'card_move',
+              id: element.id,
+              nx, ny,
+              z: element.style.zIndex || '',
+              prio: RT_PRI(),
+              ts: Date.now()
+            });
+          }
         }
+
         
         // Visuelles Feedback dass Karte gezogen wird
         element.classList.add('being-dragged');
@@ -3018,35 +3073,31 @@ document.addEventListener('DOMContentLoaded', function() {
         // Ursprüngliche Funktionalität für Bewegung vom Stapel zum Board behalten
         const boardArea = document.querySelector('.board-area');
         if (initialParent === cardStack && cardStack.contains(element)) {
-          // Berechnen, ob Karte weit genug vom Stapel weggezogen wurde
-          const stackRect = cardStack.getBoundingClientRect();
-          const cardRect = element.getBoundingClientRect();
-          
-          const distanceX = Math.abs(cardRect.left - stackRect.left);
-          const distanceY = Math.abs(cardRect.top - stackRect.top);
-          
-          if (distanceX > element.offsetWidth / 2 || distanceY > element.offsetHeight / 2) {
-            // WICHTIG: Globale Position berechnen, bevor das Elternelement geändert wird
-            const globalLeft = cardRect.left;
-            const globalTop = cardRect.top;
-            
-            // Karte vom Stapel entfernen
-            cardStack.removeChild(element);
-            
-            // Zum Board hinzufügen
-            boardArea.appendChild(element);
-            
-            // Board-Position abrufen
-            const boardRect = boardArea.getBoundingClientRect();
-            
-            // Position relativ zum neuen Elternelement berechnen und sofort anwenden
-            element.style.position = 'absolute';
-            element.style.left = (globalLeft - boardRect.left) + 'px';
-            element.style.top = (globalTop - boardRect.top) + 'px';
-            
-            // Browser-Repaint erzwingen, um Flackern zu vermeiden
-            element.offsetHeight;
+          // ... globalLeft/globalTop holen, umhängen, dann:
+          element.style.position = 'absolute';
+          element.style.left = (globalLeft - boardRect.left) + 'px';
+          element.style.top  = (globalTop  - boardRect.top)  + 'px';
+
+          // <<< 2d) RT einmalig senden – direkt nach dem Setzen der Board-Position
+          {
+            const rect      = element.getBoundingClientRect();
+            const stageRect = cardStageRect();
+            const px = Math.round(rect.left - stageRect.left);
+            const py = Math.round(rect.top  - stageRect.top);
+            const { nx, ny } = toNormCard(px, py);
+            shouldApply(element.id, RT_PRI());
+            sendRT({
+              t: 'card_move',
+              id: element.id,
+              nx, ny,
+              z: element.style.zIndex || '',
+              prio: RT_PRI(),
+              ts: Date.now()
+            });
           }
+
+          // Repaint
+          element.offsetHeight;
         }
 
         // Nach dem Loslassen: z-index der Karte normalisieren, damit Notizzettel
@@ -3117,23 +3168,29 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function elementDrag(e) {
       e.preventDefault();
-      
-      // Neue Position basierend auf Startpunkt und Bewegung berechnen
+
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
-      
-      // Neue Position direkt setzen
+
+      // Lokal bewegen
       element.style.left = (initialLeft + dx) + "px";
-      element.style.top = (initialTop + dy) + "px";
+      element.style.top  = (initialTop  + dy) + "px";
+
+      // Pro Frame (max ~60 FPS) RT senden
+      queueRTCardMove();
     }
     
     function closeDragElement() {
       // Event-Handler entfernen
       // RT: card_move bei generischem Drag-Ende
       {
+        if (_rtRaf) { cancelAnimationFrame(_rtRaf); _rtRaf = null; }
+        _rtPending = false;
+
         const px = parseFloat(element.style.left) || 0;
         const py = parseFloat(element.style.top)  || 0;
-        const { nx, ny } = toNorm(px, py);
+        const { nx, ny } = toNormCard(px, py); // <<< Karten-Koordinaten!
+        shouldApply(element.id, RT_PRI());      // Gate für Echos setzen
         sendRT({
           t: 'card_move',
           id: element.id,
