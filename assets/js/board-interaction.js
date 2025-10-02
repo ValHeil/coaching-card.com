@@ -337,7 +337,11 @@ async function initRealtime(config) {
       if (!shouldApply('deck', m.prio || 1)) return;
 
       const order = Array.isArray(m.order) ? m.order : null;
-      shuffleCards(order);
+      if (typeof window.shuffleCards === 'function') {
+        window.shuffleCards(Array.isArray(order) ? order : null);
+      } else {
+        console.warn('shuffleCards ist (noch) nicht global verfügbar');
+      }
       return;
     }
 
@@ -1444,6 +1448,7 @@ document.addEventListener('DOMContentLoaded', function() {
       saveCurrentBoardState();
     }
   }
+  window.returnCardToStack = returnCardToStack;
 
   // Event-Listener für Tastaturkürzel
   const setupKeyboardShortcuts = () => {
@@ -2637,61 +2642,56 @@ document.addEventListener('DOMContentLoaded', function() {
   };
 
   // Karten mischen - überarbeitete Version, die nur Karten auf dem Stapel mischt
-  // Karten mischen – akzeptiert optional "order" (Array von Karten-IDs)
-  const shuffleCards = (order /* optional: string[] */) => {
+
+  // Globale Shuffle-Funktion (oberste Karte = letztes Kind)
+  window.shuffleCards = function(order) {
     const cardStack = document.getElementById('card-stack');
     if (!cardStack) return;
 
+    // aktuelle Karten im Stapel
     const stackCards = Array.from(cardStack.querySelectorAll(':scope > .card'));
-    if (stackCards.length === 0) return;
+    if (!stackCards.length) return;
 
-    // Kurze Animationsklasse auf allen Stapelkarten
-    stackCards.forEach(card => {
-      card.classList.add('shuffling');
-      setTimeout(() => card.classList.remove('shuffling'), 500);
-    });
-
-    // Sound abspielen (läuft dann auch bei Remote)
-    if (typeof shuffleSound !== 'undefined' && shuffleSound) {
-      try { shuffleSound.currentTime = 0; shuffleSound.play(); } catch {}
-    }
-
-    // Zielreihenfolge bestimmen: übergebene order (falls passend) oder lokal shufflen
-    let ids;
-    if (Array.isArray(order) && order.length === stackCards.length) {
-      ids = order.slice();
+    // Ziel-Reihenfolge bestimmen
+    let newOrderEls;
+    if (Array.isArray(order) && order.length) {
+      const map = new Map(stackCards.map(el => [el.id, el]));
+      newOrderEls = order.map(id => map.get(id)).filter(Boolean);
+      // fehlende (z.B. neue Karten) unten anhängen
+      stackCards.forEach(el => { if (!newOrderEls.includes(el)) newOrderEls.push(el); });
     } else {
-      ids = stackCards.map(c => c.id);
-      for (let i = ids.length - 1; i > 0; i--) {
+      // lokal mischen (wenn keine Reihenfolge übergeben wurde)
+      newOrderEls = stackCards.slice();
+      for (let i = newOrderEls.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [ids[i], ids[j]] = [ids[j], ids[i]];
+        [newOrderEls[i], newOrderEls[j]] = [newOrderEls[j], newOrderEls[i]];
       }
     }
 
-    const byId = new Map(stackCards.map(c => [c.id, c]));
-
-    // Erst alle raus, dann in neuer Reihenfolge wieder rein
-    stackCards.forEach(c => cardStack.removeChild(c));
-
-    ids.forEach((id, index) => {
-      const card = byId.get(id);
-      if (!card) return;
-      // umgedrehte Karten wieder verdecken
-      card.classList.remove('flipped');
-      cardStack.appendChild(card);
-
-      const offset = index * 0.5;
-      card.style.position = 'absolute';
-      card.style.left = `${offset}px`;
-      card.style.top  = `${offset}px`;
-      card.style.zIndex = index + 1;
+    // kurze Animation + sicherstellen, dass Karten zu sind
+    newOrderEls.forEach(el => {
+      el.classList.add('shuffling');
+      setTimeout(() => el.classList.remove('shuffling'), 500);
+      el.classList.remove('flipped');
     });
 
-    // Zustand speichern
-    if (typeof saveCurrentBoardState === 'function') {
-      saveCurrentBoardState();
-    }
+    // Sound (lokal abspielen)
+    const snd = document.getElementById('shuffle-sound');
+    if (snd) { try { snd.currentTime = 0; snd.play(); } catch(_) {} }
+
+    // DOM in neuer Reihenfolge aufbauen + Z-Index/Offset setzen
+    newOrderEls.forEach((el, idx) => {
+      cardStack.appendChild(el);                 // unten → oben
+      const offset = idx * 0.5;
+      el.style.position = 'absolute';
+      el.style.left = offset + 'px';
+      el.style.top  = offset + 'px';
+      el.style.zIndex = String(idx + 1);
+    });
+
+    if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState();
   };
+
 
 
   // Event-Listener für Buttons und Aktionen einrichten
@@ -2813,17 +2813,15 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     contextMenu.querySelector('.shuffle-cards').addEventListener('click', () => {
-      const cardStack = document.getElementById('card-stack');
-      if (!cardStack) { contextMenu.remove(); return; }
+      // IDs der Karten im Stapel ermitteln
+      const ids = Array
+        .from(document.querySelectorAll('#card-stack > .card'))
+        .map(c => c.id);
 
-      const ids = Array.from(cardStack.querySelectorAll(':scope > .card')).map(c => c.id);
-      for (let i = ids.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [ids[i], ids[j]] = [ids[j], ids[i]];
-      }
+      // lokal anwenden (Animation+Sound)
+      window.shuffleCards(ids);
 
-      shuffleCards(ids);
-      shouldApply('deck', RT_PRI());
+      // an alle senden (mit deterministischer Reihenfolge)
       sendRT({ t: 'deck_shuffle', order: ids, prio: RT_PRI(), ts: Date.now() });
 
       contextMenu.remove();
