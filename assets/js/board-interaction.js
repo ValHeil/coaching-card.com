@@ -320,6 +320,28 @@ async function initRealtime(config) {
       return;
     }
 
+    // Karte zu Stapel zurückgelegt (via Drop oder Taste "b")
+    if (m.t === 'card_sendback') {
+      const gateKey = `sendback:${m.id}`;
+      if (!shouldApply(gateKey, m.prio || 1)) return;
+
+      const c = document.getElementById(m.id);
+      if (c) returnCardToStack(c);
+      return;
+    }
+
+
+    // Stapel mischen (inkl. Animation+Sound) – mit deterministischer Reihenfolge
+    if (m.t === 'deck_shuffle') {
+      // Echo-Unterdrückung (Owner gewinnt), damit der Sender sich nicht doppelt mischt
+      if (!shouldApply('deck', m.prio || 1)) return;
+
+      const order = Array.isArray(m.order) ? m.order : null;
+      shuffleCards(order);
+      return;
+    }
+
+
     // ---- Notizen ----
     if (m.t === 'note_create') {
       if (!shouldApply(m.id, m.prio || 1)) return;
@@ -1586,10 +1608,32 @@ document.addEventListener('DOMContentLoaded', function() {
       // M: nur mischen, wenn Cursor über dem Stapel (nicht über einzelner Karte)
       if (key === 'm') {
         e.stopImmediatePropagation();
-        if (window.isHoveringCard && !window.hoveredCard) {
-          shuffleCards();
-          // <<< NEU: Broadcast
-          sendRT({ t: 'deck_shuffle', prio: RT_PRI(), ts: Date.now() });
+
+        if (window.isHoveringStack === true) {
+          // IDs der Karten im Stapel holen
+          const ids = Array
+            .from(document.querySelectorAll('#card-stack > .card'))
+            .map(c => c.id);
+
+          // Fisher–Yates, um eine deterministische Reihenfolge zu erzeugen
+          for (let i = ids.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [ids[i], ids[j]] = [ids[j], ids[i]];
+          }
+
+          // Lokal anwenden (inkl. Animation & Sound)
+          shuffleCards(ids);
+
+          // Gate setzen, damit mein eigenes Echo nicht doppelt abspielt
+          shouldApply('deck', RT_PRI());
+
+          // Reihenfolge an alle senden
+          sendRT({
+            t: 'deck_shuffle',
+            order: ids,
+            prio: RT_PRI(),
+            ts: Date.now()
+          });
         }
         return;
       }
@@ -1599,8 +1643,15 @@ document.addEventListener('DOMContentLoaded', function() {
         e.stopImmediatePropagation();
         if (window.hoveredCard) {
           returnCardToStack(window.hoveredCard);
-          // <<< NEU: Broadcast
-          sendRT({ t: 'card_sendback', id: window.hoveredCard.id, prio: RT_PRI(), ts: Date.now() });
+
+          // Gate setzen + Broadcast
+          shouldApply(`sendback:${window.hoveredCard.id}`, RT_PRI());
+          sendRT({
+            t: 'card_sendback',
+            id: window.hoveredCard.id,
+            prio: RT_PRI(),
+            ts: Date.now()
+          });
         }
         return;
       }
@@ -2593,66 +2644,62 @@ document.addEventListener('DOMContentLoaded', function() {
   };
 
   // Karten mischen - überarbeitete Version, die nur Karten auf dem Stapel mischt
-  const shuffleCards = () => {
-    // Den Kartenstapel Element finden
+  // Karten mischen – akzeptiert optional "order" (Array von Karten-IDs)
+  const shuffleCards = (order /* optional: string[] */) => {
     const cardStack = document.getElementById('card-stack');
     if (!cardStack) return;
-    
-    // Nur Karten direkt im Stapel selektieren
-    const stackCardElements = cardStack.querySelectorAll(':scope > .card');
-    
-    // Wenn keine Karten im Stapel sind, beenden
-    if (stackCardElements.length === 0) {
-      console.log("Keine Karten zum Mischen im Stapel vorhanden");
-      return;
-    }
-    
-    // Konvertiere NodeList zu Array für bessere Handhabung
-    const stackCards = Array.from(stackCardElements);
-    console.log(`${stackCards.length} Karten im Stapel zum Mischen gefunden`);
-    
-    // Kurze Animation für jede Karte hinzufügen
+
+    const stackCards = Array.from(cardStack.querySelectorAll(':scope > .card'));
+    if (stackCards.length === 0) return;
+
+    // Kurze Animationsklasse auf allen Stapelkarten
     stackCards.forEach(card => {
       card.classList.add('shuffling');
       setTimeout(() => card.classList.remove('shuffling'), 500);
     });
-    
-    // Sound abspielen
-    if (shuffleSound) {
-      shuffleSound.currentTime = 0;
-      shuffleSound.play().catch(e => console.log('Audio konnte nicht abgespielt werden:', e));
+
+    // Sound abspielen (läuft dann auch bei Remote)
+    if (typeof shuffleSound !== 'undefined' && shuffleSound) {
+      try { shuffleSound.currentTime = 0; shuffleSound.play(); } catch {}
     }
-  
-    // WICHTIG: Alle Karten vom Stack entfernen, damit wir sie in neuer Reihenfolge hinzufügen können
-    stackCards.forEach(card => cardStack.removeChild(card));
-    
-    // Fisher-Yates Shuffle-Algorithmus
-    for (let i = stackCards.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [stackCards[i], stackCards[j]] = [stackCards[j], stackCards[i]];
-    }
-    
-    // Karten in der gemischten Reihenfolge wieder hinzufügen
-    stackCards.forEach((card, index) => {
-      // Umgedrehte Karten zurückdrehen
-      if (card.classList.contains('flipped')) {
-        card.classList.remove('flipped');
+
+    // Zielreihenfolge bestimmen: übergebene order (falls passend) oder lokal shufflen
+    let ids;
+    if (Array.isArray(order) && order.length === stackCards.length) {
+      ids = order.slice();
+    } else {
+      ids = stackCards.map(c => c.id);
+      for (let i = ids.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [ids[i], ids[j]] = [ids[j], ids[i]];
       }
-      
-      // Karte zum Stapel hinzufügen
+    }
+
+    const byId = new Map(stackCards.map(c => [c.id, c]));
+
+    // Erst alle raus, dann in neuer Reihenfolge wieder rein
+    stackCards.forEach(c => cardStack.removeChild(c));
+
+    ids.forEach((id, index) => {
+      const card = byId.get(id);
+      if (!card) return;
+      // umgedrehte Karten wieder verdecken
+      card.classList.remove('flipped');
       cardStack.appendChild(card);
-      
-      // Position im Stapel mit leichtem Versatz
+
       const offset = index * 0.5;
       card.style.position = 'absolute';
       card.style.left = `${offset}px`;
-      card.style.top = `${offset}px`;
+      card.style.top  = `${offset}px`;
       card.style.zIndex = index + 1;
     });
-    
-    // Speichern des Board-Zustands nach dem Mischen
-    saveCurrentBoardState();
+
+    // Zustand speichern
+    if (typeof saveCurrentBoardState === 'function') {
+      saveCurrentBoardState();
+    }
   };
+
 
   // Event-Listener für Buttons und Aktionen einrichten
   const setupEventListeners = () => {
@@ -3071,6 +3118,14 @@ document.addEventListener('DOMContentLoaded', function() {
           // Karte zum Stapel zurücklegen
           console.log("Karte wird per Drag-and-Drop zum Stapel zurückgelegt");
           returnCardToStack(element);
+          // Gate + Broadcast "sendback", damit alle den Rückleger sehen
+          shouldApply(`sendback:${element.id}`, RT_PRI());
+          sendRT({
+            t: 'card_sendback',
+            id: element.id,
+            prio: RT_PRI(),
+            ts: Date.now()
+          });
           
           // Hover-Status zurücksetzen
           isHoveringOverStack = false;
