@@ -1397,58 +1397,98 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
   // Karte zum Stapel zurücklegen
+  // Karte zum Stapel zurücklegen – animiert (Flug → Flip → unten einsortieren)
   function returnCardToStack(card) {
     if (!card) return;
-  
-    // Karte zum Stapel zurückbewegen
+
     const cardStack = document.getElementById('card-stack');
     const boardArea = document.querySelector('.board-area');
-  
-    if (cardStack) {
-      // Falls die Karte aufgedeckt war, wieder umdrehen
+    if (!cardStack || !boardArea) return;
+
+    // Falls Karte in einem Platzhalter steckte → freigeben
+    if (card.dataset.placedAt) {
+      const ph = document.getElementById(card.dataset.placedAt);
+      if (ph) ph.classList.remove('filled');
+      delete card.dataset.placedAt;
+    }
+
+    // Ausgangs- und Zielkoordinaten ermitteln (relativ zur Board-Stage & mit Scale)
+    const scale     = parseFloat(boardArea.dataset.scale || '1');
+    const boardRect = boardArea.getBoundingClientRect();
+    const stackRect = cardStack.getBoundingClientRect();
+    const cardRect  = card.getBoundingClientRect();
+
+    // Ziel: mittig über dem Stapel leicht „aufsetzen“
+    const targetLeft = (stackRect.left - boardRect.left) / scale
+                    + (stackRect.width  - cardRect.width)  / (2 * scale);
+    const targetTop  = (stackRect.top  - boardRect.top)  / scale + 6;
+
+    // Sicherstellen, dass die Karte im boardArea liegt (sonst stimmt die Animation nicht)
+    if (!boardArea.contains(card)) {
+      // Position relativ zur Board-Area setzen, damit der Flug sichtbar wird
+      card.style.position = 'absolute';
+      card.style.left = ((cardRect.left - boardRect.left) / scale) + 'px';
+      card.style.top  = ((cardRect.top  - boardRect.top)  / scale) + 'px';
+      boardArea.appendChild(card);
+    }
+
+    // Flug vorbereiten
+    card.classList.remove('being-dragged');
+    card.style.zIndex = String(Math.max(getHighestInteractiveZIndex() + 10, 1500));
+    card.classList.add('returning');
+
+    // Reflow triggern, dann Zielkoordinaten setzen → löst Transition aus
+    void card.offsetWidth;
+    card.style.left = Math.round(targetLeft) + 'px';
+    card.style.top  = Math.round(targetTop)  + 'px';
+
+    const FLY_MS  = 330; // „zügig, aber nicht zu schnell“
+    const FLIP_MS = 300;
+
+    // Nach dem Flug: ggf. Flip (nur wenn Vorderseite sichtbar)
+    setTimeout(() => {
+      let extraDelay = 0;
       if (card.classList.contains('flipped')) {
-        // Kurze Animation für das Umdrehen
+        // dezenter Flip über dem Stapel
+        try {
+          if (typeof cardFlipSound !== 'undefined' && cardFlipSound) {
+            cardFlipSound.currentTime = 0;
+            cardFlipSound.play().catch(()=>{});
+          }
+        } catch {}
         card.classList.add('flipping');
+        // eigentlicher Flip – entspricht eurer Flip-Logik (Vorder-/Rückseite)
         setTimeout(() => {
           card.classList.remove('flipping');
           card.classList.remove('flipped');
-        }, 500);
+        }, FLIP_MS);
+        extraDelay = FLIP_MS;
       }
-      
-      // WICHTIG: Wenn die Karte nicht bereits im Stapel ist, füge sie hinzu
-      if (!cardStack.contains(card)) {
-        console.log(`Karte ${card.id} wird zum Stapel zurückgelegt`);
-        // Vom aktuellen Elternelement entfernen
-        if (card.parentNode) {
-          card.parentNode.removeChild(card);
-        }
-        
-        // Karte UNTEN auf den Stapel legen (als erstes Kind einfügen)
-        if (cardStack.firstChild) {
-          cardStack.insertBefore(card, cardStack.firstChild);
-        } else {
-          cardStack.appendChild(card);
-        }
-      }
-      
-      // Alle Karten im Stapel zählen
-      const stackCards = cardStack.querySelectorAll(':scope > .card');
-      
-      // Alle Karten neu positionieren und Z-Indices aktualisieren
-      stackCards.forEach((stackCard, index) => {
-        const offset = index * 0.5;
-        stackCard.style.left = `${offset}px`;
-        stackCard.style.top = `${offset}px`;
-        stackCard.style.zIndex = index + 1; // Z-Index basierend auf Position im Stapel
-      });
-    }
-    
-    // Board-Zustand speichern
-    if (typeof saveCurrentBoardState === 'function') {
-      saveCurrentBoardState();
-    }
+
+      // Nach Flip: Karte UNTEN in den Stapel einsortieren und Offsets/Z-Index setzen
+      setTimeout(() => {
+        card.classList.remove('returning');
+
+        // als erstes Kind einfügen → „unten im Stapel“
+        if (cardStack.firstChild) cardStack.insertBefore(card, cardStack.firstChild);
+        else cardStack.appendChild(card);
+
+        const stackCards = Array.from(cardStack.querySelectorAll(':scope > .card'));
+        stackCards.forEach((el, idx) => {
+          const offset = idx * 0.5;
+          el.style.position = 'absolute';
+          el.style.left = offset + 'px';
+          el.style.top  = offset + 'px';
+          el.style.zIndex = String(idx + 1); // unten→oben
+        });
+
+        // Speichern/nach außen signalisieren
+        if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState();
+      }, extraDelay + 10);
+    }, FLY_MS);
   }
   window.returnCardToStack = returnCardToStack;
+
 
   // Event-Listener für Tastaturkürzel
   const setupKeyboardShortcuts = () => {
