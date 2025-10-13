@@ -513,14 +513,6 @@
   overflow: visible; /* oder auto, je nach Wunsch */
 }
 
-/* Bühne: füllt den verfügbaren Platz und ist der Bezugspunkt */
-.board-area{
-  position: relative;
-  width: 100%;
-  height: 100%;
-  transform-origin: top left; /* passt zu 1) */
-  overflow: hidden;           /* kein Scroll, Board wird ja skaliert */
-}
 
 /* Karten- und Notiz-Layer füllen die Bühne */
 #cards-container,
@@ -534,3 +526,33 @@
   position: absolute;
 }
 
+
+/* Vollbild-Viewport, kein Scrollen */
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* Fixe Weltgröße – hier Beispiel 2400 x 1350 */
+.board-area {
+  position: absolute;       /* top-left verankert (oder später centrisch via translate) */
+  top: 0; left: 0;
+  width: 2400px;            /* <— deine Weltbreite */
+  height: 1350px;           /* <— deine Welthöhe  */
+  transform-origin: top left;
+}
+
+/* Interaktive Layer füllen die Bühne */
+#cards-container, .cards-container,
+#notes-container, .notes-container {
+  position: absolute;
+  inset: 0;
+}
+
+/* WICHTIG: In der Bühne feste px statt viewportabhängig */
+.board-area {
+  --card-w: 295px;                   /* feste Welt-Pixel */
+  --card-h: calc(295px * 260 / 295); /* = 260px bei 295px Breite */
+  --note-size: 200px;                /* feste Welt-Pixel */
+}
