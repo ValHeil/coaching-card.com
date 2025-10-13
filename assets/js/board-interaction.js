@@ -2033,6 +2033,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Doppelklick zum Bearbeiten
     notiz.addEventListener('dblclick', (e) => {
+      // Drag-Doppelklick ignorieren & Fremd-Lock respektieren
+      if (notiz.classList.contains('being-dragged')) return;
+      if (notiz.dataset.locked === '1' && notiz.dataset.lockedBy && notiz.dataset.lockedBy !== (RT && RT.uid)) return;
       // Content-Element auf editierbar setzen
       content.setAttribute('contenteditable', 'true');
       
@@ -2185,28 +2188,63 @@ document.addEventListener('DOMContentLoaded', function() {
     let _rtTick = 0;
 
     note.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      if (e.target && e.target.isContentEditable) return;
+      if (e.button !== 0) return;                           // nur Linksklick
+      if (e.target && e.target.isContentEditable) return;   // nicht beim Tippen
+      if (note.dataset.locked === '1' || note.classList.contains('is-editing')) return; // wenn gesperrt/editiert → nicht ziehen
 
-      e.preventDefault();
+      // WICHTIG: Hier KEIN preventDefault, damit dblclick wieder funktioniert
+      const startX = e.clientX;
+      const startY = e.clientY;
 
-      const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
-      const parentRect = note.parentNode.getBoundingClientRect();
+      let started = false;
 
-      const left0 = parseFloat(note.style.left) || 0;
-      const top0  = parseFloat(note.style.top)  || 0;
-      offsetX = ((e.clientX - parentRect.left) / s) - left0;
-      offsetY = ((e.clientY - parentRect.top)  / s) - top0;
+      function startDrag(ev) {
+        // Erst wenn sich die Maus wirklich bewegt hat, starten wir das Drag
+        const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+        const parentRect = note.parentNode.getBoundingClientRect();
 
-      note.style.zIndex = Math.max(getHighestInteractiveZIndex() + 1, 1200);
+        const left0 = parseFloat(note.style.left) || 0;
+        const top0  = parseFloat(note.style.top)  || 0;
 
-      hasMoved = false;
-      isDragging = true;
-      note.classList.add('being-dragged');
+        // Offsets erst jetzt berechnen
+        offsetX = ((ev.clientX - parentRect.left) / s) - left0;
+        offsetY = ((ev.clientY - parentRect.top)  / s) - top0;
 
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+        note.style.zIndex = Math.max(getHighestInteractiveZIndex() + 1, 1200);
+
+        hasMoved   = false;
+        isDragging = true;
+        started    = true;
+        note.classList.add('being-dragged');
+
+        // Ab jetzt Standardverhalten unterbinden (z. B. Textauswahl)
+        ev.preventDefault();
+
+        // auf „echte“ Move-/Up-Handler umschalten
+        document.removeEventListener('mousemove', preMove);
+        document.removeEventListener('mouseup',   preUp);
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup',   onUp);
+      }
+
+      function preMove(ev) {
+        const dx = Math.abs(ev.clientX - startX);
+        const dy = Math.abs(ev.clientY - startY);
+        if (dx > 3 || dy > 3) {
+          startDrag(ev);
+        }
+      }
+
+      function preUp() {
+        // Kein Drag gestartet → Klick/Doppelklick ganz normal durchlassen
+        document.removeEventListener('mousemove', preMove);
+        document.removeEventListener('mouseup',   preUp);
+      }
+
+      document.addEventListener('mousemove', preMove);
+      document.addEventListener('mouseup',   preUp);
     });
+
 
     function onMove(e){
       if (!isDragging) return;
@@ -3461,9 +3499,9 @@ document.addEventListener('DOMContentLoaded', function() {
       // Handler / Beobachter
       attachNoteResizeObserver?.(notiz);
       attachNoteAutoGrow?.(notiz);
-      makeDraggable?.(notiz);
+      makeDraggable?.(notiz);               // delegiert bei .notiz an enhanceDraggableNote
       setupNoteEditingHandlers?.(notiz);
-      enhanceDraggableNote?.(notiz);
+      // KEIN zweites enhanceDraggableNote mehr!
     });
   }
   window.restoreNotes = restoreNotes;
