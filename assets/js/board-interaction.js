@@ -308,9 +308,16 @@ async function initRealtime(config) {
           const state = m.state || (m.state_b64 ? base64ToJSONUTF8(m.state_b64) : null);
           if (!state) return;
           if (typeof waitForCards === 'function') { await waitForCards(); }
-          restoreBoardState(state);
-          document.dispatchEvent(new Event('boardStateUpdated')); // ok
-          window.__HAS_BOOTSTRAPPED__ = true; // Merker: Initialstate kam über WS
+
+          // Wenn lokal gerade eine Notiz editiert wird: Karten/Fokus anwenden, Notizen überspringen
+          const skipNotesNow =
+            !!document.querySelector('.notiz .notiz-content[contenteditable="true"]') ||
+            (window.__isEditingNote === true);
+
+          restoreBoardState(state, { skipNotes: skipNotesNow });
+          document.dispatchEvent(new Event('boardStateUpdated')); // bleibt bestehen
+
+          window.__HAS_BOOTSTRAPPED__ = true;
         } catch (e) { console.warn('[RT] state_full apply failed', e); }
       })();
       return;
@@ -1724,7 +1731,11 @@ document.addEventListener('DOMContentLoaded', function() {
     setupCardHoverTracking();
     
     // Bei Änderung des Board-Status (neue Karten) Tracking erneuern
-    document.addEventListener('boardStateUpdated', setupCardHoverTracking);
+    document.addEventListener('boardStateUpdated', () => {
+      // Wenn gerade ein contenteditable aktiv ist, warte einfach ab
+      if (document.activeElement && document.activeElement.isContentEditable) return;
+      setupCardHoverTracking();
+    });
 
     // Jede Board-Änderung (lokal/remote) -> speichern (Owner-gated + debounced)
     document.addEventListener('boardStateUpdated', () => saveCurrentBoardState('user'));
@@ -2052,6 +2063,10 @@ document.addEventListener('DOMContentLoaded', function() {
       if (notiz.dataset.locked === '1' && notiz.dataset.lockedBy && notiz.dataset.lockedBy !== (RT && RT.uid)) return;
       // Content-Element auf editierbar setzen
       content.setAttribute('contenteditable', 'true');
+
+      // Bearbeitungs-Flag setzen (global)
+      window.__isEditingNote = true;
+      window.__editingNoteId = notiz.id;
       
       // Visuelle Rückmeldung hinzufügen
       content.classList.add('editing');
@@ -2167,6 +2182,9 @@ document.addEventListener('DOMContentLoaded', function() {
       } else {
         saveCurrentBoardState?.();
       }
+      // Bearbeitungs-Flag zurücksetzen
+      window.__isEditingNote = false;
+      window.__editingNoteId = null;
     }
     // 1) Klick außerhalb
     document.addEventListener('click', (e) => {
@@ -3442,24 +3460,23 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
 
-  // Stellt den Board-Zustand wieder her
-  function restoreBoardState(boardState) {
+  // Stellt den Board-Zustand wieder her (mit optionalem Überspringen von Notizen)
+  function restoreBoardState(boardState, opts = {}) {
     if (!boardState) return false;
-    
-    console.log("Stelle Board-Zustand wieder her:", boardState);
-    
-    // Focus Note wiederherstellen
-    restoreFocusNote(boardState.focusNote);
-    
-    // Notizen wiederherstellen
-    restoreNotes(boardState.notes);
-    
-    // Karten wiederherstellen
-    restoreCards(boardState.cards);
-    
+
+    // Focus Note aktualisieren
+    try { restoreFocusNote(boardState.focusNote); } catch(e){ console.warn('restoreFocusNote:', e); }
+
+    // Notizen NUR aktualisieren, wenn wir nicht lokal tippen (oder nicht angewiesen, sie zu überspringen)
+    try { restoreNotes(boardState.notes, opts); } catch(e){ console.warn('restoreNotes:', e); }
+
+    // Karten immer aktualisieren
+    try { restoreCards(boardState.cards); } catch(e){ console.warn('restoreCards:', e); }
+
     return true;
   }
   window.restoreBoardState = restoreBoardState;
+
 
   // Stellt die Focus Note wieder her
   function restoreFocusNote(focusNoteContent) {
@@ -3478,11 +3495,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  // Stellt alle Notizzettel wieder her
-  function restoreNotes(notes) {
+  // Stellt alle Notizzettel wieder her – respektiert laufende lokale Bearbeitung
+  function restoreNotes(notes, opts = {}) {
     if (!notes || !notes.length) return;
 
-    // Vorhandene Notizen entfernen
+    // Wenn lokal eine Notiz editiert wird, Notizen-Apply überspringen
+    if (opts && opts.skipNotes) return;
+
+    // Vorhandene Notizen entfernen und neu aufbauen (altes Verhalten)
     document.querySelectorAll('.notiz').forEach(notiz => notiz.remove());
 
     const stage = document.getElementById('notes-container')
@@ -3518,15 +3538,12 @@ document.addEventListener('DOMContentLoaded', function() {
       // Inhalt
       notiz.innerHTML = `<div class="notiz-content" contenteditable="false">${noteData.content || ''}</div>`;
 
-      // Einhängen
+      // Einhängen + bekannte Verhaltens-Handler wieder verbinden
       stage.appendChild(notiz);
-
-      // Handler / Beobachter
       attachNoteResizeObserver?.(notiz);
       attachNoteAutoGrow?.(notiz);
-      makeDraggable?.(notiz);               // delegiert bei .notiz an enhanceDraggableNote
       setupNoteEditingHandlers?.(notiz);
-      // KEIN zweites enhanceDraggableNote mehr!
+      enhanceDraggableNote?.(notiz);
     });
   }
   window.restoreNotes = restoreNotes;
