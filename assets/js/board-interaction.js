@@ -77,6 +77,45 @@ function getStageSizeUnscaled() {
   return getWorldSize(); // { width, height } = fixe Welt-Pixel
 }
 
+// --- Kanonische Weltgröße + Viewport-Fit (GLOBAL) ---
+function getWorldSize() {
+  const area = document.querySelector('.board-area');
+  if (!area) return { width: 2400, height: 1350 }; // Fallback
+
+  // Wenn gesetzt, diese *kanonischen* Pixel verwenden:
+  const dw = Number(area.dataset.worldW || area.dataset.worldw || 0);
+  const dh = Number(area.dataset.worldH || area.dataset.worldh || 0);
+  if (dw > 0 && dh > 0) return { width: dw, height: dh };
+
+  // Sonst: unskalierte Layoutgröße (offsetWidth/Height ignorieren CSS-Transforms)
+  return { width: area.offsetWidth, height: area.offsetHeight };
+}
+
+function fitBoardToViewport() {
+  const area = document.querySelector('.board-area');
+  if (!area) return;
+
+  // Reset, damit offsetWidth/Height korrekt sind
+  area.style.transform = 'none';
+
+  const { width: worldW, height: worldH } = getWorldSize();
+  const vw = window.innerWidth, vh = window.innerHeight;
+
+  // einheitlicher Scale, nie > 1
+  const s  = Math.min(1, vw / worldW, vh / worldH);
+  const ox = Math.floor((vw - worldW * s) / 2);
+  const oy = Math.floor((vh - worldH * s) / 2);
+
+  area.style.transformOrigin = 'top left';
+  area.style.transform = `translate(${ox}px, ${oy}px) scale(${s})`;
+
+  // für Berechnungen/RT-Cursor merken
+  area.dataset.scale   = String(s);
+  area.dataset.offsetX = String(ox);
+  area.dataset.offsetY = String(oy);
+}
+
+
 function toNorm(px, py) {
   const { width, height } = getStageSizeUnscaled();
   return { nx: px / width, ny: py / height };
@@ -1177,45 +1216,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Event-Listener für Aktionen einrichten
     setupEventListeners();
-
-    // skaliert das Board so, dass alles in den Viewport passt (nie größer als 1.0)
-    function getWorldSize() {
-      const area = document.querySelector('.board-area');
-      if (!area) return { width: 2400, height: 1350 }; // Fallback
-
-      // Vorrang: data-Attribute
-      const dw = Number(area.dataset.worldW || 0);
-      const dh = Number(area.dataset.worldH || 0);
-      if (dw > 0 && dh > 0) return { width: dw, height: dh };
-
-      // Sonst: feste CSS-Pixel (offsetWidth/offsetHeight sind unskaliert)
-      return { width: area.offsetWidth, height: area.offsetHeight };
-    }
-
-    function fitBoardToViewport() {
-      const area = document.querySelector('.board-area');
-      if (!area) return;
-
-      // Reset, damit offsetWidth/Height stimmen
-      area.style.transform = 'none';
-
-      const { width: worldW, height: worldH } = getWorldSize();
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-
-      const s  = Math.min(vw / worldW, vh / worldH);            // einheitlicher Scale
-      const ox = Math.floor((vw - worldW * s) / 2);             // zentrieren (Letterbox)
-      const oy = Math.floor((vh - worldH * s) / 2);
-
-      area.style.transformOrigin = 'top left';
-      area.style.transform = `translate(${ox}px, ${oy}px) scale(${s})`;
-
-      // Für spätere Berechnungen merken (hilft, wenn du mal direkt rechnest)
-      area.dataset.scale   = String(s);
-      area.dataset.offsetX = String(ox);
-      area.dataset.offsetY = String(oy);
-    }
-
 
     // beim Start & bei Resize anwenden
     window.addEventListener('resize', (() => {
