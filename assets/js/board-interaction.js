@@ -72,31 +72,25 @@ function getStageEl(){
 function getStageRectScaled(){
   return getStageEl().getBoundingClientRect(); // enthält die Scale
 }
-function getStageSizeUnscaled(){
-  const r = getStageRectScaled();
-  const s = getScale();
-  return { width: r.width / s, height: r.height / s };
+function getStageSizeUnscaled() {
+  // Keine abgeleiteten „scaled rects“ dividieren – nimm die echte Weltgröße
+  return getWorldSize(); // { width, height } = fixe Welt-Pixel
 }
 
-// --- Allgemeine Normierung für Notizen etc. (relativ zur .board-area) ---
-function toNorm(px, py){
+function toNorm(px, py) {
   const { width, height } = getStageSizeUnscaled();
   return { nx: px / width, ny: py / height };
 }
-function fromNorm(nx, ny){
+
+function fromNorm(nx, ny) {
   const { width, height } = getStageSizeUnscaled();
   return { x: nx * width, y: ny * height };
 }
 
-// --- Karten-spezifisch: identisch, aber getrennt gelassen für Klarheit ---
-function toNormCard(px, py){
-  const { width, height } = getStageSizeUnscaled();
-  return { nx: px / width, ny: py / height };
-}
-function fromNormCard(nx, ny){
-  const { width, height } = getStageSizeUnscaled();
-  return { x: nx * width, y: ny * height };
-}
+// Karten analog:
+function toNormCard(px, py)   { return toNorm(px, py); }
+function fromNormCard(nx, ny) { return fromNorm(nx, ny); }
+
 
 /* === Z-Index Helper global bereitstellen (fix für RT.ws.onmessage) === */
 if (!window.getHighestInteractiveZIndex) {
@@ -1185,26 +1179,43 @@ document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
 
     // skaliert das Board so, dass alles in den Viewport passt (nie größer als 1.0)
-    function fitBoardToViewport(){
+    function getWorldSize() {
+      const area = document.querySelector('.board-area');
+      if (!area) return { width: 2400, height: 1350 }; // Fallback
+
+      // Vorrang: data-Attribute
+      const dw = Number(area.dataset.worldW || 0);
+      const dh = Number(area.dataset.worldH || 0);
+      if (dw > 0 && dh > 0) return { width: dw, height: dh };
+
+      // Sonst: feste CSS-Pixel (offsetWidth/offsetHeight sind unskaliert)
+      return { width: area.offsetWidth, height: area.offsetHeight };
+    }
+
+    function fitBoardToViewport() {
       const area = document.querySelector('.board-area');
       if (!area) return;
 
-      // kurz zurücksetzen zum Messen
-      const prev = area.style.transform;
+      // Reset, damit offsetWidth/Height stimmen
       area.style.transform = 'none';
 
-      const naturalW = Math.max(area.scrollWidth,  area.getBoundingClientRect().width);
-      const naturalH = Math.max(area.scrollHeight, area.getBoundingClientRect().height);
+      const { width: worldW, height: worldH } = getWorldSize();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
 
-      const availW = window.innerWidth;
-      const availH = window.innerHeight;
-
-      const scale = Math.min(availW / naturalW, availH / naturalH, 1);
+      const s  = Math.min(vw / worldW, vh / worldH);            // einheitlicher Scale
+      const ox = Math.floor((vw - worldW * s) / 2);             // zentrieren (Letterbox)
+      const oy = Math.floor((vh - worldH * s) / 2);
 
       area.style.transformOrigin = 'top left';
-      area.style.transform = `scale(${scale})`;
-      area.dataset.scale = String(scale);   // <-- Faktor merken
+      area.style.transform = `translate(${ox}px, ${oy}px) scale(${s})`;
+
+      // Für spätere Berechnungen merken (hilft, wenn du mal direkt rechnest)
+      area.dataset.scale   = String(s);
+      area.dataset.offsetX = String(ox);
+      area.dataset.offsetY = String(oy);
     }
+
 
     // beim Start & bei Resize anwenden
     window.addEventListener('resize', (() => {
