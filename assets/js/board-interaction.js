@@ -242,6 +242,18 @@ async function initRealtime(config) {
       Presence.ensureCursorEl(m.id, m.color, m.label);
       return;
     }
+    // Autoritativer Snapshot vom Server/Owner
+    if (m.t === 'state_full') {
+      try {
+        const state = m.state
+          || (m.state_b64 ? base64ToJSONUTF8(m.state_b64) : null);
+        if (state && typeof restoreBoardState === 'function') {
+          restoreBoardState(state); // setzt Karten, Notizen, Focus Note, etc.
+          document.dispatchEvent(new Event('boardStateUpdated'));
+        }
+      } catch(e) { console.warn('[RT] state_full apply failed', e); }
+      return;
+    }
     if (m.t === 'cursor') {
       const boardEl = document.querySelector('.board-area') || document.body;
       const r = boardEl.getBoundingClientRect();
@@ -457,10 +469,12 @@ async function _doSave(reason = 'auto') {
   _saveInFlight = true;
   try {
     await persistStateToServer(state);
+
+    // ← NEU: Autoritativen Snapshot an alle Teilnehmer schicken
+    sendRT({ t: 'state_full', state, prio: 3, ts: Date.now() });
+
     return true;
-  } finally {
-    _saveInFlight = false;
-  }
+  } finally { _saveInFlight = false; }
 }
 
 // Sammelpunkt für alle Save-Auslöser
