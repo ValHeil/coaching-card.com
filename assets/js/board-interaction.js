@@ -438,9 +438,10 @@ async function initRealtime(config) {
 
         // optional: Flip-Sound auch bei Remote-Flip abspielen
         try {
-          if (typeof cardFlipSound !== 'undefined' && cardFlipSound) {
-            cardFlipSound.currentTime = 0;
-            cardFlipSound.play().catch(()=>{});
+          const snd = window.cardFlipSound || document.getElementById('card-flip-sound');
+          if (snd) {
+            snd.currentTime = 0;
+            snd.play().catch(() => {});
           }
         } catch {}
       }
@@ -837,6 +838,9 @@ document.addEventListener('DOMContentLoaded', function() {
   const errorMessage = document.getElementById('error-message');
   const shuffleSound = document.getElementById('shuffle-sound');
   const cardFlipSound = document.getElementById('card-flip-sound');
+
+  window.cardFlipSound = cardFlipSound;
+  window.shuffleSound  = shuffleSound;
   
   // CSS für Notiz-Placeholder nur im Editiermodus (verhindert Verlust des ersten Zeichens)
   if (!document.getElementById('note-placeholder-style')) {
