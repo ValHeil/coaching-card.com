@@ -224,7 +224,9 @@
   z-index: 1000000 !important;
 }
 
-.card, .card.being-dragged, .card.being-dragged * {
+/* Nur während des Ziehens Transitions aus, sonst erlaubt */
+.card.being-dragged,
+.card.being-dragged * {
   transition: none !important;
 }
 
@@ -494,5 +496,20 @@
   transition: transform 300ms ease !important;
 }
 
+/* Grundtransitionen für Kartenbewegung */
+.card {
+  transition: left 330ms cubic-bezier(.2,.7,.2,1), top 330ms cubic-bezier(.2,.7,.2,1), transform 200ms ease-out;
+  will-change: left, top, transform;
+}
 
+/* Rückflug explizit kennzeichnen – gleiche Zeiten wie oben */
+.card.returning {
+  transition: left 330ms cubic-bezier(.2,.7,.2,1), top 330ms cubic-bezier(.2,.7,.2,1), transform 200ms ease-out;
+}
+
+/* Safety: Die Bühne muss positioniert sein, sonst “absolute” Karten springen ans Viewport */
+.board-area {
+  position: relative;
+  overflow: visible; /* oder auto, je nach Wunsch */
+}
 
