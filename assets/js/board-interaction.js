@@ -319,12 +319,28 @@ async function initRealtime(config) {
       if (!shouldApply(m.id, m.prio || 1)) return;
       const el = document.getElementById(m.id);
       if (!el) return;
+
+      // 1) Falls die Karte noch im Stapel hängt → in die Bühne verschieben
+      const stage = document.getElementById('cards-container') || document.querySelector('.board-area');
+      if (el.closest('#card-stack') && stage) {
+        try { el.parentNode && el.parentNode.removeChild(el); } catch {}
+        stage.appendChild(el);
+        el.style.position = 'absolute';
+      }
+
+      // 2) Position aus Normalform setzen (relativ zur Bühne)
       const { x, y } = (typeof m.nx === 'number')
-        ? fromNormCard(m.nx, m.ny)  // <<< wichtig: Karten-Bühne
+        ? fromNormCard(m.nx, m.ny)
         : { x: m.x, y: m.y };
-      el.style.left = (x|0) + 'px';
-      el.style.top  = (y|0) + 'px';
-      if (m.z !== undefined && m.z !== '') el.style.zIndex = m.z;
+      el.style.left = Math.round(x) + 'px';
+      el.style.top  = Math.round(y) + 'px';
+      if (m.z !== undefined && m.z !== '') el.style.zIndex = String(m.z);
+
+      // Sicht-Reihenfolge (Karten über Fokus-/Notizblock, aber unter aktivem Drag)
+      if (!el.closest('#card-stack')) normalizeCardZIndex(el);
+
+      // → Owner soll nach Remote-Apply speichern
+      document.dispatchEvent(new Event('boardStateUpdated'));
       return;
     }
 
@@ -3212,34 +3228,36 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Ursprüngliche Funktionalität für Bewegung vom Stapel zum Board behalten
-        const boardArea = document.querySelector('.board-area');
-        if (initialParent === cardStack && cardStack.contains(element)) {
-          // ... globalLeft/globalTop holen, umhängen, dann:
+        const stage = document.getElementById('cards-container') || document.querySelector('.board-area');
+        if (initialParent === cardStack && cardStack.contains(element) && stage) {
+          // 1) In die Bühne umhängen
+          const stageRect = stage.getBoundingClientRect();
           element.style.position = 'absolute';
-          element.style.left = (globalLeft - boardRect.left) + 'px';
-          element.style.top  = (globalTop  - boardRect.top)  + 'px';
+          element.style.left = (globalLeft - stageRect.left) + 'px';
+          element.style.top  = (globalTop  - stageRect.top)  + 'px';
+          stage.appendChild(element);
 
-          // <<< 2d) RT einmalig senden – direkt nach dem Setzen der Board-Position
-          {
-            const rect      = element.getBoundingClientRect();
-            const stageRect = cardStageRect();
-            const px = Math.round(rect.left - stageRect.left);
-            const py = Math.round(rect.top  - stageRect.top);
-            const { nx, ny } = toNormCard(px, py);
-            shouldApply(element.id, RT_PRI());
-            sendRT({
-              t: 'card_move',
-              id: element.id,
-              nx, ny,
-              z: element.style.zIndex || '',
-              prio: RT_PRI(),
-              ts: Date.now()
-            });
-          }
+          // 2) Normkoordinaten relativ zur Bühne berechnen und EINMAL broadcasten
+          const rect      = element.getBoundingClientRect();
+          const sRect     = cardStageRect();
+          const px        = Math.round(rect.left - sRect.left);
+          const py        = Math.round(rect.top  - sRect.top);
+          const { nx, ny } = toNormCard(px, py);
 
-          // Repaint
+          shouldApply(element.id, RT_PRI());
+          sendRT({
+            t: 'card_move',
+            id: element.id,
+            nx, ny,
+            z: element.style.zIndex || '',
+            prio: RT_PRI(),
+            ts: Date.now()
+          });
+
+          // Reflow
           element.offsetHeight;
         }
+
 
         // Nach dem Loslassen: z-index der Karte normalisieren, damit Notizzettel
         // beim Ziehen vorne liegen, Karten aber weiterhin über Fokus-/Notizzettelblock stehen.
@@ -3250,19 +3268,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Board-Zustand speichern
         if (typeof saveCurrentBoardState === 'function') {
-          {
-          const px = parseFloat(element.style.left) || 0;
-          const py = parseFloat(element.style.top)  || 0;
-          const { nx, ny } = toNormCard(px, py);
-          sendRT({
-            t: 'card_move',
-            id: element.id,
-            nx, ny,
-            z: element.style.zIndex || '',
-            prio: RT_PRI(),
-            ts: Date.now()
-          });
-        }
           saveCurrentBoardState();
         }
       }
