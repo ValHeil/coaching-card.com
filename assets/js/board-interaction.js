@@ -1423,9 +1423,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     + (stackRect.width  - cardRect.width)  / (2 * scale);
     const targetTop  = (stackRect.top  - boardRect.top)  / scale + 6;
 
-    // Sicherstellen, dass die Karte im boardArea liegt (sonst stimmt die Animation nicht)
+    // Karte in die Bühne hängen & Startposition setzen, damit die Transition sichtbar ist
+    card.classList.remove('being-dragged');
     if (!boardArea.contains(card)) {
-      // Position relativ zur Board-Area setzen, damit der Flug sichtbar wird
       card.style.position = 'absolute';
       card.style.left = ((cardRect.left - boardRect.left) / scale) + 'px';
       card.style.top  = ((cardRect.top  - boardRect.top)  / scale) + 'px';
