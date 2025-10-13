@@ -33,15 +33,44 @@ function getStage(){
 }
 function getStageRect(){ return getStage().getBoundingClientRect(); }
 
-// Pixel -> normiert (0..1) relativ zur Stage
-function toNorm(px, py) {
-  const r = getStageRect();
-  return { nx: px / r.width, ny: py / r.height };
+function getScale(){
+  const area = document.querySelector('.board-area');
+  return parseFloat(area?.dataset.scale || '1') || 1;
 }
-// normiert -> Pixel relativ zur Stage
-function fromNorm(nx, ny) {
-  const r = getStageRect();
-  return { x: nx * r.width, y: ny * r.height };
+function getStageEl(){
+  return document.getElementById('cards-container')
+      || document.querySelector('.cards-container')
+      || document.getElementById('session-board')
+      || document.querySelector('.board-area')
+      || document.body;
+}
+function getStageRectScaled(){
+  return getStageEl().getBoundingClientRect(); // enthält die Scale
+}
+function getStageSizeUnscaled(){
+  const r = getStageRectScaled();
+  const s = getScale();
+  return { width: r.width / s, height: r.height / s };
+}
+
+// --- Allgemeine Normierung für Notizen etc. (relativ zur .board-area) ---
+function toNorm(px, py){
+  const { width, height } = getStageSizeUnscaled();
+  return { nx: px / width, ny: py / height };
+}
+function fromNorm(nx, ny){
+  const { width, height } = getStageSizeUnscaled();
+  return { x: nx * width, y: ny * height };
+}
+
+// --- Karten-spezifisch: identisch, aber getrennt gelassen für Klarheit ---
+function toNormCard(px, py){
+  const { width, height } = getStageSizeUnscaled();
+  return { nx: px / width, ny: py / height };
+}
+function fromNormCard(nx, ny){
+  const { width, height } = getStageSizeUnscaled();
+  return { x: nx * width, y: ny * height };
 }
 
 
@@ -155,13 +184,13 @@ const Presence = (() => {
     return p;
   }
 
-  function move(id, x, y, color, label){
+  function move(id, xUnscaled, yUnscaled, color, label){
     const p = ensureCursorEl(id, color, label);
     const boardEl = document.querySelector('.board-area') || document.body;
     const r = boardEl.getBoundingClientRect();
-    // x,y kommen RELATIV zur board-area:
-    const absX = r.left + x;
-    const absY = r.top  + y;
+    const s = getScale();
+    const absX = r.left + xUnscaled * s;
+    const absY = r.top  + yUnscaled * s;
     p.el.style.left = absX + 'px';
     p.el.style.top  = absY + 'px';
   }
@@ -180,16 +209,6 @@ const Presence = (() => {
   return { ensureCursorEl, move, remove, clearAll };
 })();
 
-function cardStageRect(){
-  const el = document.getElementById('cards-container') || document.querySelector('.cards-container') || document.getElementById('session-board');
-  return el.getBoundingClientRect();
-}
-function toNormCard(px, py){
-  const r = cardStageRect(); return { nx: px / r.width, ny: py / r.height };
-}
-function fromNormCard(nx, ny){
-  const r = cardStageRect(); return { x: nx * r.width, y: ny * r.height };
-}
 
 // ---- Realtime Core (WS) -----------------------------------------------------
 const RT = { ws:null, sid:null, uid:null, name:'', role:'participant' };
@@ -234,18 +253,29 @@ async function initRealtime(config) {
 
     const boardEl = document.querySelector('.board-area') || document.body;
     let last = 0;
+
     boardEl.addEventListener('mousemove', (e) => {
       const now = performance.now();
-      if (now - last < 33) return; // ~30/s
+      if (now - last < 30) return; // ~33/s
       last = now;
 
-      const r  = boardEl.getBoundingClientRect();
-      const nx = (e.clientX - r.left) / r.width;   // 0..1
-      const ny = (e.clientY - r.top)  / r.height;  // 0..1
+      // Unskaliert normalisieren: erst Scale herausrechnen, dann gegen unskalierte Fläche normieren
+      const r = boardEl.getBoundingClientRect();
+      const s = parseFloat(boardEl.dataset.scale || '1') || 1;
+
+      const xu = (e.clientX - r.left) / s;  // Cursor relativ zum Board (UNskaliert)
+      const yu = (e.clientY - r.top)  / s;
+
+      const widthUnscaled  = r.width  / s;
+      const heightUnscaled = r.height / s;
+
+      const nx = xu / widthUnscaled;  // 0..1
+      const ny = yu / heightUnscaled; // 0..1
 
       sendRT({ t: 'cursor', nx, ny });
     }, { passive: true });
   };
+
 
   RT.ws.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
@@ -277,9 +307,10 @@ async function initRealtime(config) {
     if (m.t === 'cursor') {
       const boardEl = document.querySelector('.board-area') || document.body;
       const r = boardEl.getBoundingClientRect();
-      const px = (typeof m.nx === 'number') ? (m.nx * r.width)  : m.x;
-      const py = (typeof m.ny === 'number') ? (m.ny * r.height) : m.y;
-      Presence.move(m.id, px, py, m.color, m.label);
+      const s = getScale();
+      const pxu = (typeof m.nx === 'number') ? m.nx * (r.width / s)  : m.x; // unskaliert
+      const pyu = (typeof m.ny === 'number') ? m.ny * (r.height / s) : m.y;
+      Presence.move(m.id, pxu, pyu, m.color, m.label);
       return;
     }
     if (m.t === 'leave') {
@@ -1022,33 +1053,28 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Handle the actual drop
     boardArea.addEventListener('drop', function(e) {
-      e.preventDefault();
-      
+       e.preventDefault();
+
       // Get the ID of the dragged element
       const id = e.dataTransfer.getData('text/plain');
       const draggedElement = document.getElementById(id);
-      
       if (!draggedElement) return;
-      
-      // Calculate position relative to board
+
+      // >>> NEU: Position relativ zur unskalierten Boardfläche berechnen
       const boardRect = boardArea.getBoundingClientRect();
-      const scale = parseFloat(boardArea.dataset.scale || '1'); // <-- wichtig!
+      const scale = parseFloat(boardArea.dataset.scale || '1');
 
-      // Mausposition in unskalierten Pixeln
-      const rawX = (e.clientX - boardRect.left) / scale;
-      const rawY = (e.clientY - boardRect.top)  / scale;
+      // Cursor in UNSKALIERTEN px
+      const x = Math.round((e.clientX - boardRect.left) / scale);
+      const y = Math.round((e.clientY - boardRect.top)  / scale);
 
-      // so platzieren, dass die Karte/Notiz vollständig sichtbar bleibt
-      const halfW = draggedElement.offsetWidth  / 2;
-      const halfH = draggedElement.offsetHeight / 2;
-      const maxX  = boardArea.scrollWidth  - halfW;
-      const maxY  = boardArea.scrollHeight - halfH;
+      // In die Mitte des Elements ablegen
+      const halfW = Math.round(draggedElement.offsetWidth  / 2);
+      const halfH = Math.round(draggedElement.offsetHeight / 2);
 
-      const x = Math.max(halfW, Math.min(rawX, maxX));
-      const y = Math.max(halfH, Math.min(rawY, maxY));
-
-      draggedElement.style.left = Math.round(x - halfW) + 'px';
-      draggedElement.style.top  = Math.round(y - halfH) + 'px';
+      draggedElement.style.position = 'absolute';
+      draggedElement.style.left = (x - halfW) + 'px';
+      draggedElement.style.top  = (y - halfH) + 'px';
       
       // If it's a card from the stack, move it to the board
       if (draggedElement.classList.contains('card')) {
@@ -2629,14 +2655,16 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error("Fehler beim Drop-Handling:", error);
       }
 
+      // Board-Element & Scale holen
       const area = document.querySelector('.board-area');
       const boardRect = area.getBoundingClientRect();
       const scale = parseFloat(area?.dataset.scale || '1');
 
-      // Position in „unskalierten“ Pixeln berechnen
+      // >>> NEU: unskalierte Drop-Position berechnen
       const x = Math.round((e.clientX - boardRect.left) / scale);
       const y = Math.round((e.clientY - boardRect.top)  / scale);
 
+      // Element mittig ablegen
       draggedElement.style.left = `${Math.round(x - (draggedElement.offsetWidth  / 2))}px`;
       draggedElement.style.top  = `${Math.round(y - (draggedElement.offsetHeight / 2))}px`;
 
@@ -3023,6 +3051,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let _rtRaf = null;
     let _rtPending = false;
 
+    // ersetzt die alte Variante mit elRect/stageRect
     function queueRTCardMove(){
       _rtPending = true;
       if (_rtRaf) return;
@@ -3031,16 +3060,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!_rtPending) return;
         _rtPending = false;
 
-        // Position relativ zur Karten-Bühne ermitteln
-        const elRect    = element.getBoundingClientRect();
-        const stageRect = cardStageRect(); // nutzt #cards-container/#session-board
-        const px = Math.round(elRect.left - stageRect.left);
-        const py = Math.round(elRect.top  - stageRect.top);
+        // UNSKALIERTE px direkt aus style.left/top
+        const px = parseFloat(element.style.left) || 0;
+        const py = parseFloat(element.style.top)  || 0;
         const { nx, ny } = toNormCard(px, py);
 
-        // Gate setzen, damit Echo-Messages <150ms ignoriert werden
         shouldApply(element.id, RT_PRI());
-
         sendRT({
           t: 'card_move',
           id: element.id,
@@ -3051,6 +3076,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
       });
     }
+
 
     
     // Für Karten, benutzerdefiniertes Drag-and-Drop implementieren
@@ -3074,12 +3100,15 @@ document.addEventListener('DOMContentLoaded', function() {
         initialParent = element.parentNode;
         
         // Exakten Offset vom Klickpunkt zur Kartenecke berechnen
-        const rect = element.getBoundingClientRect();
-        offsetX = e.clientX - rect.left;
-        offsetY = e.clientY - rect.top;
+        // === NEU: Offsets unskaliert erfassen ===
+        const parentRect = element.parentNode.getBoundingClientRect();
+        const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+        const left0 = parseFloat(element.style.left) || 0;
+        const top0  = parseFloat(element.style.top)  || 0;
 
-        // Karte nach vorne bringen – immer vor Focus Note/Notizzettel
-        // Nutze den höchsten bekannten z-index oder mindestens 10001
+        offsetX = ((e.clientX - parentRect.left) / s) - left0;
+        offsetY = ((e.clientY - parentRect.top)  / s) - top0;
+
         element.style.zIndex = Math.max(getHighestInteractiveZIndex() + 1, 1200);
 
         // WICHTIG: Wenn die Karte noch im Stapel ist, sofort ins Board umhängen,
@@ -3133,21 +3162,23 @@ document.addEventListener('DOMContentLoaded', function() {
       function onMouseMove(e) {
         if (!isDragging) return;
         e.preventDefault();
-        
-        // Elternelement-Grenzen abrufen
+
         const parentElement = element.parentNode;
         const parentRect = parentElement.getBoundingClientRect();
-        
-        // Neue Position relativ zum Elternelement berechnen
-        const newX = e.clientX - parentRect.left - offsetX;
-        const newY = e.clientY - parentRect.top - offsetY;
-        
-        // Neue Position setzen
+        const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+
+        // Cursor relativ zur Bühne → UNSKALIERT
+        const curXu = (e.clientX - parentRect.left) / s;
+        const curYu = (e.clientY - parentRect.top)  / s;
+
+        const newX = curXu - offsetX;
+        const newY = curYu - offsetY;
+
         element.style.position = 'absolute';
         element.style.left = newX + 'px';
-        element.style.top = newY + 'px';
+        element.style.top  = newY + 'px';
 
-        // pro Frame senden (~60fps)
+        // pro Frame an RT schicken
         queueRTCardMove();
         
         // NEUE FUNKTIONALITÄT: Überprüfen, ob Karte über dem Stapel schwebt
@@ -3232,9 +3263,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (initialParent === cardStack && cardStack.contains(element) && stage) {
           // 1) In die Bühne umhängen
           const stageRect = stage.getBoundingClientRect();
+          const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+
           element.style.position = 'absolute';
-          element.style.left = (globalLeft - stageRect.left) + 'px';
-          element.style.top  = (globalTop  - stageRect.top)  + 'px';
+          element.style.left = ((globalLeft - stageRect.left) / s) + 'px';
+          element.style.top  = ((globalTop  - stageRect.top)  / s) + 'px';
           stage.appendChild(element);
 
           // 2) Normkoordinaten relativ zur Bühne berechnen und EINMAL broadcasten
@@ -3278,51 +3311,34 @@ document.addEventListener('DOMContentLoaded', function() {
     // Bestehende Logik für andere Elemente beibehalten
     let startX, startY;
     let initialLeft, initialTop;
-    
-    element.onmousedown = function(e) {
-      // Nur mit linker Maustaste
+
+    element.onmousedown = function(e){
       if (e.button !== 0) return;
-      
-      // Wenn Element editierbar ist, nicht ziehen
-      if (e.target.isContentEditable) {
-        return;
-      }
-      
-      // Bei aktivem Löschmodus nicht ziehen
+      if (e.target.isContentEditable) return;
       const trashCan = document.querySelector('.trash-container');
-      if (trashCan && trashCan.classList.contains('deletion-mode')) {
-        return;
-      }
-      
+      if (trashCan && trashCan.classList.contains('deletion-mode')) return;
+
       e.preventDefault();
-      
-      // Element nach vorne bringen
       element.style.zIndex = getHighestInteractiveZIndex() + 1;
-      
-      // Startpositionen speichern
+
       startX = e.clientX;
       startY = e.clientY;
-      
-      // Aktuelle Element-Position
-      initialLeft = parseInt(element.style.left) || 0;
-      initialTop = parseInt(element.style.top) || 0;
-      
-      // Event-Handler hinzufügen
+      initialLeft = parseFloat(element.style.left) || 0;
+      initialTop  = parseFloat(element.style.top)  || 0;
+
       document.addEventListener('mousemove', elementDrag);
       document.addEventListener('mouseup', closeDragElement);
     };
-    
-    function elementDrag(e) {
+
+    function elementDrag(e){
       e.preventDefault();
+      const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+      const dx = (e.clientX - startX) / s;
+      const dy = (e.clientY - startY) / s;
 
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
+      element.style.left = (initialLeft + dx) + 'px';
+      element.style.top  = (initialTop  + dy) + 'px';
 
-      // Lokal bewegen
-      element.style.left = (initialLeft + dx) + "px";
-      element.style.top  = (initialTop  + dy) + "px";
-
-      // Pro Frame (max ~60 FPS) RT senden
       queueRTCardMove();
     }
     
@@ -3522,27 +3538,34 @@ document.addEventListener('DOMContentLoaded', function() {
   function captureAllNotes() {
     const notesArray = [];
     const notizElements = document.querySelectorAll('.notiz');
-    
+
     notizElements.forEach(notiz => {
-      // Modified to capture innerHTML and size
       const rect = notiz.getBoundingClientRect();
+      // UNSKALIERTE px aus style.left/top lesen (falls leer, 0)
+      const px = parseFloat(notiz.style.left) || 0;
+      const py = parseFloat(notiz.style.top)  || 0;
+      const { nx, ny } = toNorm(px, py); // normieren gegen die Bühne
+
       const noteData = {
         id: notiz.id || 'note-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-        content: notiz.querySelector('.notiz-content')?.innerHTML || '', // Changed from textContent to innerHTML
-        left: notiz.style.left,
-        top: notiz.style.top,
+        content: notiz.querySelector('.notiz-content')?.innerHTML || '',
+        nx, ny,                                        // ← NEU: normierte Koordinaten
+        // für Abwärtskompatibilität zusätzlich alte Felder mitschreiben:
+        left: notiz.style.left || '',
+        top:  notiz.style.top  || '',
         zIndex: notiz.style.zIndex,
         backgroundColor: notiz.style.backgroundColor || '#ffff99',
         rotation: getComputedStyle(notiz).getPropertyValue('--rotation') || '0deg',
-        width: (notiz.style.width && notiz.style.width.trim() !== '') ? notiz.style.width : Math.round(rect.width) + 'px',
+        width:  (notiz.style.width  && notiz.style.width.trim()  !== '') ? notiz.style.width  : Math.round(rect.width)  + 'px',
         height: (notiz.style.height && notiz.style.height.trim() !== '') ? notiz.style.height : Math.round(rect.height) + 'px'
       };
-      
+
       notesArray.push(noteData);
     });
-    
+
     return notesArray;
-  }   
+  }
+
 
   // Erfasst alle Karten und ihre Eigenschaften
   function captureAllCards(){
@@ -3552,12 +3575,14 @@ document.addEventListener('DOMContentLoaded', function() {
     cardElements.forEach(card => {
       const rawId  = card.id || '';
       const cardNum = (rawId.match(/card-?(\d+)/)?.[1]) || card.dataset.cardId || '';
+      const px = parseFloat(card.style.left) || 0;
+      const py = parseFloat(card.style.top)  || 0;
+      const { nx, ny } = toNormCard(px, py);
 
       cardsArray.push({
         id: rawId,
         cardId: cardNum,
-        left: card.style.left,
-        top: card.style.top,
+        nx, ny,                   // ← statt left/top
         zIndex: card.style.zIndex,
         isFlipped: card.classList.contains('flipped'),
         inStack: card.closest('#card-stack') !== null,
@@ -3608,53 +3633,66 @@ document.addEventListener('DOMContentLoaded', function() {
   // Stellt alle Notizzettel wieder her
   function restoreNotes(notes) {
     if (!notes || !notes.length) return;
-    
+
     // Vorhandene Notizen entfernen
     document.querySelectorAll('.notiz').forEach(notiz => notiz.remove());
-    
-    // Neue Notizen erstellen
+
+    const stage = document.getElementById('notes-container')
+              || document.querySelector('.notes-container')
+              || document.getElementById('session-board')
+              || document.querySelector('.board-area')
+              || document.body;
+
     notes.forEach(noteData => {
       const notiz = document.createElement('div');
       notiz.className = 'notiz';
       notiz.id = noteData.id;
-      
-      // Eigenschaften wiederherstellen
-      notiz.style.left = noteData.left;
-      notiz.style.top = noteData.top;
-      notiz.style.zIndex = noteData.zIndex;
-      notiz.style.backgroundColor = noteData.backgroundColor;
-      notiz.style.setProperty('--rotation', noteData.rotation);
-      if (noteData.width) notiz.style.width = noteData.width;
+
+      // Position aus nx/ny, sonst Fallback px
+      let leftPx = noteData.left || '';
+      let topPx  = noteData.top  || '';
+      if (typeof noteData.nx === 'number' && typeof noteData.ny === 'number') {
+        const p = fromNorm(noteData.nx, noteData.ny);
+        leftPx = Math.round(p.x) + 'px';
+        topPx  = Math.round(p.y) + 'px';
+      }
+
+      // Eigenschaften setzen
+      notiz.style.position = 'absolute';
+      notiz.style.left = leftPx;
+      notiz.style.top  = topPx;
+      if (noteData.zIndex !== undefined) notiz.style.zIndex = noteData.zIndex;
+      if (noteData.backgroundColor) notiz.style.backgroundColor = noteData.backgroundColor;
+      if (noteData.rotation) notiz.style.setProperty('--rotation', noteData.rotation);
+      if (noteData.width)  notiz.style.width  = noteData.width;
       if (noteData.height) notiz.style.height = noteData.height;
-      
-      // Inhalt wiederherstellen
-      notiz.innerHTML = `
-        <div class="notiz-content" contenteditable="false">${noteData.content}</div>
-      `;
-      
-      // Zum Board hinzufügen
-      document.body.appendChild(notiz);
-      attachNoteResizeObserver(notiz);
-      attachNoteAutoGrow(notiz);
-      
-      // Drag-and-Drop und Bearbeitungs-Handler hinzufügen
-      makeDraggable(notiz);
-      setupNoteEditingHandlers(notiz);
-      enhanceDraggableNote(notiz);
+
+      // Inhalt
+      notiz.innerHTML = `<div class="notiz-content" contenteditable="false">${noteData.content || ''}</div>`;
+
+      // Einhängen
+      stage.appendChild(notiz);
+
+      // Handler / Beobachter
+      attachNoteResizeObserver?.(notiz);
+      attachNoteAutoGrow?.(notiz);
+      makeDraggable?.(notiz);
+      setupNoteEditingHandlers?.(notiz);
+      enhanceDraggableNote?.(notiz);
     });
   }
   window.restoreNotes = restoreNotes;
 
 
-  // Stellt alle Karten wieder her – ohne Animationen/Shuffle/Flip
+
+  // Stellt alle Karten wieder her – ohne Animationen, mit nx/ny-Unterstützung
   function restoreCards(cardsState) {
     if (!Array.isArray(cardsState) || !cardsState.length) return;
 
     const cardStack = document.getElementById('card-stack');
-    const boardArea = document.querySelector('.board-area') || document.body;
+    const stage     = document.getElementById('cards-container') || document.querySelector('.board-area') || document.body;
     const total     = document.querySelectorAll('.card').length;
 
-    // Mini-Helfer: kurzzeitig alle Transitions/Animationen deaktivieren
     const withoutAnimations = (el, fn) => {
       const prevT = el.style.transition, prevA = el.style.animation;
       const front = el.querySelector('.card-front');
@@ -3668,8 +3706,8 @@ document.addEventListener('DOMContentLoaded', function() {
         el.style.animation  = 'none';
         if (front) { front.style.transition = 'none'; front.style.animation = 'none'; }
         if (back)  { back.style.transition  = 'none'; back.style.animation  = 'none'; }
-        fn();                  // Änderungen anwenden (ohne visuelle Effekte)
-        void el.offsetWidth;   // Reflow erzwingen
+        fn();
+        void el.offsetWidth; // Reflow
       } finally {
         el.style.transition = prevT || '';
         el.style.animation  = prevA || '';
@@ -3687,58 +3725,60 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     cardsState.forEach((cardData) => {
-      const num = normalizeCardId(cardData.id || cardData.cardId);
-      if (!num || (total && num > total)) {
-        console.warn('Karte existiert in diesem Deck nicht:', cardData.id || cardData.cardId);
-        return;
-      }
-
-      const el = resolveCardElement(cardData);
-      if (!el) {
-        console.warn('Karte nicht gefunden:', cardData.id || cardData.cardId);
-        return;
-      }
+      // Karte finden (per id oder cardId)
+      const rawId = cardData.id || cardData.cardId || '';
+      const el = document.getElementById(rawId) ||
+                document.getElementById('card-' + (cardData.cardId || '')) ||
+                document.querySelector(`.card[data-card-id="${cardData.cardId || ''}"]`);
+      if (!el) { console.warn('Karte nicht gefunden:', rawId || cardData.cardId); return; }
 
       withoutAnimations(el, () => {
-        // evtl. alte Animationsklassen entfernen
-        el.classList.remove('returning', 'flipping', 'shuffling', 'remote-dragging', 'being-dragged');
+        // Animationsklassen sicher entfernen
+        el.classList.remove('returning','flipping','shuffling','remote-dragging','being-dragged');
 
-        // Flip-Zustand stumpf setzen (keine Flip-Animation)
+        // Flip-Zustand hart setzen (keine Flip-Animation)
         if (typeof cardData.isFlipped === 'boolean') {
           el.classList.toggle('flipped', !!cardData.isFlipped);
         }
 
         if (cardData.inStack) {
-          // → Karte gehört in den Stapel (sofort, ohne returnCardToStack)
+          // → In den Stapel (ohne Flug/Flip)
           cleanPlaceholder(el);
-          if (cardStack && !cardStack.contains(el)) {
-            cardStack.appendChild(el);
+          if (cardStack && !cardStack.contains(el)) cardStack.appendChild(el);
+
+          // Z-Index respektieren
+          if (cardData.zIndex !== undefined && cardData.zIndex !== '') {
+            el.style.zIndex = String(parseInt(cardData.zIndex, 10));
           }
 
-          // Z-Index aus Zustand respektieren (fällt zurück auf bestehenden)
-          const zi = (cardData.zIndex !== undefined && cardData.zIndex !== '')
-            ? parseInt(cardData.zIndex, 10)
-            : parseInt(el.style.zIndex || '0', 10);
-
-          if (!isNaN(zi)) el.style.zIndex = String(zi);
-
-          // Versatz im Stapel (wie beim Erzeugen: 0.5px je Layer)
-          const offset = Math.max(0, ((parseInt(el.style.zIndex || '1', 10) || 1) - 1) * 0.5);
+          // Leichter Versatz je Layer (wie beim Stapel)
+          const zi = parseInt(el.style.zIndex || '1', 10) || 1;
+          const offset = Math.max(0, (zi - 1) * 0.5);
           el.style.position = 'absolute';
           el.style.left = offset + 'px';
           el.style.top  = offset + 'px';
 
         } else {
-          // → Karte liegt auf dem Board
-          if (boardArea && !boardArea.contains(el)) {
-            boardArea.appendChild(el);
+          // → Auf der Bühne positionieren
+          if (stage && !stage.contains(el)) stage.appendChild(el);
+          el.style.position = 'absolute';
+
+          // Primär: normierte Koordinaten → unskalierte px
+          if (typeof cardData.nx === 'number' && typeof cardData.ny === 'number') {
+            const pos = fromNormCard(cardData.nx, cardData.ny); // nutzt deine Helper
+            el.style.left = Math.round(pos.x) + 'px';
+            el.style.top  = Math.round(pos.y) + 'px';
+          } else {
+            // Fallback: alte px-Strings (Abwärtskompatibilität)
+            if (cardData.left  !== undefined && cardData.left  !== '') el.style.left = cardData.left;
+            if (cardData.top   !== undefined && cardData.top   !== '') el.style.top  = cardData.top;
           }
 
-          if (cardData.left !== undefined && cardData.left !== '') el.style.left = cardData.left;
-          if (cardData.top  !== undefined && cardData.top  !== '') el.style.top  = cardData.top;
-          if (cardData.zIndex !== undefined && cardData.zIndex !== '') el.style.zIndex = cardData.zIndex;
+          if (cardData.zIndex !== undefined && cardData.zIndex !== '') {
+            el.style.zIndex = String(cardData.zIndex);
+          }
 
-          // Platzhalter-Status setzen/entfernen
+          // Platzhalter-Status (falls genutzt)
           if (cardData.placedAt) {
             el.dataset.placedAt = cardData.placedAt;
             const ph = document.getElementById(cardData.placedAt);
@@ -3750,18 +3790,17 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     });
 
-    // Stapel im DOM optional nach Z-Index sortieren (unten→oben), ohne Animation
+    // Stapel im DOM nach z-index sortieren (unten→oben), ohne Animation
     if (cardStack) {
-      const stackCards = Array.from(cardStack.querySelectorAll(':scope > .card'));
-      stackCards
+      Array.from(cardStack.querySelectorAll(':scope > .card'))
         .sort((a, b) => (parseInt(a.style.zIndex || '0', 10)) - (parseInt(b.style.zIndex || '0', 10)))
         .forEach(el => cardStack.appendChild(el));
     }
 
-    // Signal für nachgelagerte UI-Aktualisierungen
     document.dispatchEvent(new Event('boardStateUpdated'));
   }
   window.restoreCards = restoreCards;
+
 
 
   // Erweiterte Funktion für den "Sitzung beenden" Button
