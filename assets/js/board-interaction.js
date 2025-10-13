@@ -33,6 +33,17 @@ function getStage(){
 }
 function getStageRect(){ return getStage().getBoundingClientRect(); }
 
+// --- Kartenbühnen-Rect (ohne Überraschungen) ---
+function cardStageRect(){
+  // Karten bewegen wir relativ zu cards-container, fallback auf board-area
+  const el = document.getElementById('cards-container')
+         || document.querySelector('.cards-container')
+         || document.querySelector('.board-area')
+         || document.getElementById('session-board')
+         || document.body;
+  return el.getBoundingClientRect();
+}
+
 function getScale(){
   const area = document.querySelector('.board-area');
   return parseFloat(area?.dataset.scale || '1') || 1;
@@ -2162,230 +2173,97 @@ document.addEventListener('DOMContentLoaded', function() {
     
   }
 
-  function enhanceDraggableNote(note) {
+  function enhanceDraggableNote(note){
     if (!note) return;
-    
-    // Entferne das alte draggable-Attribut und die alten Event-Listener
     note.removeAttribute('draggable');
     note.removeEventListener('dragstart', note._dragStart);
     note.removeEventListener('dragend', note._dragEnd);
-    
-    // Einrichtung für benutzerdefinierte Drag-Funktionalität
-    let isDragging = false;
+
+    let isDragging = false, hasMoved = false;
+    let offsetX = 0, offsetY = 0;      // Offsets in UNSKALIERTEN px
     let isDraggingForTrash = false;
-    let offsetX, offsetY;
-    let initialX, initialY;
-    let trashItem = document.querySelector('.trash-container');
-    let mouseDownTime = 0;
-    let hasMoved = false;
-    
-    // <<< NEU: Taktung für Live-RT (~30 FPS) oben in enhanceDraggableNote:
-    let _rtNoteDragTick = 0;
+    let _rtTick = 0;
 
-    note.addEventListener('mousedown', function(e) {
-      // Nicht ziehen, wenn gelockt (jemand editiert gerade) – mit Lease/TTL
-      // (Nur wenn tatsächlich in den Text geklickt wurde, nicht ziehen)
-      if (e.target && e.target.isContentEditable) return;
-      // kein early return mehr bei data-locked
-
-      // Nur linke Maustaste
+    note.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
-
-      // Im Editiermodus/Löschmodus nicht ziehen
       if (e.target && e.target.isContentEditable) return;
-      const trashCan = document.querySelector('.trash-container');
-      if (trashCan && trashCan.classList.contains('deletion-mode')) return;
-
-      // Zeit & State für Doppelklick/Drag
-      mouseDownTime = Date.now();
-      hasMoved = false;
 
       e.preventDefault();
 
-      // Exakter Klick-Offset relativ zur Notiz
-      const rect = note.getBoundingClientRect();
-      offsetX = e.clientX - rect.left;
-      offsetY = e.clientY - rect.top;
+      const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+      const parentRect = note.parentNode.getBoundingClientRect();
 
-      // Startposition (für Trash-Check etc.)
-      initialX = rect.left;
-      initialY = rect.top;
+      const left0 = parseFloat(note.style.left) || 0;
+      const top0  = parseFloat(note.style.top)  || 0;
+      offsetX = ((e.clientX - parentRect.left) / s) - left0;
+      offsetY = ((e.clientY - parentRect.top)  / s) - top0;
 
-      // nach vorne bringen
       note.style.zIndex = Math.max(getHighestInteractiveZIndex() + 1, 1200);
 
-      // Dokument-Listener binden
-      document.addEventListener('mousemove', onMouseMove);
-      document.addEventListener('mouseup', onMouseUp);
+      hasMoved = false;
+      isDragging = true;
+      note.classList.add('being-dragged');
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
     });
 
-    
-    function onMouseMove(e) {
-      // Erst ab erster Bewegung Drag starten
-      if (!hasMoved) {
-        hasMoved = true;
-        isDragging = true;
-        note.classList.add('being-dragged');
-      }
+    function onMove(e){
       if (!isDragging) return;
       e.preventDefault();
 
+      const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
       const parentRect = note.parentNode.getBoundingClientRect();
-      const newX = Math.round(e.clientX - parentRect.left - offsetX);
-      const newY = Math.round(e.clientY - parentRect.top  - offsetY);
+
+      const curXu = (e.clientX - parentRect.left) / s;
+      const curYu = (e.clientY - parentRect.top)  / s;
+
+      const newX = Math.round(curXu - offsetX);
+      const newY = Math.round(curYu - offsetY);
 
       note.style.position = 'absolute';
       note.style.left = newX + 'px';
       note.style.top  = newY + 'px';
+      hasMoved = true;
 
-      // <<< NEU: alle ~33ms Position relativ zur STAGE senden
+      // alle ~33ms normalisierte Koordinaten senden (relativ zur Stage)
       const now = performance.now();
-      if (now - _rtNoteDragTick >= 33) {
-        _rtNoteDragTick = now;
+      if (now - _rtTick >= 33) {
+        _rtTick = now;
 
-        const stageRect = getStageRect();        // #session-board / .board-area / body
-        const pxStage = parentRect.left + newX - stageRect.left;
-        const pyStage = parentRect.top  + newY - stageRect.top;
+        const stageRect = getStageRect();           // skaliert
+        const pxStage = ((parentRect.left - stageRect.left) / s) + newX; // unskaliert
+        const pyStage = ((parentRect.top  - stageRect.top ) / s) + newY;
         const { nx, ny } = toNorm(pxStage, pyStage);
 
-        sendRT({
-          t: 'note_move',
-          id: note.id,
-          nx, ny,
-          prio: RT_PRI(),
-          ts: Date.now()
-        });
-      }
-      
-      // Prüfen, ob die Notiz über dem Mülleimer ist
-      if (trashItem) {
-        const trashRect = trashItem.getBoundingClientRect();
-        const noteRect = note.getBoundingClientRect();
-        
-        // Wenn über dem Mülleimer
-        if (noteRect.right > trashRect.left && 
-            noteRect.left < trashRect.right &&
-            noteRect.bottom > trashRect.top && 
-            noteRect.top < trashRect.bottom) {
-          
-          if (!isDraggingForTrash) {
-            // Visuelles Feedback für den Mülleimer
-            trashItem.classList.add('drag-over');
-            trashItem.style.transform = 'scale(1.2)';
-            trashItem.style.backgroundColor = '#ffcccc';
-            isDraggingForTrash = true;
-          }
-        } else if (isDraggingForTrash) {
-          // Visuelles Feedback entfernen
-          trashItem.classList.remove('drag-over');
-          trashItem.style.transform = '';
-          trashItem.style.backgroundColor = '';
-          isDraggingForTrash = false;
-        }
+        sendRT({ t:'note_move', id:note.id, nx, ny, prio:RT_PRI(), ts:Date.now() });
       }
     }
-    
-    function onMouseUp(e) {
-      // Wenn nicht wirklich gezogen wurde und wenig Zeit vergangen ist,
-      // könnte es Teil eines Doppelklicks sein, also nichts machen
-      const clickDuration = Date.now() - mouseDownTime;
-      
-      // Event-Listener entfernen
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-      
-      // Wenn nicht bewegt (kein Drag) und kurze Zeit (könnte Teil eines Doppelklicks sein)
-      if (!hasMoved && clickDuration < 300) {
-        note.classList.remove('being-dragged');
-        isDragging = false;
-        return; // Nichts tun, könnte ein Doppelklick sein
-      }
-      
+
+    function onUp(){
       if (!isDragging) return;
-      
-      // Ziehen beenden
       isDragging = false;
       note.classList.remove('being-dragged');
-      
-      // Prüfen, ob über dem Mülleimer losgelassen
-      if (isDraggingForTrash && trashItem) {
-        // Visuelles Feedback für Mülleimer zurücksetzen
-        trashItem.classList.remove('drag-over');
-        trashItem.style.transform = '';
-        trashItem.style.backgroundColor = '';
-        
-        // Animation für das Löschen und Löschen der Notiz
-        note.style.transition = 'all 0.3s ease';
-        note.style.transform = 'scale(0.1) rotate(5deg)';
-        note.style.opacity = '0';
-        
-        setTimeout(() => {
-          note.remove();
-          
-          // Array aktualisieren, falls vorhanden
-          if (typeof notes !== 'undefined' && Array.isArray(notes)) {
-            notes = notes.filter(n => {
-              if (n instanceof Element) {
-                return n.id !== note.id;
-              } else if (n && n.id) {
-                return n.id !== note.id;
-              }
-              return true;
-            });
-          }
-          
-          console.log("Notiz erfolgreich gelöscht!");
-          
-          // Feedback-Effekt für Mülleimer
-          trashItem.classList.add('note-deleted');
-          setTimeout(() => {
-            trashItem.classList.remove('note-deleted');
-          }, 500);
-          
-          {
-          const px = parseFloat(note.style.left) || 0;
-          const py = parseFloat(note.style.top)  || 0;
-          const { nx, ny } = toNorm(px, py);
-          sendRT({
-            t: 'note_delete',
-            id: note.id,
-            prio: RT_PRI(),
-            ts: Date.now()
-          });
-          }
 
-          // Board-Zustand speichern
-          if (typeof saveCurrentBoardState === 'function') {
-            saveCurrentBoardState();
-          }
-        }, 300);
-        
-        isDraggingForTrash = false;
-        return;
-       }
-      
-        const rect = note.getBoundingClientRect();
-        const stageRect = getStageRect();
-        const pxStage = Math.round(rect.left - stageRect.left);
-        const pyStage = Math.round(rect.top  - stageRect.top);
-        const { nx, ny } = toNorm(pxStage, pyStage);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
 
-        sendRT({
-          t: 'note_move',
-          id: note.id,
-          nx, ny,
-          prio: RT_PRI(),
-          ts: Date.now()
-        });
+      // finaler Schnappschuss
+      const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+      const parentRect = note.parentNode.getBoundingClientRect();
+      const stageRect  = getStageRect();
+      const px = parseFloat(note.style.left) || 0;
+      const py = parseFloat(note.style.top)  || 0;
 
-        if (typeof saveCurrentBoardState === 'function') {
-          saveCurrentBoardState();
-        }
-      }
-    
-    // Stil für die Notizzettel anpassen
-    note.style.cursor = 'grab';
+      const pxStage = ((parentRect.left - stageRect.left) / s) + px;
+      const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
+      const { nx, ny } = toNorm(pxStage, pyStage);
+
+      sendRT({ t:'note_move', id:note.id, nx, ny, prio:RT_PRI(), ts:Date.now() });
+      saveCurrentBoardState?.();
+    }
   }
+
 
   const addTrashContainer = () => {
     console.log("Erstelle Mülleimer...");
@@ -3080,233 +2958,140 @@ document.addEventListener('DOMContentLoaded', function() {
 
     
     // Für Karten, benutzerdefiniertes Drag-and-Drop implementieren
+    // ---- Karten: benutzerdefiniertes Dragging mit Scale-Korrektur ----
     if (element.classList.contains('card')) {
-      // Standard Drag-Attribute entfernen
       element.removeAttribute('draggable');
-      
+
       let isDragging = false;
-      let offsetX, offsetY;
-      let initialParent;
-      let isHoveringOverStack = false; // Neuer Status für Hover über Stapel
-      
-      element.addEventListener('mousedown', function(e) {
-        // Nur mit linker Maustaste
+      let offsetX = 0, offsetY = 0;     // Offsets in UNSKALIERTEN px (style.left/top)
+      let initialParent = null;
+      let isHoveringOverStack = false;
+
+      let _rtRaf = null, _rtPending = false;
+      const queueRTCardMove = () => {
+        _rtPending = true;
+        if (_rtRaf) return;
+        _rtRaf = requestAnimationFrame(() => {
+          _rtRaf = null;
+          if (!_rtPending) return;
+          _rtPending = false;
+
+          const px = parseFloat(element.style.left) || 0;
+          const py = parseFloat(element.style.top)  || 0;
+          const { nx, ny } = toNormCard(px, py);
+          shouldApply(element.id, RT_PRI());
+          sendRT({ t:'card_move', id:element.id, nx,ny, z:element.style.zIndex||'', prio:RT_PRI(), ts:Date.now() });
+        });
+      };
+
+      element.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
-        
         e.preventDefault();
         e.stopPropagation();
-        
-        // Initialen Elternelement speichern
-        initialParent = element.parentNode;
-        
-        // Exakten Offset vom Klickpunkt zur Kartenecke berechnen
-        // === NEU: Offsets unskaliert erfassen ===
-        const parentRect = element.parentNode.getBoundingClientRect();
+
         const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+        initialParent = element.parentNode;
+
+        // Offsets unskaliert erfassen
+        const parentRect = element.parentNode.getBoundingClientRect();
         const left0 = parseFloat(element.style.left) || 0;
         const top0  = parseFloat(element.style.top)  || 0;
-
-        offsetX = ((e.clientX - parentRect.left) / s) - left0;
-        offsetY = ((e.clientY - parentRect.top)  / s) - top0;
+        offsetX = ( (e.clientX - parentRect.left) / s ) - left0;
+        offsetY = ( (e.clientY - parentRect.top)  / s ) - top0;
 
         element.style.zIndex = Math.max(getHighestInteractiveZIndex() + 1, 1200);
 
-        // WICHTIG: Wenn die Karte noch im Stapel ist, sofort ins Board umhängen,
-        // damit sie nicht hinter Focus Note/Notizzettel verschwindet
+        // Falls noch im Stapel → sofort ins Board umhängen und Position erhalten
         const cardStack = document.getElementById('card-stack');
         const boardArea = document.querySelector('.board-area');
-        // ... im mousedown-Handler:
         if (initialParent === cardStack && boardArea) {
-          const globalLeft = rect.left;
-          const globalTop = rect.top;
-          // Aus dem Stapel entfernen und dem Board hinzufügen
-          try { cardStack.removeChild(element); } catch (_) {}
-          boardArea.appendChild(element);
-          // Position relativ zum Board setzen
+          const rect = element.getBoundingClientRect(); // << HIER definieren!
           const boardRect = boardArea.getBoundingClientRect();
-          element.style.position = 'absolute';
-          element.style.left = (globalLeft - boardRect.left) + 'px';
-          element.style.top  = (globalTop  - boardRect.top)  + 'px';
 
-          // <<< 2d) RT einmalig senden – direkt nach dem Umhängen
-          {
-            const rect      = element.getBoundingClientRect();
-            const stageRect = cardStageRect();
-            const px = Math.round(rect.left - stageRect.left);
-            const py = Math.round(rect.top  - stageRect.top);
-            const { nx, ny } = toNormCard(px, py);
-            shouldApply(element.id, RT_PRI());
-            sendRT({
-              t: 'card_move',
-              id: element.id,
-              nx, ny,
-              z: element.style.zIndex || '',
-              prio: RT_PRI(),
-              ts: Date.now()
-            });
-          }
+          // Startposition relativ zur Board-Area (mit Scale) setzen
+          element.style.position = 'absolute';
+          element.style.left = ((rect.left - boardRect.left) / s) + 'px';
+          element.style.top  = ((rect.top  - boardRect.top)  / s) + 'px';
+          try { cardStack.removeChild(element); } catch {}
+          boardArea.appendChild(element);
+
+          // Einmalig RT "card_move" direkt nach dem Umhängen
+          const sRect = cardStageRect();
+          const px    = Math.round(rect.left - sRect.left);
+          const py    = Math.round(rect.top  - sRect.top);
+          const norm  = toNormCard(px / s, py / s); // px/py ent-skaliert
+          shouldApply(element.id, RT_PRI());
+          sendRT({ t:'card_move', id:element.id, nx:norm.nx, ny:norm.ny, z:element.style.zIndex||'', prio:RT_PRI(), ts:Date.now() });
         }
 
-        
-        // Visuelles Feedback dass Karte gezogen wird
         element.classList.add('being-dragged');
-        
-        // Drag-Status aktivieren
         isDragging = true;
-        
-        // Event-Listener zum Dokument hinzufügen
+
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
       });
-      
-      function onMouseMove(e) {
+
+      function onMouseMove(e){
         if (!isDragging) return;
         e.preventDefault();
 
-        const parentElement = element.parentNode;
-        const parentRect = parentElement.getBoundingClientRect();
         const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+        const parentRect = element.parentNode.getBoundingClientRect();
 
         // Cursor relativ zur Bühne → UNSKALIERT
         const curXu = (e.clientX - parentRect.left) / s;
         const curYu = (e.clientY - parentRect.top)  / s;
 
-        const newX = curXu - offsetX;
-        const newY = curYu - offsetY;
-
         element.style.position = 'absolute';
-        element.style.left = newX + 'px';
-        element.style.top  = newY + 'px';
+        element.style.left = (curXu - offsetX) + 'px';
+        element.style.top  = (curYu - offsetY) + 'px';
 
-        // pro Frame an RT schicken
         queueRTCardMove();
-        
-        // NEUE FUNKTIONALITÄT: Überprüfen, ob Karte über dem Stapel schwebt
+
+        // Hover über Stapel (nur für visuelles Feedback)
         const cardStack = document.getElementById('card-stack');
         if (cardStack) {
-          const cardRect = element.getBoundingClientRect();
+          const cardRect  = element.getBoundingClientRect();
           const stackRect = cardStack.getBoundingClientRect();
-          
-          // Prüfen, ob sich die Karte über dem Stapel befindet
-          const isOverStack = (
-            cardRect.right > stackRect.left &&
-            cardRect.left < stackRect.right &&
-            cardRect.bottom > stackRect.top &&
-            cardRect.top < stackRect.bottom
-          );
-          
-          // Status-Update und visuelles Feedback
-          if (isOverStack && !isHoveringOverStack) {
+          const isOver = (cardRect.right > stackRect.left &&
+                          cardRect.left  < stackRect.right &&
+                          cardRect.bottom> stackRect.top  &&
+                          cardRect.top   < stackRect.bottom);
+          if (isOver && !isHoveringOverStack) {
             isHoveringOverStack = true;
-            
-            // Visuelles Feedback für den Stapel
             cardStack.classList.add('stack-hover');
-            cardStack.style.boxShadow = '0 0 10px rgba(0, 255, 0, 0.5)';
-            cardStack.style.transform = 'scale(1.05)';
-            
-            // Hinweis für den Nutzer
-            showStackHoverTooltip("Loslassen, um Karte zum Stapel zurückzulegen");
-          } 
-          else if (!isOverStack && isHoveringOverStack) {
+          } else if (!isOver && isHoveringOverStack) {
             isHoveringOverStack = false;
-            
-            // Visuelles Feedback entfernen
             cardStack.classList.remove('stack-hover');
-            cardStack.style.boxShadow = '';
-            cardStack.style.transform = '';
-            
-            // Tooltip entfernen
-            hideStackHoverTooltip();
           }
         }
       }
-      
-      function onMouseUp(e) {
+
+      function onMouseUp(){
         if (!isDragging) return;
-        
-        // Drag-Status zurücksetzen
         isDragging = false;
         element.classList.remove('being-dragged');
-        
-        // Event-Listener entfernen
+
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
-        
-        // NEUE FUNKTIONALITÄT: Wenn Karte über dem Stapel losgelassen wird
-        const cardStack = document.getElementById('card-stack');
-        if (cardStack && isHoveringOverStack) {
-          // Visuelles Feedback entfernen
-          cardStack.classList.remove('stack-hover');
-          cardStack.style.boxShadow = '';
-          cardStack.style.transform = '';
-          hideStackHoverTooltip();
-          
-          // Karte zum Stapel zurücklegen
-          console.log("Karte wird per Drag-and-Drop zum Stapel zurückgelegt");
-          returnCardToStack(element);
-          // Gate + Broadcast "sendback", damit alle den Rückleger sehen
-          shouldApply(`sendback:${element.id}`, RT_PRI());
-          sendRT({
-            t: 'card_sendback',
-            id: element.id,
-            prio: RT_PRI(),
-            ts: Date.now()
-          });
-          
-          // Hover-Status zurücksetzen
-          isHoveringOverStack = false;
-          return;
-        }
 
-        // Ursprüngliche Funktionalität für Bewegung vom Stapel zum Board behalten
-        const stage = document.getElementById('cards-container') || document.querySelector('.board-area');
-        if (initialParent === cardStack && cardStack.contains(element) && stage) {
-          // 1) In die Bühne umhängen
-          const stageRect = stage.getBoundingClientRect();
-          const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+        // finaler RT Schnappschuss
+        if (_rtRaf) { cancelAnimationFrame(_rtRaf); _rtRaf = null; }
+        _rtPending = false;
+        const px = parseFloat(element.style.left) || 0;
+        const py = parseFloat(element.style.top)  || 0;
+        const { nx, ny } = toNormCard(px, py);
+        shouldApply(element.id, RT_PRI());
+        sendRT({ t:'card_move', id:element.id, nx, ny, z:element.style.zIndex||'', prio:RT_PRI(), ts:Date.now() });
 
-          element.style.position = 'absolute';
-          element.style.left = ((globalLeft - stageRect.left) / s) + 'px';
-          element.style.top  = ((globalTop  - stageRect.top)  / s) + 'px';
-          stage.appendChild(element);
-
-          // 2) Normkoordinaten relativ zur Bühne berechnen und EINMAL broadcasten
-          const rect      = element.getBoundingClientRect();
-          const sRect     = cardStageRect();
-          const px        = Math.round(rect.left - sRect.left);
-          const py        = Math.round(rect.top  - sRect.top);
-          const { nx, ny } = toNormCard(px, py);
-
-          shouldApply(element.id, RT_PRI());
-          sendRT({
-            t: 'card_move',
-            id: element.id,
-            nx, ny,
-            z: element.style.zIndex || '',
-            prio: RT_PRI(),
-            ts: Date.now()
-          });
-
-          // Reflow
-          element.offsetHeight;
-        }
-
-
-        // Nach dem Loslassen: z-index der Karte normalisieren, damit Notizzettel
-        // beim Ziehen vorne liegen, Karten aber weiterhin über Fokus-/Notizzettelblock stehen.
-        // Nicht normalisieren, wenn die Karte im Stapel liegt.
-        if (!element.closest('#card-stack')) {
-          normalizeCardZIndex(element);
-        }
-
-        // Board-Zustand speichern
-        if (typeof saveCurrentBoardState === 'function') {
-          saveCurrentBoardState();
-        }
+        // Z-Index normalisieren (außer im Stapel)
+        if (!element.closest('#card-stack')) normalizeCardZIndex(element);
+        saveCurrentBoardState?.();
       }
-      
-      return;
+
+      return; // <- WICHTIG: für Karten NICHT die generische Drag-Logik darunter ausführen
     }
+
     
     // Bestehende Logik für andere Elemente beibehalten
     let startX, startY;
