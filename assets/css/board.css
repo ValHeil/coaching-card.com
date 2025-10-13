@@ -513,3 +513,24 @@
   overflow: visible; /* oder auto, je nach Wunsch */
 }
 
+/* Bühne: füllt den verfügbaren Platz und ist der Bezugspunkt */
+.board-area{
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-origin: top left; /* passt zu 1) */
+  overflow: hidden;           /* kein Scroll, Board wird ja skaliert */
+}
+
+/* Karten- und Notiz-Layer füllen die Bühne */
+#cards-container,
+#notes-container{
+  position: absolute;
+  inset: 0;
+}
+
+/* Sicherheit: bewegliche Elemente immer absolut */
+.card, .notiz {
+  position: absolute;
+}
+
