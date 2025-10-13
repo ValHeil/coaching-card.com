@@ -473,6 +473,26 @@
 
 .card.remote-dragging { transform: none !important; transition: none !important; }
 
+/* --- Zurück-zum-Stapel Animation (B + Drop) ------------------------------ */
+.card.returning {
+  /* Wichtig: !important überstimmt die globalen "transition: none !important" */
+  transition:
+    left 330ms cubic-bezier(.2,.7,.2,1)
+    top  330ms cubic-bezier(.2,.7,.2,1) 
+    transform 330ms cubic-bezier(.2,.7,.2,1) !important;
+  pointer-events: none; /* während des Flugs nicht anklickbar */
+}
+
+/* Flip über dem Stapel (nur kurze Betonung der Drehung) */
+.card.returning .card-front,
+.card.returning .card-back {
+  transition: transform 300ms ease !important;
+}
+
+/* optionale Mini-Pulse beim Flip – passt zum vorhandenen "flipping"-Pattern */
+.card.returning.flipping {
+  transition: transform 300ms ease !important;
+}
 
 
 
