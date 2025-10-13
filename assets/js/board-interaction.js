@@ -25,6 +25,14 @@ function shouldApply(objId, incomingPrio, now = performance.now()) {
   return ok;
 }
 
+window.normalizeCardZIndex = window.normalizeCardZIndex || function(el){
+  // Karten über Notizen, aber unter aktivem Drag halten
+  try {
+    const base = 1100;
+    if (el) el.style.zIndex = String(Math.max(base, parseInt(el.style.zIndex||'0', 10) || base));
+  } catch {}
+};
+
 // Board-Rechteck holen
 function getStage(){
   return document.getElementById('session-board')
@@ -43,6 +51,12 @@ function cardStageRect(){
          || document.body;
   return el.getBoundingClientRect();
 }
+
+function getCardStageRect() {
+  // Immer die Bühne (Board-Fläche) verwenden
+  return (document.querySelector('.board-area') || document.body).getBoundingClientRect();
+}
+
 
 function getScale(){
   const area = document.querySelector('.board-area');
@@ -1119,40 +1133,49 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Handle the actual drop
     boardArea.addEventListener('drop', function(e) {
-       e.preventDefault();
+      e.preventDefault();
 
-      // Get the ID of the dragged element
       const id = e.dataTransfer.getData('text/plain');
-      const draggedElement = document.getElementById(id);
-      if (!draggedElement) return;
+      const el = document.getElementById(id);
+      if (!el) return;
 
-      // >>> NEU: Position relativ zur unskalierten Boardfläche berechnen
       const boardRect = boardArea.getBoundingClientRect();
-      const scale = parseFloat(boardArea.dataset.scale || '1');
+      const s = parseFloat(boardArea.dataset.scale || '1') || 1;
 
-      // Cursor in UNSKALIERTEN px
-      const x = Math.round((e.clientX - boardRect.left) / scale);
-      const y = Math.round((e.clientY - boardRect.top)  / scale);
+      // Drop-Punkt in UNSKALIERTEN px
+      const dropXu = (e.clientX - boardRect.left) / s;
+      const dropYu = (e.clientY - boardRect.top)  / s;
 
-      // In die Mitte des Elements ablegen
-      const halfW = Math.round(draggedElement.offsetWidth  / 2);
-      const halfH = Math.round(draggedElement.offsetHeight / 2);
+      // mittig ablegen
+      const halfW = Math.round((el.offsetWidth  || 0) / 2);
+      const halfH = Math.round((el.offsetHeight || 0) / 2);
+      const newLeft = Math.round(dropXu - halfW);
+      const newTop  = Math.round(dropYu - halfH);
 
-      draggedElement.style.position = 'absolute';
-      draggedElement.style.left = (x - halfW) + 'px';
-      draggedElement.style.top  = (y - halfH) + 'px';
-      
-      // If it's a card from the stack, move it to the board
-      if (draggedElement.classList.contains('card')) {
-        const cardStack = document.getElementById('card-stack');
-        if (cardStack && cardStack.contains(draggedElement)) {
-          cardStack.removeChild(draggedElement);
-          boardArea.appendChild(draggedElement);
-        }
+      el.style.position = 'absolute';
+      el.style.left = newLeft + 'px';
+      el.style.top  = newTop  + 'px';
+
+      // Karte ggf. aus dem Stapel lösen
+      const cardStack = document.getElementById('card-stack');
+      if (cardStack && cardStack.contains(el)) {
+        try { cardStack.removeChild(el); } catch {}
+        boardArea.appendChild(el);
       }
-      
-      // Save board state after movement
-      saveCurrentBoardState();
+
+      // → Normierte Koordinaten berechnen & broadcasten
+      if (el.classList.contains('card')) {
+        const { nx, ny } = toNormCard(newLeft, newTop);
+        shouldApply(el.id, RT_PRI());
+        sendRT({ t:'card_move', id:el.id, nx, ny, z: el.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
+      } else if (el.classList.contains('notiz') || el.classList.contains('note')) {
+        // Notiz: relative zur Bühne normalisieren
+        const { nx, ny } = toNorm(newLeft, newTop);
+        sendRT({ t:'note_move', id:el.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
+      }
+
+      // Lokal sichern (Owner persistiert, Gäste nur lokal)
+      saveCurrentBoardState?.();
     });
 
     // Setup Focus Note Editable Field
@@ -1178,7 +1201,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
       const scale = Math.min(availW / naturalW, availH / naturalH, 1);
 
-      area.style.transformOrigin = 'top center';
+      area.style.transformOrigin = 'top left';
       area.style.transform = `scale(${scale})`;
       area.dataset.scale = String(scale);   // <-- Faktor merken
     }
