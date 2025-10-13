@@ -84,6 +84,36 @@ function fromNormCard(nx, ny){
   return { x: nx * width, y: ny * height };
 }
 
+/* === Z-Index Helper global bereitstellen (fix für RT.ws.onmessage) === */
+if (!window.getHighestInteractiveZIndex) {
+  window.getHighestInteractiveZIndex = function () {
+    const interactive = [
+      ...Array.from(document.querySelectorAll('.card')).filter(c => !c.closest('#card-stack')),
+      ...Array.from(document.querySelectorAll('.notiz')),
+    ];
+    let highest = 1199;
+    interactive.forEach(el => {
+      const z = parseInt(getComputedStyle(el).zIndex, 10);
+      if (!isNaN(z) && z > highest) highest = z;
+    });
+    return highest;
+  };
+}
+
+if (!window.normalizeCardZIndex) {
+  window.normalizeCardZIndex = function (card) {
+    const newZ = Math.max(window.getHighestInteractiveZIndex() + 1, 1200);
+    card.style.zIndex = String(newZ);
+  };
+}
+
+// Backward-compat: lokaler Alias, falls irgendwo "normalizeCardZIndex(...)" direkt aufgerufen wird
+// (damit muss sonst kein weiterer Code angepasst werden)
+if (typeof window.normalizeCardZIndex === 'function' && typeof normalizeCardZIndex === 'undefined') {
+  var normalizeCardZIndex = window.normalizeCardZIndex;
+}
+
+
 
 // ---- NOTE/NOTIZ: robustes Erzeugen & Selektieren -----------------
 function ensureNotesContainer() {
@@ -386,7 +416,7 @@ async function initRealtime(config) {
       if (m.z !== undefined && m.z !== '') el.style.zIndex = String(m.z);
 
       // Sicht-Reihenfolge (Karten über Fokus-/Notizblock, aber unter aktivem Drag)
-      if (!el.closest('#card-stack')) normalizeCardZIndex(el);
+      if (!el.closest('#card-stack') && window.normalizeCardZIndex) window.normalizeCardZIndex(el);
 
       // → Owner soll nach Remote-Apply speichern
       document.dispatchEvent(new Event('boardStateUpdated'));
