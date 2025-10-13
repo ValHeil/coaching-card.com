@@ -451,6 +451,8 @@ async function initRealtime(config) {
       if (m.h) el.style.height = Math.round(m.h) + 'px';
       if (m.color) { el.dataset.color = m.color; el.style.backgroundColor = m.color; }
       if (typeof m.content === 'string') setNoteText(el, m.content);
+
+      if (isOwner && isOwner()) { saveCurrentBoardState?.('rt'); }
       return;
     }
 
@@ -461,6 +463,7 @@ async function initRealtime(config) {
       el.style.left = Math.round(x) + 'px';
       el.style.top  = Math.round(y) + 'px';
       if (m.z !== undefined && m.z !== '') el.style.zIndex = m.z;
+      if (isOwner && isOwner()) { saveCurrentBoardState?.('rt'); }
       return;
     }
 
@@ -471,6 +474,7 @@ async function initRealtime(config) {
       if (m.color) { el.dataset.color = m.color; el.style.backgroundColor = m.color; }
       if (m.w) el.style.width  = Math.round(m.w) + 'px';
       if (m.h) el.style.height = Math.round(m.h) + 'px';
+      if (isOwner && isOwner()) { saveCurrentBoardState?.('rt'); }
       return;
     }
 
@@ -478,6 +482,7 @@ async function initRealtime(config) {
       if (!shouldApply(m.id, m.prio || 1)) return;
       const note = document.getElementById(m.id);
       if (note) note.remove();
+      if (isOwner && isOwner()) { saveCurrentBoardState?.('rt'); }
       return;
     }
 
@@ -809,6 +814,15 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     `;
     document.head.appendChild(style);
+  }
+  // Globale No-Select-Hilfe für Drag
+  if (!document.getElementById('ccs-no-select-style')) {
+    const st = document.createElement('style');
+    st.id = 'ccs-no-select-style';
+    st.textContent = `
+      .ccs-no-select, .ccs-no-select * { user-select: none !important; }
+    `;
+    document.head.appendChild(st);
   }
 
 
@@ -2216,6 +2230,9 @@ document.addEventListener('DOMContentLoaded', function() {
         isDragging = true;
         started    = true;
         note.classList.add('being-dragged');
+        // während des Drags: globale Textauswahl verhindern
+        document.body.classList.add('ccs-no-select');
+        document.onselectstart = () => false;
 
         // Ab jetzt Standardverhalten unterbinden (z. B. Textauswahl)
         ev.preventDefault();
@@ -2225,6 +2242,8 @@ document.addEventListener('DOMContentLoaded', function() {
         document.removeEventListener('mouseup',   preUp);
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup',   onUp);
+
+        document.body.style.cursor = 'grabbing';
       }
 
       function preMove(ev) {
@@ -2279,6 +2298,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function onUp(){
+      // Auswahl wieder zulassen & evtl. bestehende Selektion entfernen
+      document.body.classList.remove('ccs-no-select');
+      document.onselectstart = null;
+      document.body.style.removeProperty('cursor');
+
+      try { window.getSelection()?.removeAllRanges(); } catch {}
       if (!isDragging) return;
       isDragging = false;
       note.classList.remove('being-dragged');
