@@ -69,7 +69,7 @@ function ensureNoteEl(id) {
   // Content-Element robust finden
   const content = el.querySelector('.notiz-content') || el.querySelector('.note-content');
 
-  // <<< NEU: immer die Handler/Beobachter setzen
+  // immer die Handler/Beobachter setzen
   try { attachNoteResizeObserver && attachNoteResizeObserver(el); } catch {}
   try { attachNoteAutoGrow && attachNoteAutoGrow(el); } catch {}
   try { setupNoteEditingHandlers && setupNoteEditingHandlers(el); } catch {}
@@ -99,6 +99,24 @@ function setNoteText(note, text) {
   if (el) el.textContent = text || '';
 }
 
+function placeCardInStackInstant(el, data) {
+  const stack = document.getElementById('cards-container') || document.querySelector('.cards-container');
+  if (!stack) return;
+  // Transitions kurz aus
+  const prev = el.style.transition;
+  el.style.transition = 'none';
+  // Container: stapel
+  stack.appendChild(el);
+  // Flip-Status exakt gemäß Snapshot setzen (keine Flip-Animation!)
+  if (data.flipped) el.classList.add('flipped'); else el.classList.remove('flipped');
+  // Absolutposition/Z-Index hart setzen (ohne "fliegen")
+  if (typeof data.x === 'number') el.style.left = data.x + 'px';
+  if (typeof data.y === 'number') el.style.top  = data.y + 'px';
+  if (typeof data.z === 'number') el.style.zIndex = String(data.z);
+  // Reflow und Transition zurück
+  void el.offsetHeight;
+  el.style.transition = prev || '';
+}
 
 // -------- Presence / Cursor UI (baut auf RT aus Schritt 2 auf) --------
 const Presence = (() => {
@@ -244,14 +262,16 @@ async function initRealtime(config) {
     }
     // Autoritativer Snapshot vom Server/Owner
     if (m.t === 'state_full') {
-      try {
-        const state = m.state
-          || (m.state_b64 ? base64ToJSONUTF8(m.state_b64) : null);
-        if (state && typeof restoreBoardState === 'function') {
-          restoreBoardState(state); // setzt Karten, Notizen, Focus Note, etc.
-          document.dispatchEvent(new Event('boardStateUpdated'));
-        }
-      } catch(e) { console.warn('[RT] state_full apply failed', e); }
+      (async () => {
+        try {
+          const state = m.state || (m.state_b64 ? base64ToJSONUTF8(m.state_b64) : null);
+          if (!state) return;
+          if (typeof waitForCards === 'function') { await waitForCards(); }
+          restoreBoardState(state);
+          document.dispatchEvent(new Event('boardStateUpdated')); // ok
+          window.__HAS_BOOTSTRAPPED__ = true; // Merker: Initialstate kam über WS
+        } catch (e) { console.warn('[RT] state_full apply failed', e); }
+      })();
       return;
     }
     if (m.t === 'cursor') {
@@ -1638,6 +1658,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Bei Änderung des Board-Status (neue Karten) Tracking erneuern
     document.addEventListener('boardStateUpdated', setupCardHoverTracking);
+
+    // Jede Board-Änderung (lokal/remote) -> speichern (Owner-gated + debounced)
+    document.addEventListener('boardStateUpdated', () => saveCurrentBoardState('user'));
+
     
     // Debug-Ausgabe hinzufügen, um den Status zu überwachen
     setInterval(() => {
@@ -3616,13 +3640,46 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   window.restoreNotes = restoreNotes;
 
-  // Stellt alle Karten wieder her
+
+  // Stellt alle Karten wieder her – ohne Animationen/Shuffle/Flip
   function restoreCards(cardsState) {
     if (!Array.isArray(cardsState) || !cardsState.length) return;
 
     const cardStack = document.getElementById('card-stack');
-    const boardArea = document.querySelector('.board-area');
-    const total = document.querySelectorAll('.card').length;
+    const boardArea = document.querySelector('.board-area') || document.body;
+    const total     = document.querySelectorAll('.card').length;
+
+    // Mini-Helfer: kurzzeitig alle Transitions/Animationen deaktivieren
+    const withoutAnimations = (el, fn) => {
+      const prevT = el.style.transition, prevA = el.style.animation;
+      const front = el.querySelector('.card-front');
+      const back  = el.querySelector('.card-back');
+      const pFT = front ? front.style.transition : '';
+      const pFA = front ? front.style.animation  : '';
+      const pBT = back  ? back.style.transition  : '';
+      const pBA = back  ? back.style.animation   : '';
+      try {
+        el.style.transition = 'none';
+        el.style.animation  = 'none';
+        if (front) { front.style.transition = 'none'; front.style.animation = 'none'; }
+        if (back)  { back.style.transition  = 'none'; back.style.animation  = 'none'; }
+        fn();                  // Änderungen anwenden (ohne visuelle Effekte)
+        void el.offsetWidth;   // Reflow erzwingen
+      } finally {
+        el.style.transition = prevT || '';
+        el.style.animation  = prevA || '';
+        if (front) { front.style.transition = pFT || ''; front.style.animation = pFA || ''; }
+        if (back)  { back.style.transition  = pBT || ''; back.style.animation  = pBA || ''; }
+      }
+    };
+
+    const cleanPlaceholder = (el) => {
+      if (el?.dataset?.placedAt) {
+        const oldPh = document.getElementById(el.dataset.placedAt);
+        if (oldPh) oldPh.classList.remove('filled');
+        delete el.dataset.placedAt;
+      }
+    };
 
     cardsState.forEach((cardData) => {
       const num = normalizeCardId(cardData.id || cardData.cardId);
@@ -3634,39 +3691,72 @@ document.addEventListener('DOMContentLoaded', function() {
       const el = resolveCardElement(cardData);
       if (!el) {
         console.warn('Karte nicht gefunden:', cardData.id || cardData.cardId);
-        return; // forEach → return überspringt nur dieses Element
+        return;
       }
 
-      // Position/Z-Index
-      if (cardData.left)   el.style.left   = cardData.left;
-      if (cardData.top)    el.style.top    = cardData.top;
-      if (cardData.zIndex) el.style.zIndex = cardData.zIndex;
+      withoutAnimations(el, () => {
+        // evtl. alte Animationsklassen entfernen
+        el.classList.remove('returning', 'flipping', 'shuffling', 'remote-dragging', 'being-dragged');
 
-      // Flip anpassen
-      if (typeof cardData.isFlipped === 'boolean') {
-        el.classList.toggle('flipped', !!cardData.isFlipped);
-      }
+        // Flip-Zustand stumpf setzen (keine Flip-Animation)
+        if (typeof cardData.isFlipped === 'boolean') {
+          el.classList.toggle('flipped', !!cardData.isFlipped);
+        }
 
-      // Zwischen Stapel ↔ Board umhängen
-      if (cardData.inStack === false && cardStack?.contains(el)) {
-        cardStack.removeChild(el);
-        boardArea?.appendChild(el);
-      } else if (cardData.inStack === true && boardArea?.contains(el)) {
-        returnCardToStack?.(el);
-      }
+        if (cardData.inStack) {
+          // → Karte gehört in den Stapel (sofort, ohne returnCardToStack)
+          cleanPlaceholder(el);
+          if (cardStack && !cardStack.contains(el)) {
+            cardStack.appendChild(el);
+          }
 
-      // Platzhalter-Status
-      if (cardData.placedAt) {
-        el.dataset.placedAt = cardData.placedAt;
-        const ph = document.getElementById(cardData.placedAt);
-        if (ph) ph.classList.add('filled');
-      }
+          // Z-Index aus Zustand respektieren (fällt zurück auf bestehenden)
+          const zi = (cardData.zIndex !== undefined && cardData.zIndex !== '')
+            ? parseInt(cardData.zIndex, 10)
+            : parseInt(el.style.zIndex || '0', 10);
+
+          if (!isNaN(zi)) el.style.zIndex = String(zi);
+
+          // Versatz im Stapel (wie beim Erzeugen: 0.5px je Layer)
+          const offset = Math.max(0, ((parseInt(el.style.zIndex || '1', 10) || 1) - 1) * 0.5);
+          el.style.position = 'absolute';
+          el.style.left = offset + 'px';
+          el.style.top  = offset + 'px';
+
+        } else {
+          // → Karte liegt auf dem Board
+          if (boardArea && !boardArea.contains(el)) {
+            boardArea.appendChild(el);
+          }
+
+          if (cardData.left !== undefined && cardData.left !== '') el.style.left = cardData.left;
+          if (cardData.top  !== undefined && cardData.top  !== '') el.style.top  = cardData.top;
+          if (cardData.zIndex !== undefined && cardData.zIndex !== '') el.style.zIndex = cardData.zIndex;
+
+          // Platzhalter-Status setzen/entfernen
+          if (cardData.placedAt) {
+            el.dataset.placedAt = cardData.placedAt;
+            const ph = document.getElementById(cardData.placedAt);
+            if (ph) ph.classList.add('filled');
+          } else {
+            cleanPlaceholder(el);
+          }
+        }
+      });
     });
 
+    // Stapel im DOM optional nach Z-Index sortieren (unten→oben), ohne Animation
+    if (cardStack) {
+      const stackCards = Array.from(cardStack.querySelectorAll(':scope > .card'));
+      stackCards
+        .sort((a, b) => (parseInt(a.style.zIndex || '0', 10)) - (parseInt(b.style.zIndex || '0', 10)))
+        .forEach(el => cardStack.appendChild(el));
+    }
+
+    // Signal für nachgelagerte UI-Aktualisierungen
     document.dispatchEvent(new Event('boardStateUpdated'));
   }
   window.restoreCards = restoreCards;
-
 
 
   // Erweiterte Funktion für den "Sitzung beenden" Button
@@ -3777,44 +3867,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  function setupAutoSave() {
-    const autoSaveInterval = setInterval(async () => {
-      try {
-        const sid = new URLSearchParams(location.search).get('id');
-        if (!sid) return;
-        await persistStateToServer(captureBoardState());
-        console.log('[Autosave] Zustand in DB gespeichert');
-      } catch(e) {
-        console.warn('[Autosave] Fehler:', e);
-      }
-    }, 60000); // alle 60s
-
-    // Verlassen der Seite: möglichst zuverlässig speichern
-    window.addEventListener('beforeunload', () => {
-      try {
-        const sid = new URLSearchParams(location.search).get('id');
-        if (!sid || !navigator.sendBeacon) return;
-        const payload = new Blob(
-          [JSON.stringify({ session_id: Number(sid), state: captureBoardState() })],
-          { type: 'application/json' }
-        );
-        navigator.sendBeacon('/api/state', payload);
-      } catch {}
-    });
-
-    // Ctrl/Cmd+S
-    document.addEventListener('keydown', async (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        const sid = new URLSearchParams(location.search).get('id');
-        if (!sid) return;
-        const ok = await persistStateToServer(captureBoardState());
-        if (ok) showSaveNotification('Board in DB gespeichert');
-      }
-    });
-
-    return autoSaveInterval;
-  }
 
 
   // Benachrichtigung anzeigen
@@ -3895,14 +3947,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // 2) Zustand aus DB wiederherstellen, sobald Karten existieren
   if (typeof waitForCards === 'function' && typeof loadSavedBoardState === 'function') {
-    waitForCards().then(() => { try { loadSavedBoardState(); } catch(e) { console.warn(e); } });
+    //waitForCards().then(() => { try { loadSavedBoardState(); } catch(e) { console.warn(e); } });
   }
 
   // UI-Helfer
   addSaveToastStyles();
 
-  // 3) Autosave NACH dem Aufbau starten (sonst speicherst du leere Zustände)
-  const autoSaveInterval = setupAutoSave();
 
   // (optional) Button-Handler neu setzen
   if (typeof setupEndSessionButton === 'function') setupEndSessionButton();
