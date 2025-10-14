@@ -2048,6 +2048,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     attachNoteResizeObserver(note);
     attachNoteAutoGrow(note);
+    setupNoteEditingHandlers(note);
     enhanceDraggableNote(note);
 
     const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
@@ -2298,7 +2299,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     note.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;                           // nur Linksklick
-      if (e.target && e.target.isContentEditable) return;   // nicht beim Tippen
+      if ((e.target && e.target.isContentEditable) ||
+          note.dataset.locked === '1' ||
+          note.classList.contains('is-editing')) {
+        return; // nicht ziehen, wenn gerade bearbeitet/gesperrt
+      }  // nicht beim Tippen
       if (note.dataset.locked === '1' || note.classList.contains('is-editing')) return; // wenn gesperrt/editiert → nicht ziehen
 
       // WICHTIG: Hier KEIN preventDefault, damit dblclick wieder funktioniert
@@ -3653,7 +3658,7 @@ document.addEventListener('DOMContentLoaded', function() {
       stage.appendChild(notiz);
       attachNoteResizeObserver?.(notiz);
       attachNoteAutoGrow?.(notiz);
-      setupNoteEditingHandlers?.(notiz);
+      setupNoteEditingHandlers(notiz); 
       enhanceDraggableNote?.(notiz);
     });
   }
