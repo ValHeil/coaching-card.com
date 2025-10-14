@@ -2394,44 +2394,57 @@ document.addEventListener('DOMContentLoaded', function() {
     // Bearbeitung beenden, wenn außerhalb geklickt wird
     function endEditing() {
       if (content.getAttribute('contenteditable') !== 'true') return;
+
+      // Edit-Modus aus
       content.setAttribute('contenteditable', 'false');
       content.classList.remove('editing','blinking-cursor');
       notiz.classList.remove('is-editing');
       const indicator = notiz.querySelector('.editing-indicator');
       if (indicator) indicator.remove();
 
-      // Lock-erneuerung stoppen
+      // Lock-Erneuerung stoppen
       clearInterval(notiz._lockRenew);
       notiz._lockRenew = null;
 
-      // lokal entsperren
+      // Lokal entsperren
       delete notiz.dataset.locked;
       delete notiz.dataset.lockedBy;
       delete notiz.dataset.lockedUntil;
 
-      L('EDIT_END', { id: notiz.id, finalTextLen: (finalText||'').length });
-
-      // Unlock Broadcast
-      sendRT({ t: 'note_unlock', id: notiz.id });
-
-      // Finalen Text broadcasten
+      // *** WICHTIG: finalText zuerst ermitteln ***
       const finalText = (typeof getNoteText === 'function')
         ? getNoteText(notiz)
         : (content.innerText || content.textContent || '');
 
-      sendRT({ t: 'note_update', id: notiz.id, content: finalText, prio: RT_PRI(), ts: Date.now() });
+      // Debug
+      L('EDIT_END', { id: notiz.id, finalTextLen: (finalText || '').length });
 
+      // Unlock senden
+      sendRT({ t: 'note_unlock', id: notiz.id });
+
+      // Finalen Text broadcasten
+      sendRT({
+        t: 'note_update',
+        id: notiz.id,
+        content: finalText,
+        prio: RT_PRI(),
+        ts: Date.now()
+      });
+
+      // Leere Notizen entfernen, sonst Zustand speichern
       if ((finalText || '').trim() === '') {
         sendRT({ t: 'note_delete', id: notiz.id, prio: RT_PRI(), ts: Date.now() });
         notiz.remove();
         notes = (Array.isArray(notes) ? notes.filter(n => n !== notiz) : notes);
       } else {
-        saveCurrentBoardState?.();
+        if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState();
       }
-      // Bearbeitungs-Flag zurücksetzen
+
+      // Bearbeitungs-Flags zurücksetzen
       window.__isEditingNote = false;
       window.__editingNoteId = null;
     }
+
     // 1) Klick außerhalb
     document.addEventListener('click', (e) => {
       if (!notiz.contains(e.target) && content.getAttribute('contenteditable') === 'true') {
