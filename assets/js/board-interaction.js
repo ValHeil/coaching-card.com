@@ -95,16 +95,27 @@ function fitBoardToViewport() {
   const area = document.querySelector('.board-area');
   if (!area) return;
 
-  // Reset, damit offsetWidth/Height korrekt sind
+  // kanonische Weltgröße (kommt aus data-world-w/h oder Fallback)
+  const { width: worldW, height: worldH } = getWorldSize();
+
+  // aktueller Viewport
+  const vw = window.innerWidth  || document.documentElement.clientWidth;
+  const vh = window.innerHeight || document.documentElement.clientHeight;
+
+  // Reset, damit offsetWidth/Height korrekt gemessen werden
   area.style.transform = 'none';
   area.style.width  = worldW + 'px';
   area.style.height = worldH + 'px';
 
-  const s  = Math.min(vw/worldW, vh/worldH);
-  const ox = Math.floor((vw - worldW*s)/2);
-  const oy = Math.floor((vh - worldH*s)/2);
+  // bestmögliche Einpassung
+  const s  = Math.min(vw / worldW, vh / worldH);
+  const ox = Math.floor((vw - worldW * s) / 2);
+  const oy = Math.floor((vh - worldH * s) / 2);
+
   area.style.transformOrigin = 'top left';
   area.style.transform = `translate(${ox}px, ${oy}px) scale(${s})`;
+
+  // für alle Koordinaten-Berechnungen verfügbar machen
   area.dataset.scale   = String(s);
   area.dataset.offsetX = String(ox);
   area.dataset.offsetY = String(oy);
