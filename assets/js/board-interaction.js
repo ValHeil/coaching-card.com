@@ -2675,6 +2675,53 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  /* === SAFETY NET: Delegierte Handler-Anbindung für Notizzettel =================
+    Problem: Bei manchen Pfaden (z.B. remote erstellte Notes) hängen
+    keine Mousedown-/Dblclick-Handler am Element → keine Interaktion möglich.
+    Lösung: Delegierte Listener am Dokument, die beim ersten Kontakt die
+    echten Handler an das Ziel-Element hängen. ================================= */
+
+  (function attachDelegatedNoteHandlers(){
+    // kleine Helper-Logfunktion (optional)
+    function L(tag, data){ try { window.DEBUG && console.debug('[DELEGATE_'+tag+']', data||''); } catch {} }
+
+    function ensureNoteHandlers(note){
+      if (!note || note.__noteHandlersAttached) return;
+      try { 
+        // deine bestehenden Hooks nachrüsten
+        if (typeof setupNoteEditingHandlers === 'function') setupNoteEditingHandlers(note);
+        if (typeof enhanceDraggableNote     === 'function') enhanceDraggableNote(note);
+        note.__noteHandlersAttached = true;
+        L('ATTACH', { id: note.id });
+      } catch(e){
+        console.warn('Delegated attach failed for note', note?.id, e);
+      }
+    }
+
+    // 1) Beim ersten Mousedown (Drag-Start) sicherstellen, dass Handler dran sind
+    document.addEventListener('mousedown', function(e){
+      const note = e.target && (e.target.closest?.('.notiz, .note'));
+      if (!note) return;
+      ensureNoteHandlers(note);
+    }, true); // useCapture=true: früh dran, bevor etwas stopPropagation macht
+
+    // 2) Gleiches für Doppelklick (Edit-Start)
+    document.addEventListener('dblclick', function(e){
+      const note = e.target && (e.target.closest?.('.notiz, .note'));
+      if (!note) return;
+      ensureNoteHandlers(note);
+      // danach greift dein regulärer Dblclick-Handler
+    }, true);
+
+    // 3) Optional: bestehende Notes beim DOM-Ready einmalig nachrüsten
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.notiz, .note').forEach(ensureNoteHandlers);
+      });
+    } else {
+      document.querySelectorAll('.notiz, .note').forEach(ensureNoteHandlers);
+    }
+  })();
 
 
   const addTrashContainer = () => {
