@@ -97,19 +97,14 @@ function fitBoardToViewport() {
 
   // Reset, damit offsetWidth/Height korrekt sind
   area.style.transform = 'none';
+  area.style.width  = worldW + 'px';
+  area.style.height = worldH + 'px';
 
-  const { width: worldW, height: worldH } = getWorldSize();
-  const vw = window.innerWidth, vh = window.innerHeight;
-
-  // einheitlicher Scale, nie > 1
-  const s  = Math.min(1, vw / worldW, vh / worldH);
-  const ox = Math.floor((vw - worldW * s) / 2);
-  const oy = Math.floor((vh - worldH * s) / 2);
-
+  const s  = Math.min(vw/worldW, vh/worldH);
+  const ox = Math.floor((vw - worldW*s)/2);
+  const oy = Math.floor((vh - worldH*s)/2);
   area.style.transformOrigin = 'top left';
   area.style.transform = `translate(${ox}px, ${oy}px) scale(${s})`;
-
-  // für Berechnungen/RT-Cursor merken
   area.dataset.scale   = String(s);
   area.dataset.offsetX = String(ox);
   area.dataset.offsetY = String(oy);
