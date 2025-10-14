@@ -228,6 +228,28 @@ function ensureNoteEl(id) {
   return { el, content };
 }
 
+function isLockActiveForMe(note) {
+  const locked = note && note.dataset.locked === '1';
+  if (!locked) return false;
+
+  const me = (window.RT && RT.uid) ? String(RT.uid) : '';
+  const by = note.dataset.lockedBy ? String(note.dataset.lockedBy) : '';
+  const until = parseInt(note.dataset.lockedUntil || '0', 10) || 0;
+  const expired = until && Date.now() > until;
+
+  // Abgelaufene Locks lokal „hart“ aufräumen
+  if (expired) {
+    delete note.dataset.locked;
+    delete note.dataset.lockedBy;
+    delete note.dataset.lockedUntil;
+    note.classList.remove('is-editing');
+    return false;
+  }
+
+  // Lock blockiert nur, wenn er von jemand anderem stammt
+  return !!by && by !== me;
+}
+
 // --- Notiz-Text robust auslesen/setzen -----------------------------
 function getNoteContentEl(note) {
   return note.querySelector('.notiz-content') || note.querySelector('.note-content');
@@ -2167,7 +2189,7 @@ document.addEventListener('DOMContentLoaded', function() {
     notiz.addEventListener('dblclick', (e) => {
       // Drag-Doppelklick ignorieren & Fremd-Lock respektieren
       if (notiz.classList.contains('being-dragged')) return;
-      if (notiz.dataset.locked === '1' && notiz.dataset.lockedBy && notiz.dataset.lockedBy !== (RT && RT.uid)) return;
+      if (isLockActiveForMe(notiz)) return;
       // Content-Element auf editierbar setzen
       content.setAttribute('contenteditable', 'true');
 
@@ -2412,8 +2434,8 @@ document.addEventListener('DOMContentLoaded', function() {
       if (e.button !== 0) return; // nur Linksklick
       // nicht ziehen, wenn im Edit/Lock
       if ((e.target && e.target.isContentEditable) ||
-          note.dataset.locked === '1' ||
-          note.classList.contains('is-editing')) return;
+        isLockActiveForMe(note) ||
+        note.classList.contains('is-editing')) return;
 
       // Wichtig: KEIN preventDefault hier, damit dblclick funktioniert
       const startX = e.clientX;
