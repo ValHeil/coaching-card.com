@@ -3572,7 +3572,35 @@ document.addEventListener('DOMContentLoaded', function() {
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
 
-        // finaler RT Schnappschuss
+        // NEU: Drop über Stapel? -> zurück zum Stapel + RT-Broadcast
+        const cardStack = document.getElementById('card-stack');
+        if (cardStack) {
+          const cardRect  = element.getBoundingClientRect();
+          const stackRect = cardStack.getBoundingClientRect();
+          const isOver =
+            cardRect.right  > stackRect.left  &&
+            cardRect.left   < stackRect.right &&
+            cardRect.bottom > stackRect.top   &&
+            cardRect.top    < stackRect.bottom;
+
+          if (isOver) {
+            // visuelles Hover-Feedback zurücksetzen
+            cardStack.classList.remove('stack-hover');
+
+            // lokal zurücklegen (Animation/Flip/Einordnen)
+            returnCardToStack(element);
+
+            // Echo-Gate setzen + an alle senden (Clients rufen dann ebenfalls returnCardToStack auf)
+            shouldApply(`sendback:${element.id}`, RT_PRI());
+            sendRT({ t: 'card_sendback', id: element.id, prio: RT_PRI(), ts: Date.now() });
+
+            // Zustand sichern und KEIN card_move mehr senden
+            if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState();
+            return;
+          }
+        }
+
+        // bestehend: finaler RT-Schnappschuss (nur wenn NICHT über Stapel gedroppt)
         if (_rtRaf) { cancelAnimationFrame(_rtRaf); _rtRaf = null; }
         _rtPending = false;
         const px = parseFloat(element.style.left) || 0;
@@ -3581,9 +3609,8 @@ document.addEventListener('DOMContentLoaded', function() {
         shouldApply(element.id, RT_PRI());
         sendRT({ t:'card_move', id:element.id, nx, ny, z:element.style.zIndex||'', prio:RT_PRI(), ts:Date.now() });
 
-        // Z-Index normalisieren (außer im Stapel)
         if (!element.closest('#card-stack')) normalizeCardZIndex(element);
-        saveCurrentBoardState?.();
+        if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState();
       }
 
       return; // <- WICHTIG: für Karten NICHT die generische Drag-Logik darunter ausführen
