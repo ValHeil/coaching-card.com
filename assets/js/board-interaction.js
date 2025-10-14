@@ -210,6 +210,15 @@ function ensureNoteEl(id) {
     content.setAttribute('contenteditable', 'false');
     el.appendChild(content);
     ensureNotesContainer().appendChild(el);
+    L('DOM_CREATE', { id });
+  } else {
+    L('DOM_REUSE', {
+      id,
+      locked: el.dataset.locked,
+      by: el.dataset.lockedBy,
+      until: el.dataset.lockedUntil,
+      isEditingClass: el.classList.contains('is-editing')
+    });
   }
 
   // Content-Element robust finden
@@ -236,13 +245,16 @@ function isLockActiveForMe(note) {
   const by = note.dataset.lockedBy ? String(note.dataset.lockedBy) : '';
   const until = parseInt(note.dataset.lockedUntil || '0', 10) || 0;
   const expired = until && Date.now() > until;
+  L('LOCK_CHECK', { id: note?.id, locked, by, me, until, expired, isEditingClass: note?.classList?.contains('is-editing') });
 
+  if (!locked) return false;
   // Abgelaufene Locks lokal „hart“ aufräumen
   if (expired) {
     delete note.dataset.locked;
     delete note.dataset.lockedBy;
     delete note.dataset.lockedUntil;
     note.classList.remove('is-editing');
+    L('LOCK_EXPIRED_CLEANED', { id: note.id });
     return false;
   }
 
@@ -351,6 +363,19 @@ const Presence = (() => {
 
 // ---- Realtime Core (WS) -----------------------------------------------------
 const RT = { ws:null, sid:null, uid:null, name:'', role:'participant' };
+
+// ---- DEBUG SWITCH -----------------------------------------------------------
+const DBG = { on: localStorage.DEBUG_NOTES === '1' };
+function L(tag, obj = {}) {
+  if (!DBG.on) return;
+  try { console.log(`[NOTES] ${tag}`, obj); } catch {}
+}
+window.DEBUG_NOTES = function(on = true){
+  DBG.on = !!on;
+  localStorage.DEBUG_NOTES = on ? '1' : '0';
+  console.log('[NOTES] Debug ' + (on ? 'ON' : 'OFF'));
+};
+// ---------------------------------------------------------------------------
 
 function sendRT(payload) {
   try { if (RT.ws && RT.ws.readyState === 1) RT.ws.send(JSON.stringify(payload)); } catch {}
@@ -593,6 +618,7 @@ async function initRealtime(config) {
     }
 
     if (m.t === 'note_move') {
+      L('MOVE_RECV', { id: m.id, from: m.uid || 'unknown', nx: m.nx, ny: m.ny });
       if (m.uid && RT && m.uid === RT.uid) return;     // nur mein eigenes Echo droppen
       const { el } = ensureNoteEl(m.id);
       const p = fromNorm(m.nx, m.ny);
@@ -604,10 +630,12 @@ async function initRealtime(config) {
       // Eigene Echos ignorieren, solange wir DIESE Notiz lokal editieren
       const isLocalEdit =
         (window.__isEditingNote === true && window.__editingNoteId === m.id);
+      L('UPDATE_RECV', { id: m.id, drop: isLocalEdit, len: (m.content||'').length });
+
       if (isLocalEdit) return;
 
       // Kollisionen/Prio beachten (wie gehabt)
-      if (!shouldApply(m.id, (m.prio || 1))) return;
+      if (!shouldApply(m.id, (m.prio || 1))) { L('UPDATE_DROPPED_BY_PRIO', { id: m.id }); return; }
 
       // Notiz sicherstellen
       const existing = document.getElementById(m.id);
@@ -648,6 +676,8 @@ async function initRealtime(config) {
     }
 
     if (m.t === 'note_lock') {
+      L('LOCK_RECV', { id: m.id, by: m.by, lease: m.lease });
+
       const { el } = ensureNoteEl(m.id);
       el.dataset.locked = '1';
       if (m.by) el.dataset.lockedBy = String(m.by);
@@ -667,6 +697,8 @@ async function initRealtime(config) {
     }
 
     if (m.t === 'note_unlock') {
+      L('UNLOCK_RECV', { id: m.id });
+
       const { el } = ensureNoteEl(m.id);
       delete el.dataset.locked;
       delete el.dataset.lockedBy;
@@ -2184,8 +2216,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Doppelklick zum Bearbeiten
     notiz.addEventListener('dblclick', (e) => {
+      const blocked = isLockActiveForMe(notiz);
+      L('DBLCLICK', { id: notiz.id, blocked, beingDragged: notiz.classList.contains('being-dragged') });
       // Drag-Doppelklick ignorieren & Fremd-Lock respektieren
       if (notiz.classList.contains('being-dragged')) return;
+      if (blocked) return;
       if (isLockActiveForMe(notiz)) return;
       // Content-Element auf editierbar setzen
       content.setAttribute('contenteditable', 'true');
@@ -2248,6 +2283,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       
       e.stopPropagation(); // Verhindert das Bubbling zum Elternelement
+      L('EDIT_START_SEND_LOCK', { id: notiz.id, by: RT.uid });
     });
     
     //Hilfsfunktionen für KeyDown
@@ -2373,6 +2409,8 @@ document.addEventListener('DOMContentLoaded', function() {
       delete notiz.dataset.lockedBy;
       delete notiz.dataset.lockedUntil;
 
+      L('EDIT_END', { id: notiz.id, finalTextLen: (finalText||'').length });
+
       // Unlock Broadcast
       sendRT({ t: 'note_unlock', id: notiz.id });
 
@@ -2429,6 +2467,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
     note.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return; // nur Linksklick
+
+      const blocked = (e.target && e.target.isContentEditable) || note.classList.contains('is-editing');
+      if (blocked) L('PRE_DRAG_BLOCKED', {
+        id: note.id,
+        targetEditable: !!(e.target && e.target.isContentEditable),
+        isEditingClass: note.classList.contains('is-editing'),
+        locked: note.dataset.locked, lockedBy: note.dataset.lockedBy
+      });
+      if (blocked) return;
+
+      L('PRE_DRAG_OK', { id: note.id, left: note.style.left, top: note.style.top });
       // nicht ziehen, wenn im Edit/Lock
       if ((e.target && e.target.isContentEditable) ||
         note.classList.contains('is-editing')) return;
@@ -2463,6 +2512,8 @@ document.addEventListener('DOMContentLoaded', function() {
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup',   onUp);
         document.body.style.cursor = 'grabbing';
+
+        L('DRAG_START', { id: note.id, left0, top0, z: note.style.zIndex });
       }
 
       function preMove(ev){
@@ -2507,6 +2558,8 @@ document.addEventListener('DOMContentLoaded', function() {
       note.style.top  = newY + 'px';
       hasMoved = true;
 
+      if (!hasMoved) L('FIRST_MOVE', { id: note.id }); // nur einmal
+
       // --- NEU: Trash-Hitbox prüfen & Feedback setzen ---
       const trash = document.querySelector('.trash-container');
       if (trash) {
@@ -2532,6 +2585,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const pxStage = ((parentRect.left - stageRect.left) / s) + newX;
         const pyStage = ((parentRect.top  - stageRect.top ) / s) + newY;
         const { nx, ny } = toNorm(pxStage, pyStage);
+         L('MOVE_SEND', { id: note.id, nx, ny });
         sendRT({ t:'note_move', id:note.id, nx, ny, prio:RT_PRI(), ts:Date.now() });
       }
     }
@@ -2603,6 +2657,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
       sendRT({ t:'note_move', id: note.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
       if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState();
+      L('DRAG_END', { id: note.id, hasMoved, finalLeft: note.style.left, finalTop: note.style.top });
+
     }
   }
 
@@ -4310,3 +4366,22 @@ function showErrorNotification(message) {
   }, 3000);
 }
 
+window.dumpNote = function(id){
+  const el = document.getElementById(id);
+  if (!el) return console.warn('dumpNote: not found', id);
+  console.log('[NOTES] DUMP', {
+    id,
+    left: el.style.left, top: el.style.top, z: el.style.zIndex,
+    locked: el.dataset.locked, by: el.dataset.lockedBy, until: el.dataset.lockedUntil,
+    isEditingClass: el.classList.contains('is-editing'),
+    contentEditable: !!el.querySelector('.notiz-content[contenteditable="true"]')
+  });
+};
+window.forceUnlockNote = function(id){
+  const el = document.getElementById(id);
+  if (!el) return;
+  delete el.dataset.locked; delete el.dataset.lockedBy; delete el.dataset.lockedUntil;
+  el.classList.remove('is-editing');
+  sendRT({ t:'note_unlock', id });
+  console.log('[NOTES] FORCE_UNLOCK', id);
+};
