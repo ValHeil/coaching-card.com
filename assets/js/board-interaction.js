@@ -2169,15 +2169,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Position unter dem Cursor setzen & während Drag verfolgen
     setPosFromClient(e.clientX, e.clientY);
-    const move = ev => setPosFromClient(ev.clientX, ev.clientY);
-
-    const up = () => {
-      document.removeEventListener('mousemove', move);
-      document.removeEventListener('mouseup', up);
-
-      // Normierte Koordinaten wie beim späteren Drag ermitteln
-      const stageRect = getStageRect();               // skaliert
-      const px = parseFloat(note.style.left) || 0;    // unskaliert im Parent
+    // SOFORT an alle: neue Notiz an Startposition erzeugen/broadcasten
+    {
+      const stageRect = getStageRect();
+      const px = parseFloat(note.style.left) || 0;
       const py = parseFloat(note.style.top)  || 0;
       const pxStage = ((parentRect.left - stageRect.left) / s) + px;
       const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
@@ -2193,8 +2188,39 @@ document.addEventListener('DOMContentLoaded', function() {
         w: Math.round(rect.width), h: Math.round(rect.height),
         prio: RT_PRI(), ts: Date.now()
       });
+    }
+    let _rtTick = 0;
+    const move = (ev) => {
+      setPosFromClient(ev.clientX, ev.clientY);
 
-      // optional: Zustand speichern
+      const now = performance.now();
+      if (now - _rtTick >= 33) {
+        _rtTick = now;
+
+        const stageRect = getStageRect();
+        const px = parseFloat(note.style.left) || 0;
+        const py = parseFloat(note.style.top)  || 0;
+        const pxStage = ((parentRect.left - stageRect.left) / s) + px;
+        const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
+        const { nx, ny } = toNorm(pxStage, pyStage);
+
+        sendRT({ t:'note_move', id:note.id, nx, ny, prio:RT_PRI(), ts:Date.now() });
+      }
+    };
+
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+
+      // Normierte Koordinaten wie beim späteren Drag ermitteln
+      const stageRect = getStageRect();               // skaliert
+      const px = parseFloat(note.style.left) || 0;    // unskaliert im Parent
+      const py = parseFloat(note.style.top)  || 0;
+      const pxStage = ((parentRect.left - stageRect.left) / s) + px;
+      const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
+      const { nx, ny } = toNorm(pxStage, pyStage);
+
+      sendRT({ t:'note_move', id:note.id, nx, ny, prio:RT_PRI(), ts:Date.now() });
       if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState();
     };
 
