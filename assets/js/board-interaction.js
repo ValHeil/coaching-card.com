@@ -604,9 +604,13 @@ async function initRealtime(config) {
       const { el } = ensureNoteEl(m.id); // bindet jetzt intern alle Handler
 
       // Position setzen
-      const { x, y } = (typeof m.nx === 'number') ? fromNorm(m.nx, m.ny) : { x: m.x, y: m.y };
-      el.style.left = Math.round(x) + 'px';
-      el.style.top  = Math.round(y) + 'px';
+      const p = (typeof m.nx === 'number') ? fromNorm(m.nx, m.ny) : { x: m.x, y: m.y };
+      const parent = el.parentElement || document.querySelector('.board-area') || document.body;
+      const parentRect = parent.getBoundingClientRect();
+      const stageRect  = getStageRect();
+      const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
+      el.style.left = Math.round(p.x - ((parentRect.left - stageRect.left) / s)) + 'px';
+      el.style.top  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s)) + 'px';
       if (m.z !== undefined && m.z !== '') el.style.zIndex = m.z;
       if (m.w) el.style.width  = Math.round(m.w) + 'px';
       if (m.h) el.style.height = Math.round(m.h) + 'px';
@@ -3981,9 +3985,16 @@ document.addEventListener('DOMContentLoaded', function() {
       let leftPx = noteData.left || '';
       let topPx  = noteData.top  || '';
       if (typeof noteData.nx === 'number' && typeof noteData.ny === 'number') {
-        const p = fromNorm(noteData.nx, noteData.ny);
-        leftPx = Math.round(p.x) + 'px';
-        topPx  = Math.round(p.y) + 'px';
+        const p = fromNorm(noteData.nx, noteData.ny); // Bühnen-Pixel (unskaliert)
+        const parent = el.parentElement || document.querySelector('.board-area') || document.body;
+        const parentRect = parent.getBoundingClientRect();
+        const stageRect  = getStageRect(); // skaliert
+        const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
+
+        const left = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
+        const top  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
+        leftPx = left + 'px';
+        topPx  = top  + 'px';
       }
       el.style.left = leftPx; el.style.top = topPx;
 
