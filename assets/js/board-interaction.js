@@ -57,6 +57,14 @@ function getCardStageRect() {
   return (document.querySelector('.board-area') || document.body).getBoundingClientRect();
 }
 
+function getScaleX(){
+  const a = document.querySelector('.board-area');
+  return parseFloat(a?.dataset.scaleX || a?.dataset.scale || '1') || 1;
+}
+function getScaleY(){
+  const a = document.querySelector('.board-area');
+  return parseFloat(a?.dataset.scaleY || a?.dataset.scale || '1') || 1;
+}
 
 function getScale(){
   const area = document.querySelector('.board-area');
@@ -95,31 +103,42 @@ function fitBoardToViewport() {
   const area = document.querySelector('.board-area');
   if (!area) return;
 
-  // kanonische Weltgröße (kommt aus data-world-w/h oder Fallback)
-  const { width: worldW, height: worldH } = getWorldSize();
-
-  // aktueller Viewport
+  const { width: worldW, height: worldH } = getWorldSize(); // 2400x1350
   const vw = window.innerWidth  || document.documentElement.clientWidth;
   const vh = window.innerHeight || document.documentElement.clientHeight;
 
-  // Reset, damit offsetWidth/Height korrekt gemessen werden
-  area.style.transform = 'none';
+  // drei Modi: 'contain' (bisher), 'cover' (voll füllen, evtl. Zuschnitt), 'stretch' (nicht-uniform)
+  const MODE = 'cover'; // <- Wunsch: ohne Rand und ohne Scrollen
+
+  let sx, sy, ox = 0, oy = 0;
+  if (MODE === 'stretch') {
+    // füllt exakt ohne Zuschnitt, verzerrt ggf.; Mapping bleibt korrekt dank getScaleX/Y
+    sx = vw / worldW;
+    sy = vh / worldH;
+  } else {
+    // uniformes Scaling
+    const contain = Math.min(vw / worldW, vh / worldH);
+    const cover   = Math.max(vw / worldW, vh / worldH);
+    const s = (MODE === 'cover') ? cover : contain;
+    sx = sy = s;
+    ox = Math.floor((vw - worldW * s) / 2);
+    oy = Math.floor((vh - worldH * s) / 2);
+  }
+
+  // Reset + setzen
+  area.style.transformOrigin = 'top left';
   area.style.width  = worldW + 'px';
   area.style.height = worldH + 'px';
+  area.style.transform = `translate(${ox}px, ${oy}px) scale(${sx}, ${sy})`;
 
-  // bestmögliche Einpassung
-  const s  = Math.min(vw / worldW, vh / worldH);
-  const ox = Math.floor((vw - worldW * s) / 2);
-  const oy = Math.floor((vh - worldH * s) / 2);
-
-  area.style.transformOrigin = 'top left';
-  area.style.transform = `translate(${ox}px, ${oy}px) scale(${s})`;
-
-  // für alle Koordinaten-Berechnungen verfügbar machen
-  area.dataset.scale   = String(s);
+  // für Koordinaten
+  area.dataset.scaleX = String(sx);
+  area.dataset.scaleY = String(sy);
+  area.dataset.scale  = String(sx); // Back-Compat
   area.dataset.offsetX = String(ox);
   area.dataset.offsetY = String(oy);
 }
+
 
 
 function toNorm(px, py) {
@@ -281,10 +300,10 @@ const Presence = (() => {
   function move(id, xUnscaled, yUnscaled, color, label){
     const p = ensureCursorEl(id, color, label);
     const boardEl = document.querySelector('.board-area') || document.body;
-    const r = boardEl.getBoundingClientRect();
-    const s = getScale();
-    const absX = r.left + xUnscaled * s;
-    const absY = r.top  + yUnscaled * s;
+    const r = (document.querySelector('.board-area') || document.body).getBoundingClientRect();
+    const sx = getScaleX(), sy = getScaleY();
+    const absX = r.left + xUnscaled * sx;
+    const absY = r.top  + yUnscaled * sy;
     p.el.style.left = absX + 'px';
     p.el.style.top  = absY + 'px';
   }
@@ -345,7 +364,7 @@ async function initRealtime(config) {
   RT.ws.onopen = () => {
     if (typeof fitBoardToViewport === 'function') fitBoardToViewport();
 
-    const boardEl = document.querySelector('.board-area') || document.body;
+    const boardEl = document.querySelector('.board-area');
     let last = 0;
 
     boardEl.addEventListener('mousemove', (e) => {
@@ -355,13 +374,14 @@ async function initRealtime(config) {
 
       // Unskaliert normalisieren: erst Scale herausrechnen, dann gegen unskalierte Fläche normieren
       const r = boardEl.getBoundingClientRect();
-      const s = parseFloat(boardEl.dataset.scale || '1') || 1;
+      const sx = getScaleX(), sy = getScaleY();
+      const { width: worldW, height: worldH } = getWorldSize();
 
-      const xu = (e.clientX - r.left) / s;  // Cursor relativ zum Board (UNskaliert)
-      const yu = (e.clientY - r.top)  / s;
+      const xu = (e.clientX - r.left) / sx; // unskaliert relativ zum Board
+      const yu = (e.clientY - r.top)  / sy;
 
-      const nx = xu / (r.width  / s);
-      const ny = yu / (r.height / s);
+      const nx = xu / worldW;
+      const ny = yu / worldH;
 
       sendRT({ t: 'cursor', nx, ny });
     }, { passive: true });
@@ -406,8 +426,9 @@ async function initRealtime(config) {
       const boardEl = document.querySelector('.board-area') || document.body;
       const r = boardEl.getBoundingClientRect();
       const s = getScale();
-      const pxu = (typeof m.nx === 'number') ? m.nx * (r.width / s)  : m.x; // unskaliert
-      const pyu = (typeof m.ny === 'number') ? m.ny * (r.height / s) : m.y;
+      const { width: worldW, height: worldH } = getWorldSize();
+      const pxu = (typeof m.nx === 'number') ? m.nx * worldW : m.x;
+      const pyu = (typeof m.ny === 'number') ? m.ny * worldH : m.y;
       Presence.move(m.id, pxu, pyu, m.color, m.label);
       return;
     }
@@ -1176,11 +1197,11 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!el) return;
 
       const boardRect = boardArea.getBoundingClientRect();
-      const s = parseFloat(boardArea.dataset.scale || '1') || 1;
 
       // Drop-Punkt in UNSKALIERTEN px
-      const dropXu = (e.clientX - boardRect.left) / s;
-      const dropYu = (e.clientY - boardRect.top)  / s;
+      const sX = getScaleX(), sY = getScaleY();
+      const dropXu = (e.clientX - boardRect.left) / sX;
+      const dropYu = (e.clientY - boardRect.top)  / sY;
 
       // mittig ablegen
       const halfW = Math.round((el.offsetWidth  || 0) / 2);
