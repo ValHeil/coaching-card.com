@@ -2362,7 +2362,18 @@ document.addEventListener('DOMContentLoaded', function() {
       e.preventDefault();
 
       const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
-      const parentRect = note.parentNode.getBoundingClientRect();
+      // vor jeder Rechnung: Element noch im DOM?
+      if (!document.body.contains(note)) {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        return;
+      }
+
+      // robusten Parent wählen
+      const parent = note.parentElement || getStage(); // getStage() => board-area/body
+      if (!parent || !parent.getBoundingClientRect) return;
+
+      const parentRect = parent.getBoundingClientRect();
 
       const curXu = (e.clientX - parentRect.left) / s;
       const curYu = (e.clientY - parentRect.top)  / s;
@@ -2405,7 +2416,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // finaler Schnappschuss
       const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
-      const parentRect = note.parentNode.getBoundingClientRect();
+      // vor jeder Rechnung: Element noch im DOM?
+      if (!document.body.contains(note)) {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        return;
+      }
+
+      // robusten Parent wählen
+      const parent = note.parentElement || getStage(); // getStage() => board-area/body
+      if (!parent || !parent.getBoundingClientRect) return;
+
+      const parentRect = parent.getBoundingClientRect();
       const stageRect  = getStageRect();
       const px = parseFloat(note.style.left) || 0;
       const py = parseFloat(note.style.top)  || 0;
@@ -2486,6 +2508,9 @@ document.addEventListener('DOMContentLoaded', function() {
       
       // Nach Animation entfernen
       setTimeout(() => {
+        try {
+          document.dispatchEvent(new Event('mouseup')); // beendet Drag-Handler, falls aktiv
+        } catch {}
         notiz.remove();
         
         // Array aktualisieren
@@ -2635,7 +2660,7 @@ document.addEventListener('DOMContentLoaded', function() {
           if (noteElement.classList.contains('card')) {
             console.log("Karte kann nicht gelöscht werden, sie wird zum Stapel zurückgelegt");
             // Hier könnte man die Karte zurück zum Stapel legen, falls erwünscht
-            returnCardToStack(card);
+            returnCardToStack(noteElement);
             return;
           }
           
@@ -2651,6 +2676,9 @@ document.addEventListener('DOMContentLoaded', function() {
         noteElement.style.opacity = '0';
         
         setTimeout(() => {
+          try {
+            document.dispatchEvent(new Event('mouseup')); // beendet Drag-Handler, falls aktiv
+          } catch {}
           noteElement.remove();
           sendRT({
             t: 'note_delete',
@@ -3148,7 +3176,10 @@ document.addEventListener('DOMContentLoaded', function() {
         initialParent = element.parentNode;
 
         // Offsets unskaliert erfassen
-        const parentRect = element.parentNode.getBoundingClientRect();
+        const parent = element.parentElement || getStage();
+        if (!parent || !parent.getBoundingClientRect) return;
+        const parentRect = parent.getBoundingClientRect();
+
         const left0 = parseFloat(element.style.left) || 0;
         const top0  = parseFloat(element.style.top)  || 0;
         offsetX = ( (e.clientX - parentRect.left) / s ) - left0;
@@ -3191,7 +3222,10 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
 
         const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
-        const parentRect = element.parentNode.getBoundingClientRect();
+        const parent = element.parentElement || getStage();
+        if (!parent || !parent.getBoundingClientRect) return;
+        const parentRect = parent.getBoundingClientRect();
+
 
         // Cursor relativ zur Bühne → UNSKALIERT
         const curXu = (e.clientX - parentRect.left) / s;
