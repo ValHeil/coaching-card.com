@@ -1059,7 +1059,7 @@ footer.board-footer {
 
 .rt-cursor {
   position: absolute;
-  transform: translate(-50%, -50%);
+  transform: translate(-6px, -6px); /* vorher: translate(-50%, -50%) */
   pointer-events: none;
   font: 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   white-space: nowrap;
