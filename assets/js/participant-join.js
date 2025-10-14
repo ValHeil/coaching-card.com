@@ -115,6 +115,8 @@ function showParticipantNamePrompt(session) {
     const name = input.value.trim();
     if (!name) {
       document.getElementById('name-error').textContent = "Bitte geben Sie einen Namen ein.";
+      document.getElementById('name-error').textContent = "Bitte geben sie einen Namen an";
+      input.classList.add('is-invalid');
       return;
     }
     const tempUser = {
@@ -126,6 +128,11 @@ function showParticipantNamePrompt(session) {
     joinSession(session);
   });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('submit-name').click(); });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('submit-name').click(); });
+  input.addEventListener('input', () => {
+    input.classList.remove('is-invalid');
+    const err = document.getElementById('name-error'); if (err) err.textContent = '';
+  });
 }
 
 function joinSession(session) {
@@ -160,6 +167,8 @@ function addParticipantNamePromptStyles() {
       .participant-name-prompt-dialog { background:#fff; border-radius:10px; padding:25px; width:90%; max-width:400px; box-shadow:0 10px 25px rgba(0,0,0,.2); }
       .participant-name-buttons { display:flex; justify-content:center; }
       .submit-button { padding:10px 20px; border-radius:4px; cursor:pointer; border:0; background:#ff8581; color:#fff; font-weight:700; }
+      .name-error { color:#b42318; display:block; margin-top:6px; font-size:.9rem; }
+      #participant-name-input.is-invalid { border:1px solid #b42318; background:#fff6f6; }
     `;
     document.head.appendChild(style);
   }
