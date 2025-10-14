@@ -593,14 +593,11 @@ async function initRealtime(config) {
     }
 
     if (m.t === 'note_move') {
-      if (!shouldApply(m.id, m.prio || 1)) return;
+      if (m.uid && RT && m.uid === RT.uid) return;     // nur mein eigenes Echo droppen
       const { el } = ensureNoteEl(m.id);
-      const { x, y } = (typeof m.nx === 'number') ? fromNorm(m.nx, m.ny) : { x: m.x, y: m.y };
-      el.style.left = Math.round(x) + 'px';
-      el.style.top  = Math.round(y) + 'px';
-      if (m.z !== undefined && m.z !== '') el.style.zIndex = m.z;
-      if (isOwner && isOwner()) { saveCurrentBoardState?.('rt'); }
-      return;
+      const p = fromNorm(m.nx, m.ny);
+      el.style.left = Math.round(p.x)+'px';
+      el.style.top  = Math.round(p.y)+'px';
     }
 
     if (m.t === 'note_update') {
