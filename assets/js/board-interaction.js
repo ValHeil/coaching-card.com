@@ -416,6 +416,7 @@ async function initRealtime(config) {
           // Wenn lokal gerade eine Notiz editiert wird: Karten/Fokus anwenden, Notizen überspringen
           const skipNotesNow =
             !!document.querySelector('.notiz .notiz-content[contenteditable="true"]') ||
+            !!document.querySelector('.notiz.being-dragged');
             (window.__isEditingNote === true);
 
           restoreBoardState(state, { skipNotes: skipNotesNow });
@@ -581,12 +582,40 @@ async function initRealtime(config) {
     }
 
     if (m.t === 'note_update') {
-      if (!shouldApply(m.id, m.prio || 1)) return;
-      const { el, content } = ensureNoteEl(m.id);
-      if (typeof m.content === 'string') setNoteText(el, m.content);
+      // Eigene Echos ignorieren, solange wir DIESE Notiz lokal editieren
+      const isLocalEdit =
+        (window.__isEditingNote === true && window.__editingNoteId === m.id);
+      if (isLocalEdit) return;
+
+      // Kollisionen/Prio beachten (wie gehabt)
+      if (!shouldApply(m.id, (m.prio || 1))) return;
+
+      // Notiz sicherstellen
+      const existing = document.getElementById(m.id);
+      const { el } = existing ? { el: existing } : ensureNoteEl(m.id);
+
+      // Text nur setzen, wenn er sich wirklich geändert hat
+      if (typeof m.content === 'string') {
+        const getText = (typeof getNoteText === 'function')
+          ? () => getNoteText(el)
+          : () => (el.querySelector('.notiz-content')?.textContent || '');
+        const setText = (typeof setNoteText === 'function')
+          ? (txt) => setNoteText(el, txt)
+          : (txt) => { const c = el.querySelector('.notiz-content'); if (c) c.textContent = txt; };
+
+        const current = getText();
+        if (current !== m.content) {
+          setText(m.content);
+          if (typeof attachNoteAutoGrow === 'function') attachNoteAutoGrow(el);
+        }
+      }
+
+      // Optionale Styles/Eigenschaften wie bisher übernehmen
       if (m.color) { el.dataset.color = m.color; el.style.backgroundColor = m.color; }
       if (m.w) el.style.width  = Math.round(m.w) + 'px';
       if (m.h) el.style.height = Math.round(m.h) + 'px';
+
+      // Beim Owner aktuellen Zustand persistieren (wie gehabt)
       if (isOwner && isOwner()) { saveCurrentBoardState?.('rt'); }
       return;
     }
@@ -2357,69 +2386,55 @@ document.addEventListener('DOMContentLoaded', function() {
     note.removeEventListener('dragend', note._dragEnd);
 
     let isDragging = false, hasMoved = false;
-    let offsetX = 0, offsetY = 0;      // Offsets in UNSKALIERTEN px
-    let isDraggingForTrash = false;
+    let offsetX = 0, offsetY = 0;   // Offsets in UNSKALIERTEN px (style.left/top)
+    let overTrash = false;          // <- NEU: Track, ob wir über dem Papierkorb sind
     let _rtTick = 0;
 
     note.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;                           // nur Linksklick
+      if (e.button !== 0) return; // nur Linksklick
+      // nicht ziehen, wenn im Edit/Lock
       if ((e.target && e.target.isContentEditable) ||
           note.dataset.locked === '1' ||
-          note.classList.contains('is-editing')) {
-        return; // nicht ziehen, wenn gerade bearbeitet/gesperrt
-      }  // nicht beim Tippen
-      if (note.dataset.locked === '1' || note.classList.contains('is-editing')) return; // wenn gesperrt/editiert → nicht ziehen
+          note.classList.contains('is-editing')) return;
 
-      // WICHTIG: Hier KEIN preventDefault, damit dblclick wieder funktioniert
+      // Wichtig: KEIN preventDefault hier, damit dblclick funktioniert
       const startX = e.clientX;
       const startY = e.clientY;
-
       let started = false;
 
-      function startDrag(ev) {
-        // Erst wenn sich die Maus wirklich bewegt hat, starten wir das Drag
+      function startDrag(ev){
         const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
         const parentRect = note.parentNode.getBoundingClientRect();
-
         const left0 = parseFloat(note.style.left) || 0;
         const top0  = parseFloat(note.style.top)  || 0;
 
-        // Offsets erst jetzt berechnen
         offsetX = ((ev.clientX - parentRect.left) / s) - left0;
         offsetY = ((ev.clientY - parentRect.top)  / s) - top0;
 
         note.style.zIndex = Math.max(getHighestInteractiveZIndex() + 1, 1200);
-
         hasMoved   = false;
         isDragging = true;
         started    = true;
         note.classList.add('being-dragged');
-        // während des Drags: globale Textauswahl verhindern
+
+        // Auswahl unterdrücken
         document.body.classList.add('ccs-no-select');
         document.onselectstart = () => false;
 
-        // Ab jetzt Standardverhalten unterbinden (z. B. Textauswahl)
         ev.preventDefault();
-
-        // auf „echte“ Move-/Up-Handler umschalten
         document.removeEventListener('mousemove', preMove);
         document.removeEventListener('mouseup',   preUp);
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup',   onUp);
-
         document.body.style.cursor = 'grabbing';
       }
 
-      function preMove(ev) {
+      function preMove(ev){
         const dx = Math.abs(ev.clientX - startX);
         const dy = Math.abs(ev.clientY - startY);
-        if (dx > 3 || dy > 3) {
-          startDrag(ev);
-        }
+        if (dx > 3 || dy > 3) startDrag(ev);
       }
-
-      function preUp() {
-        // Kein Drag gestartet → Klick/Doppelklick ganz normal durchlassen
+      function preUp(){
         document.removeEventListener('mousemove', preMove);
         document.removeEventListener('mouseup',   preUp);
       }
@@ -2428,23 +2443,21 @@ document.addEventListener('DOMContentLoaded', function() {
       document.addEventListener('mouseup',   preUp);
     });
 
-
     function onMove(e){
       if (!isDragging) return;
       e.preventDefault();
 
       const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
-      // vor jeder Rechnung: Element noch im DOM?
+
+      // Falls Note schon entfernt wurde -> sauber aufräumen
       if (!document.body.contains(note)) {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
         return;
       }
 
-      // robusten Parent wählen
-      const parent = note.parentElement || getStage(); // getStage() => board-area/body
+      const parent = note.parentElement || getStage();
       if (!parent || !parent.getBoundingClientRect) return;
-
       const parentRect = parent.getBoundingClientRect();
 
       const curXu = (e.clientX - parentRect.left) / s;
@@ -2458,22 +2471,37 @@ document.addEventListener('DOMContentLoaded', function() {
       note.style.top  = newY + 'px';
       hasMoved = true;
 
-      // alle ~33ms normalisierte Koordinaten senden (relativ zur Stage)
+      // --- NEU: Trash-Hitbox prüfen & Feedback setzen ---
+      const trash = document.querySelector('.trash-container');
+      if (trash) {
+        const tr = trash.getBoundingClientRect();
+        const nr = note.getBoundingClientRect();
+        const hit = (nr.right > tr.left && nr.left < tr.right && nr.bottom > tr.top && nr.top < tr.bottom);
+        if (hit !== overTrash) {
+          overTrash = hit;
+          trash.classList.toggle('drag-over', hit);
+          // Minimales optisches Feedback (falls kein CSS vorhanden)
+          trash.style.transform = hit ? 'scale(1.1)' : '';
+          trash.style.backgroundColor = hit ? '#ffcccc' : '';
+        }
+      } else {
+        overTrash = false;
+      }
+
+      // ~30/s Note-Position als Normalform broadcasten
       const now = performance.now();
       if (now - _rtTick >= 33) {
         _rtTick = now;
-
-        const stageRect = getStageRect();           // skaliert
-        const pxStage = ((parentRect.left - stageRect.left) / s) + newX; // unskaliert
+        const stageRect = getStageRect(); // skaliert
+        const pxStage = ((parentRect.left - stageRect.left) / s) + newX;
         const pyStage = ((parentRect.top  - stageRect.top ) / s) + newY;
         const { nx, ny } = toNorm(pxStage, pyStage);
-
         sendRT({ t:'note_move', id:note.id, nx, ny, prio:RT_PRI(), ts:Date.now() });
       }
     }
 
     function onUp(){
-      // Auswahl wieder zulassen & evtl. bestehende Selektion entfernen
+      // Auswahl wieder zulassen
       document.body.classList.remove('ccs-no-select');
       document.onselectstart = null;
       document.body.style.removeProperty('cursor');
@@ -2484,19 +2512,48 @@ document.addEventListener('DOMContentLoaded', function() {
       note.classList.remove('being-dragged');
 
       document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('mouseup',   onUp);
 
-      // finaler Schnappschuss
-      const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
-      // vor jeder Rechnung: Element noch im DOM?
-      if (!document.body.contains(note)) {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-        return;
+      // Papierkorb-Feedback zurücksetzen
+      const trash = document.querySelector('.trash-container');
+      if (trash) {
+        trash.classList.remove('drag-over');
+        trash.style.transform = '';
+        trash.style.backgroundColor = '';
       }
 
-      // robusten Parent wählen
-      const parent = note.parentElement || getStage(); // getStage() => board-area/body
+      // --- NEU: Wenn über dem Papierkorb -> löschen statt positionieren ---
+      if (overTrash) {
+        overTrash = false;
+
+        // kleine „Wegwerf“-Animation
+        note.style.transition = 'all 0.25s ease';
+        note.style.transform = 'scale(0.1) rotate(5deg)';
+        note.style.opacity = '0';
+
+        setTimeout(() => {
+          // Mouseup-Handler sicher beenden, falls noch aktiv
+          try { document.dispatchEvent(new Event('mouseup')); } catch {}
+          // DOM entfernen
+          try { note.remove(); } catch {}
+          // RT-Delete
+          sendRT({ t:'note_delete', id: note.id, prio: RT_PRI(), ts: Date.now() });
+          // Optional: lokales Array pflegen
+          if (typeof notes !== 'undefined' && Array.isArray(notes)) {
+            notes = notes.filter(n => (n && (n.id || n) !== note.id && n !== note));
+          }
+          // Zustand speichern (Owner)
+          if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState();
+        }, 250);
+
+        return; // KEIN finaler note_move mehr
+      }
+
+      // --- sonst: finalen Schnappschuss senden + speichern (wie bisher) ---
+      const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+      if (!document.body.contains(note)) return;
+
+      const parent = note.parentElement || getStage();
       if (!parent || !parent.getBoundingClientRect) return;
 
       const parentRect = parent.getBoundingClientRect();
@@ -2508,10 +2565,11 @@ document.addEventListener('DOMContentLoaded', function() {
       const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
       const { nx, ny } = toNorm(pxStage, pyStage);
 
-      sendRT({ t:'note_move', id:note.id, nx, ny, prio:RT_PRI(), ts:Date.now() });
-      saveCurrentBoardState?.();
+      sendRT({ t:'note_move', id: note.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
+      if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState();
     }
   }
+
 
 
   const addTrashContainer = () => {
@@ -3677,26 +3735,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Stellt alle Notizzettel wieder her – respektiert laufende lokale Bearbeitung
   function restoreNotes(notes, opts = {}) {
-    if (!notes || !notes.length) return;
-
-    // Wenn lokal eine Notiz editiert wird, Notizen-Apply überspringen
+    if (!Array.isArray(notes) || !notes.length) return;
     if (opts && opts.skipNotes) return;
 
-    // Vorhandene Notizen entfernen und neu aufbauen (altes Verhalten)
-    document.querySelectorAll('.notiz').forEach(notiz => notiz.remove());
-
+    const seen = new Set();
     const stage = document.getElementById('notes-container')
-              || document.querySelector('.notes-container')
-              || document.getElementById('session-board')
-              || document.querySelector('.board-area')
-              || document.body;
+            || document.querySelector('.notes-container')
+            || document.getElementById('session-board')
+            || document.querySelector('.board-area')
+            || document.body;
 
     notes.forEach(noteData => {
-      const notiz = document.createElement('div');
-      notiz.className = 'notiz';
-      notiz.id = noteData.id;
+      const { el } = ensureNoteEl(noteData.id); // erzeugt + hängt Handler an
+      el.style.position = 'absolute';
 
-      // Position aus nx/ny, sonst Fallback px
+      // nx/ny → px
       let leftPx = noteData.left || '';
       let topPx  = noteData.top  || '';
       if (typeof noteData.nx === 'number' && typeof noteData.ny === 'number') {
@@ -3704,26 +3757,22 @@ document.addEventListener('DOMContentLoaded', function() {
         leftPx = Math.round(p.x) + 'px';
         topPx  = Math.round(p.y) + 'px';
       }
+      el.style.left = leftPx; el.style.top = topPx;
 
-      // Eigenschaften setzen
-      notiz.style.position = 'absolute';
-      notiz.style.left = leftPx;
-      notiz.style.top  = topPx;
-      if (noteData.zIndex !== undefined) notiz.style.zIndex = noteData.zIndex;
-      if (noteData.backgroundColor) notiz.style.backgroundColor = noteData.backgroundColor;
-      if (noteData.rotation) notiz.style.setProperty('--rotation', noteData.rotation);
-      if (noteData.width)  notiz.style.width  = noteData.width;
-      if (noteData.height) notiz.style.height = noteData.height;
+      if (noteData.zIndex !== undefined) el.style.zIndex = noteData.zIndex;
+      if (noteData.backgroundColor) el.style.backgroundColor = noteData.backgroundColor;
+      if (noteData.rotation) el.style.setProperty('--rotation', noteData.rotation);
+      if (noteData.width)  el.style.width  = noteData.width;
+      if (noteData.height) el.style.height = noteData.height;
 
-      // Inhalt
-      notiz.innerHTML = `<div class="notiz-content" contenteditable="false">${noteData.content || ''}</div>`;
+      setNoteText(el, noteData.content || '');
+      if (el.parentNode !== stage) stage.appendChild(el);
+      seen.add(noteData.id);
+    });
 
-      // Einhängen + bekannte Verhaltens-Handler wieder verbinden
-      stage.appendChild(notiz);
-      attachNoteResizeObserver?.(notiz);
-      attachNoteAutoGrow?.(notiz);
-      setupNoteEditingHandlers(notiz); 
-      enhanceDraggableNote?.(notiz);
+    // Verwaiste Notizen entfernen
+    document.querySelectorAll('.notiz').forEach(el => {
+      if (!seen.has(el.id)) el.remove();
     });
   }
   window.restoreNotes = restoreNotes;
