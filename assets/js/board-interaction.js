@@ -2202,26 +2202,90 @@ document.addEventListener('DOMContentLoaded', function() {
       e.stopPropagation(); // Verhindert das Bubbling zum Elternelement
     });
     
-    // Event-Listener für Tastendrücke im Textfeld
-    content.addEventListener('keydown', (keyEvent) => {
-      // Wenn das Textfeld leer ist und der erste Buchstabe eingegeben wird
-      if (content.textContent.trim() === '' && 
-          keyEvent.key.length === 1 && 
-          !keyEvent.ctrlKey && 
-          !keyEvent.altKey && 
-          !keyEvent.metaKey) {
-        // Verhindere die Standard-Eingabe
-        keyEvent.preventDefault();
-        
-        // Füge einen Bulletpoint und dann den Buchstaben ein
-        document.execCommand('insertText', false, '• ' + keyEvent.key);
+    //Hilfsfunktionen für KeyDown
+    function insertTextAtCursor(el, text) {
+      el.focus();
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) {
+        el.appendChild(document.createTextNode(text));
+        placeCursorAtEnd(el);
+        return;
       }
-      // Wenn Enter gedrückt wird
-      else if (keyEvent.key === 'Enter') {
-        keyEvent.preventDefault();
-        
-        // Füge einen neuen Bulletpoint ein
-        document.execCommand('insertText', false, '\n• ');
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const node = document.createTextNode(text);
+      range.insertNode(node);
+      // Caret hinter den eingefügten Text setzen
+      range.setStart(node, node.length);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    function insertHtmlAtCursor(el, html) {
+      el.focus();
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) {
+        el.insertAdjacentHTML('beforeend', html);
+        placeCursorAtEnd(el);
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      const frag = document.createDocumentFragment();
+      let last = null;
+      while (tmp.firstChild) { last = frag.appendChild(tmp.firstChild); }
+      range.insertNode(frag);
+      if (last) {
+        range.setStartAfter(last);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+
+    function placeCursorAtEnd(el) {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    // Event-Listener für Tastendrücke im Textfeld
+    content.addEventListener('keydown', (e) => {
+      // 1) Erster Buchstabe in leerer Notiz -> "• " + Zeichen
+      const isFirstChar =
+        content.textContent.trim() === '' &&
+        e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey;
+
+      if (isFirstChar) {
+        e.preventDefault();
+        // versuche insertText (falls Browser es noch kann) – sonst Selection-API
+        let ok = false;
+        try {
+          if (document.queryCommandSupported?.('insertText')) {
+            ok = document.execCommand('insertText', false, '• ' + e.key);
+          }
+        } catch {}
+        if (!ok) insertTextAtCursor(content, '• ' + e.key);
+        return;
+      }
+
+      // 2) Enter -> neuer Bullet
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        let ok = false;
+        try {
+          if (document.queryCommandSupported?.('insertHTML')) {
+            ok = document.execCommand('insertHTML', false, '<br>• ');
+          }
+        } catch {}
+        if (!ok) insertHtmlAtCursor(content, '<br>• ');
+        return;
       }
     });
     
