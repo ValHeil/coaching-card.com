@@ -343,7 +343,7 @@ async function initRealtime(config) {
   RT.ws = new WebSocket(u.toString());
 
   RT.ws.onopen = () => {
-    console.log('[RT] open');
+    if (typeof fitBoardToViewport === 'function') fitBoardToViewport();
 
     const boardEl = document.querySelector('.board-area') || document.body;
     let last = 0;
@@ -360,11 +360,8 @@ async function initRealtime(config) {
       const xu = (e.clientX - r.left) / s;  // Cursor relativ zum Board (UNskaliert)
       const yu = (e.clientY - r.top)  / s;
 
-      const widthUnscaled  = r.width  / s;
-      const heightUnscaled = r.height / s;
-
-      const nx = xu / widthUnscaled;  // 0..1
-      const ny = yu / heightUnscaled; // 0..1
+      const nx = xu / (r.width  / s);
+      const ny = yu / (r.height / s);
 
       sendRT({ t: 'cursor', nx, ny });
     }, { passive: true });
@@ -2012,106 +2009,87 @@ document.addEventListener('DOMContentLoaded', function() {
     
   // Funktion zum Starten des Ziehens eines neuen Notizzettels
   function startDragNewNote(e) {
-    // Nur mit linker Maustaste
     if (e.button !== 0) return;
-    
     e.preventDefault();
-    console.log("Erstelle neue Notiz...");
-    
+
     const notizId = 'note-' + Date.now();
-    console.log("Neue Notiz-ID:", notizId);
-    
-    const notiz = document.createElement('div');
-    notiz.className = 'notiz';
-    notiz.id = notizId;
-    
-    // WICHTIG: Notiz sofort als draggable markieren für Drag-and-Drop
-    notiz.setAttribute('draggable', 'true');
-    
-    // Zufällige leichte Rotation für natürlicheren Look
-    const rotation = Math.random() * 6 - 3; // -3 bis +3 Grad
-    notiz.style.setProperty('--rotation', `${rotation}deg`);
-    
-    // Position am Mauszeiger
-    notiz.style.left = `${e.clientX - 90}px`;
-    notiz.style.top = `${e.clientY - 90}px`;
-    notiz.style.zIndex = Math.max(getHighestInteractiveZIndex() + 1, 1200);
-    
-    // Inhalt mit leerem editierbarem Textfeld
-    notiz.innerHTML = `
-      <div class="notiz-content" contenteditable="false"></div>
-    `;
-    
-    // Notizzettel zum DOM hinzufügen
-    document.body.appendChild(notiz);
-    attachNoteResizeObserver(notiz);
-    attachNoteAutoGrow(notiz);
-    
-    // WICHTIG: Drag-Funktionalität hinzufügen
-    enhanceDraggableNote(notiz);
-    
-    // Event-Listener für das Ziehen des neuen Notizzettels
-    const moveHandler = (moveEvent) => {
-      notiz.style.left = `${moveEvent.clientX - 90}px`;
-      notiz.style.top = `${moveEvent.clientY - 90}px`;
+    const note = document.createElement('div');
+    note.className = 'notiz';
+    note.id = notizId;
+    note.innerHTML = `<div class="notiz-content" contenteditable="false"></div>`;
+
+    const parent = ensureNotesContainer();            // WICHTIG
+    parent.appendChild(note);                         // ← nicht body!
+
+    attachNoteResizeObserver(note);
+    attachNoteAutoGrow(note);
+    enhanceDraggableNote(note);
+
+    const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+    const parentRect = parent.getBoundingClientRect();
+
+    // Beim ersten Frame Maße haben (für Zentrierung)
+    const halfW = (note.offsetWidth  || 180) / 2;
+    const halfH = (note.offsetHeight || 180) / 2;
+
+    const setPosFromClient = (cx, cy) => {
+      const xu = (cx - parentRect.left) / s;         // unskaliert, relativ zum Parent
+      const yu = (cy - parentRect.top)  / s;
+      note.style.left = (xu - halfW) + 'px';
+      note.style.top  = (yu - halfH) + 'px';
+      note.style.zIndex = Math.max(getHighestInteractiveZIndex() + 1, 1200);
     };
-    
-    const upHandler = () => {
-      document.removeEventListener('mousemove', moveHandler);
-      document.removeEventListener('mouseup', upHandler);
-      
-      // Doppelklick-Handler für Bearbeitung
-      setupNoteEditingHandlers(notiz);
-      
-      // Den Notizzettel dem notes-Array hinzufügen
-      if (typeof notes !== 'undefined') {
-        notes.push(notiz);
-      }
-      
-      {
-      const px = parseFloat(notiz.style.left) || 0;
-      const py = parseFloat(notiz.style.top)  || 0;
-      const { nx, ny } = toNorm(px, py);
-      const content = notiz.querySelector('.notiz-content')?.textContent || '';
-      const rect = notiz.getBoundingClientRect();
+
+    // Position unter dem Cursor setzen & während Drag verfolgen
+    setPosFromClient(e.clientX, e.clientY);
+    const move = ev => setPosFromClient(ev.clientX, ev.clientY);
+
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+
+      // Normierte Koordinaten wie beim späteren Drag ermitteln
+      const stageRect = getStageRect();               // skaliert
+      const px = parseFloat(note.style.left) || 0;    // unskaliert im Parent
+      const py = parseFloat(note.style.top)  || 0;
+      const pxStage = ((parentRect.left - stageRect.left) / s) + px;
+      const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
+      const { nx, ny } = toNorm(pxStage, pyStage);
+
+      const rect = note.getBoundingClientRect();
       sendRT({
         t: 'note_create',
-        id: notiz.id,
-        nx, ny,
-        z: notiz.style.zIndex || '',
-        content,
-        color: notiz.style.backgroundColor || (notiz.dataset.color || ''),
-        w: Math.round(rect.width),
-        h: Math.round(rect.height),
-        prio: RT_PRI(),
-        ts: Date.now()
+        id: note.id, nx, ny,
+        z: note.style.zIndex || '',
+        content: note.querySelector('.notiz-content')?.textContent || '',
+        color: note.style.backgroundColor || (note.dataset.color || ''),
+        w: Math.round(rect.width), h: Math.round(rect.height),
+        prio: RT_PRI(), ts: Date.now()
       });
-     }
 
-      // Speichern des Board-Zustands nach dem Erstellen einer neuen Notiz
-      if (typeof saveCurrentBoardState === 'function') {
-        saveCurrentBoardState();
-      }
+      // optional: Zustand speichern
+      if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState();
     };
-    
-    document.addEventListener('mousemove', moveHandler);
-    document.addEventListener('mouseup', upHandler);
+
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
   }
 
-    // Hilfsfunktion, um den höchsten z-index zu finden
-    function getHighestZIndex() {
-      const elements = document.getElementsByClassName('notiz');
-      let highest = 100; // Basiswert
-      
-      for (let i = 0; i < elements.length; i++) {
-        const zIndex = parseInt(window.getComputedStyle(elements[i]).zIndex, 10);
-        if (!isNaN(zIndex) && zIndex > highest) {
-          highest = zIndex;
-        }
+
+  // Hilfsfunktion, um den höchsten z-index zu finden
+  function getHighestZIndex() {
+    const elements = document.getElementsByClassName('notiz');
+    let highest = 100; // Basiswert
+    
+    for (let i = 0; i < elements.length; i++) {
+      const zIndex = parseInt(window.getComputedStyle(elements[i]).zIndex, 10);
+      if (!isNaN(zIndex) && zIndex > highest) {
+        highest = zIndex;
       }
-      
-      return highest;
     }
+    
+    return highest;
+  }
 
   // Einrichten der Bearbeitungs-Handler für eine Notiz
   function setupNoteEditingHandlers(notiz) {
