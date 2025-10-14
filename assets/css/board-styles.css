@@ -872,9 +872,9 @@ body {
 .notiz-content {
   box-sizing: border-box;
   display: inline-block;
-  width: 100% !important;            /* nutzt verf�gbare Breite der Notiz */
-  white-space: normal !important;    /* �berall umbrechen */
-  overflow: visible !important;      /* Container darf wachsen */
+  width: 100% !important;
+  white-space: pre-wrap !important; 
+  overflow: visible !important;
   overflow-wrap: anywhere;
   word-break: break-word;
   -webkit-font-smoothing: antialiased;
