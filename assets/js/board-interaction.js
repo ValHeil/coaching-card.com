@@ -619,11 +619,21 @@ async function initRealtime(config) {
 
     if (m.t === 'note_move') {
       L('MOVE_RECV', { id: m.id, from: m.uid || 'unknown', nx: m.nx, ny: m.ny });
-      if (m.uid && RT && m.uid === RT.uid) return;     // nur mein eigenes Echo droppen
+      if (m.uid && RT && m.uid === RT.uid) return; // eigenes Echo droppen
+
       const { el } = ensureNoteEl(m.id);
-      const p = fromNorm(m.nx, m.ny);
-      el.style.left = Math.round(p.x)+'px';
-      el.style.top  = Math.round(p.y)+'px';
+
+      // Bühne -> Parent-lokale Pixel umrechnen (wie beim Senden)
+      const p = fromNorm(m.nx, m.ny); // Bühnen-Pixel (unskaliert)
+      const parentRect = el.parentNode.getBoundingClientRect();
+      const stageRect  = getStageRect(); // skaliert
+      const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
+
+      const left = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
+      const top  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
+
+      el.style.left = left + 'px';
+      el.style.top  = top  + 'px';
     }
 
     if (m.t === 'note_update') {
@@ -1142,7 +1152,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Setzen, nur wenn wirklich geändert (verhindert ResizeObserver-Jitter)
-        const currentW = Math.ceil(noteEl.getBoundingClientRect().width);
+        const sX = (parseFloat(document.querySelector('.board-area')?.dataset.scaleX || '1') || 1);
+        const sY = (parseFloat(document.querySelector('.board-area')?.dataset.scaleY || '1') || 1);
+        const currentW = Math.ceil(noteEl.getBoundingClientRect().width  / sX);
+        const currentH = Math.ceil(noteEl.getBoundingClientRect().height / sY);
+
         if (Math.abs(currentW - targetW) > 1) {
           noteEl.style.width = targetW + 'px';
         }
@@ -1151,7 +1165,6 @@ document.addEventListener('DOMContentLoaded', function() {
         let targetH = Math.ceil(content.scrollHeight + padY);
         targetH = Math.max(targetH, minH);
         if (targetH > max.height) targetH = max.height;
-        const currentH = Math.ceil(noteEl.getBoundingClientRect().height);
         if (Math.abs(currentH - targetH) > 1) {
           noteEl.style.height = targetH + 'px';
         }
