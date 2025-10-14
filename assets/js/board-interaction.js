@@ -653,6 +653,14 @@ async function initRealtime(config) {
         const current = getText();
         if (current !== m.content) {
           setText(m.content);
+          const current = getText();
+          if (current !== m.content) {
+            setText(m.content);
+
+            // neu: remote sofort neu vermessen (live AutoGrow)
+            if (el._autoGrowRecalc) { el._autoGrowRecalc(); }
+            else if (typeof attachNoteAutoGrow === 'function') { attachNoteAutoGrow(el); }
+          }
           if (typeof attachNoteAutoGrow === 'function') attachNoteAutoGrow(el);
         }
       }
@@ -2199,7 +2207,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Einrichten der Bearbeitungs-Handler für eine Notiz
   function setupNoteEditingHandlers(notiz) {
-    const content = notiz.querySelector('.notiz-content');
+    const content = notiz.querySelector('.notiz-content') || notiz.querySelector('.note-content');
+    if (!content) return;
+
+    //  Mehrfach-Bindungen verhindern (Enter wurde doppelt verarbeitet)
+    if (content.dataset.editHandlersAttached === '1') return;
+    content.dataset.editHandlersAttached = '1';
     let _rtNoteDeb = null;
     content.addEventListener('input', () => {
       clearTimeout(_rtNoteDeb);
