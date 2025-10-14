@@ -416,7 +416,7 @@ async function initRealtime(config) {
           // Wenn lokal gerade eine Notiz editiert wird: Karten/Fokus anwenden, Notizen überspringen
           const skipNotesNow =
             !!document.querySelector('.notiz .notiz-content[contenteditable="true"]') ||
-            !!document.querySelector('.notiz.being-dragged');
+            !!document.querySelector('.notiz.being-dragged') ||
             (window.__isEditingNote === true);
 
           restoreBoardState(state, { skipNotes: skipNotesNow });
@@ -2284,39 +2284,57 @@ document.addEventListener('DOMContentLoaded', function() {
       sel.addRange(range);
     }
 
-    // Event-Listener für Tastendrücke im Textfeld
-    content.addEventListener('keydown', (e) => {
-      // 1) Erster Buchstabe in leerer Notiz -> "• " + Zeichen
-      const isFirstChar =
-        content.textContent.trim() === '' &&
-        e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey;
+    // === Plaintext-Insert-Helfer (keine HTML-Brüche) ===
+    function insertTextAtCursor(el, text) {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) {
+        el.appendChild(document.createTextNode(text));
+      } else {
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        range.insertNode(document.createTextNode(text));
+        // Caret hinter den eingefügten Text setzen
+        range.setStart(range.endContainer, range.endOffset);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      // wichtig: 'input' feuern, damit dein Debounce -> sendRT('note_update') läuft
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
 
-      if (isFirstChar) {
+    // --- NEU: Keydown-Handler komplett austauschen ---
+    content.addEventListener('keydown', (e) => {
+      // ESC lässt du woanders beenden; hier nicht blocken
+      if (e.key === 'Escape') return;
+
+      // Tab nicht als Zeichen in die Notiz schreiben
+      if (e.key === 'Tab') { e.preventDefault(); return; }
+
+      const txtNow = content.textContent || '';
+      const emptyNow = txtNow.trim() === '';
+
+      // 1) Erster *druckbarer* Tastendruck in leerer Notiz:
+      //    -> "• " + (erstes Zeichen) einfügen
+      const printable = (e.key.length === 1) && !e.ctrlKey && !e.metaKey && !e.altKey;
+      if (emptyNow && printable) {
         e.preventDefault();
-        // versuche insertText (falls Browser es noch kann) – sonst Selection-API
-        let ok = false;
-        try {
-          if (document.queryCommandSupported?.('insertText')) {
-            ok = document.execCommand('insertText', false, '• ' + e.key);
-          }
-        } catch {}
-        if (!ok) insertTextAtCursor(content, '• ' + e.key);
+        insertTextAtCursor(content, '• ' + e.key);
         return;
       }
 
-      // 2) Enter -> neuer Bullet
+      // 2) Enter erzeugt immer newline + nächsten Aufzählungspunkt – als Plaintext
       if (e.key === 'Enter') {
         e.preventDefault();
-        let ok = false;
-        try {
-          if (document.queryCommandSupported?.('insertHTML')) {
-            ok = document.execCommand('insertHTML', false, '<br>• ');
-          }
-        } catch {}
-        if (!ok) insertHtmlAtCursor(content, '<br>• ');
+        // Wenn noch leer: starte mit "• ", sonst Zeilenumbruch + "• "
+        const prefix = emptyNow ? '• ' : '\n• ';
+        insertTextAtCursor(content, prefix);
         return;
       }
+
+      // Sonst Standardverhalten (Browser tippt das Zeichen an Cursor-Position ein)
     });
+
     
     // Bearbeitung beenden, wenn außerhalb geklickt wird
     function endEditing() {
@@ -3640,34 +3658,31 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Erfasst alle Notizzettel und ihre Eigenschaften
   function captureAllNotes() {
-    const notesArray = [];
-    const notizElements = document.querySelectorAll('.notiz');
+    const world = getWorldSize();
+    const notes = [];
+    document.querySelectorAll('.notiz').forEach(notiz => {
+      const elRect   = notiz.getBoundingClientRect();
+      const stageRect= getStageRect();
+      const left     = Math.round(elRect.left - stageRect.left);
+      const top      = Math.round(elRect.top  - stageRect.top);
+      const nx       = world.width  ? left / world.width  : 0;
+      const ny       = world.height ? top  / world.height : 0;
 
-    notizElements.forEach(notiz => {
-      const rect = notiz.getBoundingClientRect();
-      // UNSKALIERTE px aus style.left/top lesen (falls leer, 0)
-      const px = parseFloat(notiz.style.left) || 0;
-      const py = parseFloat(notiz.style.top)  || 0;
-      const { nx, ny } = toNorm(px, py); // normieren gegen die Bühne
-
-      const noteData = {
-        id: notiz.id || 'note-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-        content: notiz.querySelector('.notiz-content')?.innerHTML || '',
-        nx, ny,                                        // ← NEU: normierte Koordinaten
-        // für Abwärtskompatibilität zusätzlich alte Felder mitschreiben:
-        left: notiz.style.left || '',
-        top:  notiz.style.top  || '',
-        zIndex: notiz.style.zIndex,
-        backgroundColor: notiz.style.backgroundColor || '#ffff99',
-        rotation: getComputedStyle(notiz).getPropertyValue('--rotation') || '0deg',
-        width:  (notiz.style.width  && notiz.style.width.trim()  !== '') ? notiz.style.width  : Math.round(rect.width)  + 'px',
-        height: (notiz.style.height && notiz.style.height.trim() !== '') ? notiz.style.height : Math.round(rect.height) + 'px'
-      };
-
-      notesArray.push(noteData);
+      notes.push({
+        id: notiz.id,
+        nx, ny,
+        left: left + 'px',
+        top:  top  + 'px',
+        width:  notiz.style.width  || '',
+        height: notiz.style.height || '',
+        zIndex: notiz.style.zIndex || '',
+        backgroundColor: notiz.style.backgroundColor || '',
+        rotation: notiz.style.getPropertyValue('--rotation') || '',
+        // WICHTIG: reiner Text statt innerHTML
+        content: getNoteText(notiz)
+      });
     });
-
-    return notesArray;
+    return notes;
   }
 
 
