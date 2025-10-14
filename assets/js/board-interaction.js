@@ -99,45 +99,49 @@ function getWorldSize() {
   return { width: area.offsetWidth, height: area.offsetHeight };
 }
 
+// board-interaction.js
 function fitBoardToViewport() {
   const area = document.querySelector('.board-area');
   if (!area) return;
 
-  const { width: worldW, height: worldH } = getWorldSize(); // 2400x1350
+  const { width: worldW, height: worldH } = getWorldSize(); // z.B. 2400x1350
   const vw = window.innerWidth  || document.documentElement.clientWidth;
   const vh = window.innerHeight || document.documentElement.clientHeight;
 
-  // drei Modi: 'contain' (bisher), 'cover' (voll füllen, evtl. Zuschnitt), 'stretch' (nicht-uniform)
-  const MODE = 'cover'; // <- Wunsch: ohne Rand und ohne Scrollen
+  const MODE = 'cover';
 
   let sx, sy, ox = 0, oy = 0;
   if (MODE === 'stretch') {
-    // füllt exakt ohne Zuschnitt, verzerrt ggf.; Mapping bleibt korrekt dank getScaleX/Y
-    sx = vw / worldW;
-    sy = vh / worldH;
+    sx = vw / worldW; sy = vh / worldH;
   } else {
-    // uniformes Scaling
     const contain = Math.min(vw / worldW, vh / worldH);
     const cover   = Math.max(vw / worldW, vh / worldH);
     const s = (MODE === 'cover') ? cover : contain;
     sx = sy = s;
     ox = Math.floor((vw - worldW * s) / 2);
-    oy = Math.floor((vh - worldH * s) / 2);
+    oy = 0; // <- WICHTIG: oben anheften, nichts mehr oben abschneiden
   }
 
-  // Reset + setzen
   area.style.transformOrigin = 'top left';
   area.style.width  = worldW + 'px';
   area.style.height = worldH + 'px';
-  area.style.transform = `translate(${ox}px, ${oy}px) scale(${sx}, ${sy})`;
 
-  // für Koordinaten
+  // Vollflächig, ohne Scroll
+  area.style.position = 'fixed';
+  area.style.left = '0';
+  area.style.top  = '0';
+  area.style.margin = '0';
+  area.style.padding = '0';
+
+  area.style.transform = `translate(${ox}px, 0) scale(${sx}, ${sy})`;
+
   area.dataset.scaleX = String(sx);
   area.dataset.scaleY = String(sy);
-  area.dataset.scale  = String(sx); // Back-Compat
+  area.dataset.scale  = String(sx);
   area.dataset.offsetX = String(ox);
   area.dataset.offsetY = String(oy);
 }
+
 
 
 
