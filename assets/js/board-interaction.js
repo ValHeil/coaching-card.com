@@ -2434,7 +2434,6 @@ document.addEventListener('DOMContentLoaded', function() {
       if (e.button !== 0) return; // nur Linksklick
       // nicht ziehen, wenn im Edit/Lock
       if ((e.target && e.target.isContentEditable) ||
-        isLockActiveForMe(note) ||
         note.classList.contains('is-editing')) return;
 
       // Wichtig: KEIN preventDefault hier, damit dblclick funktioniert
