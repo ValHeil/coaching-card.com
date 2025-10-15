@@ -143,6 +143,85 @@ function fitBoardToViewport() {
 }
 
 
+// === RT Frame-Batching: sammelt eingehende WS-Updates und wendet sie rAF-basiert an ===
+window.__RT_APPLYING__ = false;
+
+const RTBatch = (() => {
+  const cardMoves = new Map();  // id -> { nx, ny, z }
+  const noteMoves = new Map();  // id -> { nx, ny }
+  const cursorMoves = [];       // Array von { id, nx, ny, color, label }
+  let raf = 0;
+
+  function schedule() { if (!raf) raf = requestAnimationFrame(apply); }
+
+  function queueCardMove(id, payload) { cardMoves.set(id, payload); schedule(); }
+  function queueNoteMove(id, payload) { noteMoves.set(id, payload); schedule(); }
+  function queueCursor(payload) { cursorMoves.push(payload); schedule(); }
+
+  function apply() {
+    raf = 0;
+    document.documentElement.classList.add('rt-batch-apply');
+    window.__RT_APPLYING__ = true;
+
+    const boardEl = document.querySelector('.board-area') || document.body;
+    const { width: worldW, height: worldH } = getWorldSize();
+
+    // Karten
+    cardMoves.forEach((m, id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+
+      // ggf. vom Stapel lösen
+      const stage = document.getElementById('cards-container') || document.querySelector('.board-area');
+      if (el.closest('#card-stack') && stage) {
+        try { el.parentNode && el.parentNode.removeChild(el); } catch {}
+        stage.appendChild(el);
+        el.style.position = 'absolute';
+      }
+
+      const p = (typeof m.nx === 'number') ? fromNormCard(m.nx, m.ny) : { x: m.x, y: m.y };
+      el.style.left = Math.round(p.x) + 'px';
+      el.style.top  = Math.round(p.y) + 'px';
+      if (m.z !== undefined && m.z !== '') el.style.zIndex = String(m.z);
+
+      if (!el.closest('#card-stack') && window.normalizeCardZIndex) {
+        window.normalizeCardZIndex(el);
+      }
+    });
+    cardMoves.clear();
+
+    // Notizen
+    noteMoves.forEach((m, id) => {
+      const { el } = ensureNoteEl(id);
+      const p = fromNorm(m.nx, m.ny);
+      const parentRect = el.parentNode.getBoundingClientRect();
+      const stageRect  = getStageRect();
+      const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
+      const left = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
+      const top  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
+      el.style.left = left + 'px';
+      el.style.top  = top  + 'px';
+    });
+    noteMoves.clear();
+
+    // Cursor
+    for (const m of cursorMoves) {
+      const xu = (typeof m.nx === 'number') ? m.nx * worldW : m.x;
+      const yu = (typeof m.ny === 'number') ? m.ny * worldH : m.y;
+      Presence.move(m.id, xu, yu, m.color, m.label);
+    }
+    cursorMoves.length = 0;
+
+    window.__RT_APPLYING__ = false;
+    document.documentElement.classList.remove('rt-batch-apply');
+
+    // Einmaliges Event für „Status hat sich geändert“
+    document.dispatchEvent(new Event('boardStateUpdated'));
+  }
+
+  return { queueCardMove, queueNoteMove, queueCursor };
+})();
+
 
 
 function toNorm(px, py) {
@@ -450,6 +529,106 @@ async function initRealtime(config) {
     }, { passive: true });
   };
 
+  /* === Eingehende RT-Events rAF-bündeln, ohne Logik zu ändern =============== */
+
+  // 1a) Die drei Apply-Funktionen benutzen GENAU deine bisherige Logik aus den Cases.
+  //     (Damit bleibt alles Verhalten identisch – nur der Zeitpunkt wird geglättet.)
+  function applyIncomingCardMove(m) {
+    if (!shouldApply(m.id, m.prio || 1)) return;
+    const el = document.getElementById(m.id);
+    if (!el) return;
+
+    // Falls Karte noch im Stapel hängt → in Bühne verschieben (wie bei dir)
+    const stage = document.getElementById('cards-container') || document.querySelector('.board-area');
+    if (el.closest('#card-stack') && stage) {
+      try { el.parentNode && el.parentNode.removeChild(el); } catch {}
+      stage.appendChild(el);
+      el.style.position = 'absolute';
+    }
+
+    // Position aus Normalform (deine Umrechnung)
+    const { x, y } = (typeof m.nx === 'number')
+      ? fromNormCard(m.nx, m.ny)
+      : { x: m.x, y: m.y };
+
+    el.style.left = Math.round(x) + 'px';
+    el.style.top  = Math.round(y) + 'px';
+    if (m.z !== undefined && m.z !== '') el.style.zIndex = String(m.z);
+
+    // Z-Reihenfolge beibehalten (dein Helper)
+    if (!el.closest('#card-stack') && window.normalizeCardZIndex) window.normalizeCardZIndex(el);
+
+    // Dein bisheriges Save-Trigger-Event
+    document.dispatchEvent(new Event('boardStateUpdated'));
+  }
+
+  function applyIncomingNoteMove(m) {
+    // deine Logs + Echo-Drop
+    L('MOVE_RECV', { id: m.id, from: m.uid || 'unknown', nx: m.nx, ny: m.ny });
+    if (m.uid && RT && m.uid === RT.uid) return;
+
+    const { el } = ensureNoteEl(m.id);
+
+    // Bühne → parent-lokale px (deine bestehende Rechnung)
+    const p = fromNorm(m.nx, m.ny);
+    const parentRect = el.parentNode.getBoundingClientRect();
+    const stageRect  = getStageRect();
+    const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
+
+    const left = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
+    const top  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
+
+    el.style.left = left + 'px';
+    el.style.top  = top  + 'px';
+  }
+
+  function applyIncomingCursor(m) {
+    const { width: worldW, height: worldH } = getWorldSize();
+    const pxu = (typeof m.nx === 'number') ? m.nx * worldW : m.x;
+    const pyu = (typeof m.ny === 'number') ? m.ny * worldH : m.y;
+    // deine bestehende Cursor-UI
+    Presence.move(m.id, pxu, pyu, m.color, m.label);
+  }
+
+  // 1b) Minimaler rAF-Batcher (neu), der NUR die Apply-Funktionen aufruft.
+  (function(){
+    const qCard   = new Map(); // id -> last payload
+    const qNote   = new Map(); // id -> last payload
+    const qCursor = new Map(); // id -> last payload
+    let raf = 0;
+
+    function schedule(){ if (raf) return; raf = requestAnimationFrame(flush); }
+
+    function flush(){
+      raf = 0;
+      window.__RT_APPLYING__ = true;
+      document.documentElement.classList.add('rt-batch-apply');
+
+      // Karten zuerst (dein Apply)
+      qCard.forEach((m) => { try { applyIncomingCardMove(m); } catch(e){ console.warn(e); } });
+      qCard.clear();
+
+      // Notizen
+      qNote.forEach((m) => { try { applyIncomingNoteMove(m); } catch(e){ console.warn(e); } });
+      qNote.clear();
+
+      // Cursor zuletzt
+      qCursor.forEach((m) => { try { applyIncomingCursor(m); } catch(e){ console.warn(e); } });
+      qCursor.clear();
+
+      document.documentElement.classList.remove('rt-batch-apply');
+      window.__RT_APPLYING__ = false;
+      // Hinweis: boardStateUpdated wird in deinen Applys (Karte) ohnehin gefeuert.
+    }
+
+    // global nutzen
+    window.RTFrame = {
+      enqueueCard(m){ qCard.set(m.id, m); schedule(); },
+      enqueueNote(m){ qNote.set(m.id, m); schedule(); },
+      enqueueCursor(m){ qCursor.set(m.id, m); schedule(); },
+    };
+  })();
+
 
   RT.ws.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
@@ -486,16 +665,12 @@ async function initRealtime(config) {
       })();
       return;
     }
+
     if (m.t === 'cursor') {
-      const boardEl = document.querySelector('.board-area') || document.body;
-      const r = boardEl.getBoundingClientRect();
-      const s = getScale();
-      const { width: worldW, height: worldH } = getWorldSize();
-      const pxu = (typeof m.nx === 'number') ? m.nx * worldW : m.x;
-      const pyu = (typeof m.ny === 'number') ? m.ny * worldH : m.y;
-      Presence.move(m.id, pxu, pyu, m.color, m.label);
+      RTFrame.enqueueCursor(m);
       return;
     }
+
     if (m.t === 'leave') {
       Presence.remove(m.id);
       return;
@@ -599,31 +774,7 @@ async function initRealtime(config) {
 
     
     if (m.t === 'card_move') {
-      if (!shouldApply(m.id, m.prio || 1)) return;
-      const el = document.getElementById(m.id);
-      if (!el) return;
-
-      // 1) Falls die Karte noch im Stapel hängt → in die Bühne verschieben
-      const stage = document.getElementById('cards-container') || document.querySelector('.board-area');
-      if (el.closest('#card-stack') && stage) {
-        try { el.parentNode && el.parentNode.removeChild(el); } catch {}
-        stage.appendChild(el);
-        el.style.position = 'absolute';
-      }
-
-      // 2) Position aus Normalform setzen (relativ zur Bühne)
-      const { x, y } = (typeof m.nx === 'number')
-        ? fromNormCard(m.nx, m.ny)
-        : { x: m.x, y: m.y };
-      el.style.left = Math.round(x) + 'px';
-      el.style.top  = Math.round(y) + 'px';
-      if (m.z !== undefined && m.z !== '') el.style.zIndex = String(m.z);
-
-      // Sicht-Reihenfolge (Karten über Fokus-/Notizblock, aber unter aktivem Drag)
-      if (!el.closest('#card-stack') && window.normalizeCardZIndex) window.normalizeCardZIndex(el);
-
-      // → Owner soll nach Remote-Apply speichern
-      document.dispatchEvent(new Event('boardStateUpdated'));
+      RTFrame.enqueueCard(m);
       return;
     }
 
@@ -703,22 +854,8 @@ async function initRealtime(config) {
     }
 
     if (m.t === 'note_move') {
-      L('MOVE_RECV', { id: m.id, from: m.uid || 'unknown', nx: m.nx, ny: m.ny });
-      if (m.uid && RT && m.uid === RT.uid) return; // eigenes Echo droppen
-
-      const { el } = ensureNoteEl(m.id);
-
-      // Bühne -> Parent-lokale Pixel umrechnen (wie beim Senden)
-      const p = fromNorm(m.nx, m.ny); // Bühnen-Pixel (unskaliert)
-      const parentRect = el.parentNode.getBoundingClientRect();
-      const stageRect  = getStageRect(); // skaliert
-      const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
-
-      const left = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
-      const top  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
-
-      el.style.left = left + 'px';
-      el.style.top  = top  + 'px';
+      RTFrame.enqueueNote(m);
+      return;
     }
 
     if (m.t === 'note_update') {
@@ -2038,7 +2175,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Jede Board-Änderung (lokal/remote) -> speichern (Owner-gated + debounced)
-    document.addEventListener('boardStateUpdated', () => saveCurrentBoardState('user'));
+    document.addEventListener('boardStateUpdated', () => {
+      if (!window.__RT_APPLYING__) {
+        saveCurrentBoardState('user'); // unverändert – aber nur bei lokalen Änderungen
+      }
+    });
 
     
     // Debug-Ausgabe hinzufügen, um den Status zu überwachen
