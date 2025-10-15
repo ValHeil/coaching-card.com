@@ -230,6 +230,14 @@
   transition: none !important;
 }
 
+/* Remote-Apply: keine Transitions/Animationen zwischen WS-Paketen */
+.card.remote-dragging,
+.card.remote-dragging * {
+  transition: none !important;
+  animation: none !important;
+  transform: none !important; /* falls irgendein Effekt aktiv war */
+}
+
 /* Aktiviere Transitions nur für Flip und Shuffle */
 .card.flipping, .card.shuffling {
   transition: all 0.5s ease-in-out !important;
