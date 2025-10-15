@@ -700,6 +700,8 @@ async function initRealtime(config) {
           restoreBoardState(state, { skipNotes: skipNotesNow, skipCards: skipCardsNow });
           document.dispatchEvent(new Event('boardStateUpdated'));
           window.__HAS_BOOTSTRAPPED__ = true;
+          window.__SUPPRESS_AUTOSAVE__ = false;                 // NEU: jetzt darf gespeichert werden
+          window.__pauseSnapshotUntil  = Date.now() + 500;      // mini Puffer gegen Nachbeben
         } catch (e) { console.warn('[RT] state_full apply failed', e); }
       })();
       return;
@@ -1017,29 +1019,21 @@ function isOwner() {
 }
 
 async function _doSave(reason = 'auto') {
-  if (!isOwner()) return false; // nur der Owner persistiert
+  if (!isOwner()) return false;
+  if (window.__SUPPRESS_AUTOSAVE__ && reason !== 'force') return false; // NEU: Boot-Gate
   if (_saveInFlight) return false;
   const sid = new URLSearchParams(location.search).get('id');
   if (!sid) return false;
-
-  // ← WICHTIG: erst speichern, wenn die Funktion existiert
-  if (typeof captureBoardState !== 'function') {
-    console.warn('[Autosave] captureBoardState fehlt (noch)');
-    return false;
-  }
+  if (typeof captureBoardState !== 'function') { console.warn('[Autosave] captureBoardState fehlt (noch)'); return false; }
 
   const state = captureBoardState();
   const h = hashState(state);
-  if (h === _lastStateHash && reason !== 'force') return false; // nichts geändert
+  if (h === _lastStateHash && reason !== 'force') return false;
 
-  _lastStateHash = h;
-  _saveInFlight = true;
+  _lastStateHash = h; _saveInFlight = true;
   try {
     await persistStateToServer(state);
-
-    // ← NEU: Autoritativen Snapshot an alle Teilnehmer schicken
-    sendRT({ t: 'state_full', state, prio: 3, ts: Date.now() });
-
+    sendRT({ t: 'state_full', state, prio: 3, ts: Date.now() }); // bleibt wie gehabt
     return true;
   } finally { _saveInFlight = false; }
 }
@@ -1185,6 +1179,8 @@ function waitForCards(timeoutMs = 5000) {
 // Lädt den gespeicherten Zustand aus der Sitzung
 async function loadSavedBoardState() {
   try {
+
+
     const sessionId = new URLSearchParams(location.search).get('id');
     if (!sessionId) return false;
 
@@ -1201,7 +1197,12 @@ async function loadSavedBoardState() {
     }
 
     const state = base64ToJSONUTF8(state_b64); // UTF-8 sicher
-    return restoreBoardState(state);
+    const ok = restoreBoardState(state);
+    if (ok) {
+      window.__SUPPRESS_AUTOSAVE__ = false;            // NEU
+      window.__pauseSnapshotUntil  = Date.now() + 500; // NEU
+    }
+    return ok;
   } catch (e) {
     console.warn('[DEBUG] Laden aus DB fehlgeschlagen:', e);
     return false;
@@ -1282,6 +1283,8 @@ function initializeParticipantJoin() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  window.__SUPPRESS_AUTOSAVE__ = true;        // Save bis zum ersten Snapshot unterdrücken
+  window.__pauseSnapshotUntil  = Date.now() + 1500; // kleine zusätzliche Schonfrist
   // Elemente auswählen
   const ok =
     (window.handleSessionJoinOwnerAware && window.handleSessionJoinOwnerAware()) ||
@@ -4682,13 +4685,10 @@ document.addEventListener('DOMContentLoaded', function() {
     debouncedSave();
   });
 
-    // In board-interaction.js am Ende der DOMContentLoaded-Funktion
-    window.addEventListener('beforeunload', function() {
-    // Aktuellen Zustand speichern
-    saveCurrentBoardState();
-    
-    // Markieren, dass das Dashboard neu geladen werden soll
-    sessionStorage.setItem('dashboard_reload_requested', 'true');
+  // In board-interaction.js am Ende der DOMContentLoaded-Funktion
+  window.addEventListener('beforeunload', function () {
+    try { flushSaveNow(); } catch {}
+    try { sessionStorage.setItem('dashboard_reload_requested', 'true'); } catch {}
   });
 
 
