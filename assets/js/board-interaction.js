@@ -276,39 +276,71 @@ function placeCardInStackInstant(el, data) {
   el.style.transition = prev || '';
 }
 
-// --- Live-Broadcast für die Focus Note -----------------------------
-function attachFocusNoteLiveSync() {
+
+// ---- Focus Note: Live-Editing für Owner & Gäste --------------------------
+function initFocusNoteLive() {
   const editable = document.getElementById('focus-note-editable');
   const display  = document.getElementById('focus-note-display');
-  if (!editable) return;
+  if (!editable || !display) return;
 
-  // Remote-Setter: Editor + Anzeige updaten, aber kein Echo erzeugen
-  let _mute = false;
+  // Editor öffnen, wenn auf Anzeige geklickt wird
+  display.addEventListener('click', () => {
+    display.style.display  = 'none';
+    editable.style.display = 'block';
+
+    // Caret ans Ende setzen
+    const sel = window.getSelection();
+    const rng = document.createRange();
+    rng.selectNodeContents(editable);
+    rng.collapse(false);
+    sel.removeAllRanges(); sel.addRange(rng);
+    editable.focus();
+  });
+
+  // Editor schließen auf Blur oder Enter (ohne Shift)
+  function closeEditor(){ editable.style.display = 'none'; display.style.display = 'flex'; }
+  editable.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); editable.blur(); }
+  });
+  editable.addEventListener('blur', closeEditor);
+
+  // Platzhalter-Text
+  const PH = 'Schreiben sie hier die Focus Note der Sitzung rein';
+
+  // Anti-Echo beim Anwenden entgegengenommener Updates
+  let setByRemote = false;
   window.__ccSetFocusNote = (txt) => {
-    _mute = true;
-    const val = (typeof txt === 'string') ? txt : '';
-    if ('value' in editable) editable.value = val;
-    else editable.innerText = val;
-    if (display) display.innerText = val;
-    queueMicrotask(() => { _mute = false; });
+    setByRemote = true;
+    const t = (txt || '');
+    editable.textContent = t;
+    const trimmed = t.trim();
+    display.textContent = trimmed || PH;
+    display.classList.toggle('has-content', !!trimmed);
+    queueMicrotask(() => { setByRemote = false; });
   };
 
-  // Entprelltes Live-Senden wie bei Notizen
-  let deb = 0;
+  // Beim Tippen: lokal die Anzeige spiegeln + nach 100ms senden
+  let deb;
   const emit = () => {
-    if (_mute) return;
+    if (setByRemote) return;
+    const txt = editable.textContent || '';
+    const trimmed = txt.trim();
+    display.textContent = trimmed || PH;
+    display.classList.toggle('has-content', !!trimmed);
+
     clearTimeout(deb);
     deb = setTimeout(() => {
-      const txt = ('value' in editable) ? editable.value : editable.innerText;
-      sendRT({ t: 'focus_update', content: txt, prio: RT_PRI(), ts: Date.now() });
-      // Optional: lokale Anzeige parallel live mitziehen
-      if (display) display.innerText = txt;
-    }, 120);
+      if (typeof sendRT === 'function') {
+        // Owner & Gäste senden beide – Server broadcastet an alle anderen
+        sendRT({ t:'focus_update', content: txt, prio: (typeof RT_PRI==='function'? RT_PRI():1), ts: Date.now() });
+      }
+    }, 100);
   };
 
-  ['beforeinput','input','keyup','paste','cut'].forEach(evt =>
-    editable.addEventListener(evt, emit)
-  );
+  // Alle relevanten Eingabewege abdecken (echtes Live-Typing)
+  ['input','beforeinput','keyup','paste','cut','compositionend'].forEach(evt => {
+    editable.addEventListener(evt, emit);
+  });
 }
 
 // -------- Presence / Cursor UI (baut auf RT aus Schritt 2 auf) --------
@@ -700,15 +732,14 @@ async function initRealtime(config) {
     }
     
     if (m.t === 'focus_update') {
-      const focusEl = document.getElementById('focus-note-editable');
-      if (!focusEl) return;
-
-      const txt = (typeof m.content === 'string') ? m.content : '';
       if (typeof window.__ccSetFocusNote === 'function') {
-        window.__ccSetFocusNote(txt); // setzt Editor + Anzeige ohne Echo
+        window.__ccSetFocusNote(String(m.content || ''));
       } else {
-        if ('value' in focusEl) focusEl.value = txt;
-        else focusEl.innerText = txt;
+        const el = document.getElementById('focus-note-editable');
+        const t  = String(m.content || '');
+        if (el) el.innerText = t;
+        const disp = document.getElementById('focus-note-display');
+        if (disp) disp.textContent = t || 'Schreiben sie hier die Focus Note der Sitzung rein';
       }
       return;
     }
@@ -1453,13 +1484,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Focus Note erstellen
     createFocusNote();
 
-    // Anzeige/Editor-Verhalten sicher initialisieren
-    if (typeof setupFocusNoteEditable === 'function') {
-      setupFocusNoteEditable();
-    }
-
-    // Live-RT-Sync der Focus Note aktivieren (muss NACH createFocusNote passieren)
-    attachFocusNoteLiveSync();
+    initFocusNoteLive();
 
     // Karten erstellen (abhängig vom Board-Typ)
     createCards();
