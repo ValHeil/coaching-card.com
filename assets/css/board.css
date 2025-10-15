@@ -557,8 +557,15 @@ html, body {
   --note-size: 200px;                /* feste Welt-Pixel */
 }
 
-/* Während rAF-Batch-Anwendung keine CSS-Transitions für bewegte Elemente */
+/* während rAF-Apply: nicht animieren */
 .rt-batch-apply .card,
 .rt-batch-apply .notiz {
   transition: none !important;
+}
+
+/* kleine Render-Hints */
+.card, .notiz {
+  will-change: left, top;
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
 }
