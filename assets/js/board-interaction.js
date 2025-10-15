@@ -556,6 +556,19 @@ async function initRealtime(config) {
       el._rdTO = null;
     }, 90);
 
+    // Z nur EINMAL pro Remote-Drag „anheben“
+    if (!el._remoteDragActive) {
+      el._remoteDragActive = true;
+      // wenn Sender Z mitschickt, reicht das – sonst optional lokal leicht anheben
+      if (m.z !== undefined && m.z !== '') {
+        el.style.zIndex = String(m.z);
+      } else if (typeof getHighestInteractiveZIndex === 'function') {
+        el.style.zIndex = String(getHighestInteractiveZIndex() + 1);
+      }
+    }
+    clearTimeout(el._remoteDragEndTO);
+    el._remoteDragEndTO = setTimeout(() => { el._remoteDragActive = false; }, 160);
+
     // Falls Karte noch im Stapel hängt → in Bühne verschieben (wie bei dir)
     const stage = document.getElementById('cards-container') || document.querySelector('.board-area');
     if (el.closest('#card-stack') && stage) {
@@ -3733,7 +3746,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const queueRTCardMove = () => {
         const now = performance.now();
         // ~33ms → ca. 30 Updates/Sek.
-        if (now - _lastSend < 33) return;
+        if (now - _lastSend < 16) return;
 
         const px = parseFloat(element.style.left) || 0;
         const py = parseFloat(element.style.top)  || 0;
