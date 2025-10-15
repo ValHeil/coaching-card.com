@@ -434,56 +434,51 @@ async function initRealtime(config) {
   // Unterstützt normalisierte Koordinaten (nx, ny) oder Pixel (x, y).
   // Empfängt Kartenbewegungen (RT) und setzt sie ruckelfrei auf dem Board um.
   function applyIncomingCardMove(m) {
-    // Eigene Echos ignorieren, falls mitgesendet
+    // Eigenes Echo ignorieren (nur falls uid mitgeschickt wurde)
     if (m.uid && window.RT && m.uid === RT.uid) return;
 
+    // Gate für gleichzeitige Frames (Owner-Priorität etc.)
     if (!shouldApply(m.id, m.prio || 1)) return;
 
     const el = document.getElementById(m.id);
     if (!el) return;
 
-    // Markieren: gerade läuft ein Remote-Drag → Snapshots sollen Positionen überspringen
+    // Markieren: Remote-Drag aktiv → Snapshots & Hover-Effekte kurz aus
     el._remoteDragActive = true;
     window.__lastRemoteCardMoveTs = performance.now();
     clearTimeout(el._rdFlagTO);
     el._rdFlagTO = setTimeout(() => { el._remoteDragActive = false; }, 180);
 
-    // Transitions/hover bei Remote-Apply unterdrücken
     el.classList.add('remote-dragging');
     clearTimeout(el._rdTO);
     el._rdTO = setTimeout(() => { el.classList.remove('remote-dragging'); el._rdTO = null; }, 90);
 
     const boardArea = document.querySelector('.board-area') || document.body;
-    const stage = document.getElementById('cards-container') || boardArea;
-
-    const s = parseFloat(boardArea?.dataset.scale || '1') || 1;
+    const stage     = document.getElementById('cards-container') || boardArea;
+    const s         = parseFloat(boardArea?.dataset.scale || '1') || 1;
     const stageRect = boardArea.getBoundingClientRect();
 
-    // Falls noch im Stapel → vor dem Umhängen aktuelle Bildschirmposition merken
+    // Falls noch im Stapel → ohne Sprung in die Bühne hängen
     if (el.closest && el.closest('#card-stack')) {
       const parentRectNew = (stage || boardArea).getBoundingClientRect();
       const oldRect = el.getBoundingClientRect();
-
       const keepLeft = (oldRect.left - parentRectNew.left) / s;
-      const keepTop  = (oldRect.top  - parentRectNew.top)  / s;
+      const keepTop  = (oldRect.top  - parentRectNew.top ) / s;
 
-      const oldTransition = el.style.transition;
+      const prevT = el.style.transition;
       el.style.transition = 'none';
       el.style.position = 'absolute';
       try { stage.appendChild(el); } catch {}
 
-      // sichtbare Position im neuen Parent erhalten
       el.style.left = Math.round(keepLeft) + 'px';
       el.style.top  = Math.round(keepTop)  + 'px';
-
-      // Reflow erzwingen, dann Transition wiederherstellen
       void el.offsetWidth;
-      el.style.transition = oldTransition || '';
+      el.style.transition = prevT || '';
     }
 
-    // Zielposition aus Normalform berechnen (Stage-Pixel → parent-lokale px)
+    // Zielposition: normiert → unskalierte Stage-Pixel → parent-lokal
     const p = (typeof m.nx === 'number' && typeof m.ny === 'number')
-      ? fromNormCard(m.nx, m.ny)   // unskalierte Stage-Pixel
+      ? fromNormCard(m.nx, m.ny)
       : { x: m.x, y: m.y };
 
     const parentRect = (el.parentElement || stage).getBoundingClientRect();
@@ -590,9 +585,8 @@ async function initRealtime(config) {
         try {
           const state = m.state || (m.state_b64 ? base64ToJSONUTF8(m.state_b64) : null);
           if (!state) return;
-          if (typeof waitForCards === 'function') { await waitForCards(); }
+          if (typeof waitForCards === 'function') await waitForCards();
 
-          // Wenn lokal gerade eine Notiz editiert wird: Karten/Fokus anwenden, Notizen überspringen
           const skipNotesNow =
             !!document.querySelector('.notiz .notiz-content[contenteditable="true"]') ||
             !!document.querySelector('.notiz.being-dragged') ||
@@ -607,9 +601,7 @@ async function initRealtime(config) {
             stillMoving;
 
           restoreBoardState(state, { skipNotes: skipNotesNow, skipCards: skipCardsNow });
-
-          document.dispatchEvent(new Event('boardStateUpdated')); // bleibt bestehen
-
+          document.dispatchEvent(new Event('boardStateUpdated'));
           window.__HAS_BOOTSTRAPPED__ = true;
         } catch (e) { console.warn('[RT] state_full apply failed', e); }
       })();
@@ -1519,7 +1511,15 @@ document.addEventListener('DOMContentLoaded', function() {
       if (el.classList.contains('card')) {
         const { nx, ny } = toNormCard(pxStage, pyStage);
         shouldApply(`move:${element.id}`, RT_PRI(), performance.now(), RT.uid);
-        sendRT({ t:'card_move', id: element.id, nx, ny, z: element.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
+        sendRT({
+            t: 'card_move',
+            id: element.id,
+            nx, ny,                          // normierte Koordinaten
+            z: element.style.zIndex || '',
+            prio: RT_PRI(),
+            ts: Date.now(),
+            uid: RT.uid                      // <— wichtig!
+          });
       } else if (el.classList.contains('notiz') || el.classList.contains('note')) {
         // Notiz: relative zur Bühne normalisieren
         const { nx, ny } = toNorm(newLeft, newTop);
@@ -3724,7 +3724,15 @@ document.addEventListener('DOMContentLoaded', function() {
           const pyStage = (rect.top  - boardRect.top ) / s;
           const { nx, ny } = toNormCard(pxStage, pyStage);
           shouldApply(`move:${element.id}`, RT_PRI(), performance.now(), RT.uid);
-          sendRT({ t:'card_move', id: element.id, nx, ny, z: element.style.zIndex || '', prio: RT_PRI(), ts: Date.now(), uid: RT.uid });
+          sendRT({
+            t: 'card_move',
+            id: element.id,
+            nx, ny,                          // normierte Koordinaten
+            z: element.style.zIndex || '',
+            prio: RT_PRI(),
+            ts: Date.now(),
+            uid: RT.uid                      // <— wichtig!
+          });
 
         }
 
@@ -3891,7 +3899,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const { nx, ny } = toNormCard(pxStage, pyStage);
         shouldApply(`move:${element.id}`, RT_PRI(), performance.now(), RT.uid);
-        sendRT({ t:'card_move', id: element.id, nx, ny, z: element.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
+        sendRT({
+          t: 'card_move',
+          id: element.id,
+          nx, ny,                          // normierte Koordinaten
+          z: element.style.zIndex || '',
+          prio: RT_PRI(),
+          ts: Date.now(),
+          uid: RT.uid                      // <— wichtig!
+        });
       }
       document.removeEventListener('mousemove', elementDrag);
       document.removeEventListener('mouseup', closeDragElement);
