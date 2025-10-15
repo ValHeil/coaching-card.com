@@ -409,6 +409,52 @@ const Presence = (() => {
 // ---- Realtime Core (WS) -----------------------------------------------------
 const RT = { ws:null, sid:null, uid:null, name:'', role:'participant' };
 
+// === Reconnect/Heartbeat-Manager ============================================
+RT._reconnect = {
+  tries: 0,
+  timer: null,
+  hb: null,
+  stop: false,             // auf true setzen, wenn Session absichtlich endet
+  cursorAttached: false    // damit der Mousemove-Listener nicht dupliziert wird
+};
+
+function startHeartbeat(){
+  stopHeartbeat();
+  // leichte Herzschläge (Nachrichten-Ebene), falls Server-Ping nicht reicht
+  RT._reconnect.hb = setInterval(() => {
+    try { sendRT({ t:'ping', ts: Date.now() }); } catch {}
+  }, 20000);
+}
+function stopHeartbeat(){
+  if (RT._reconnect.hb) { clearInterval(RT._reconnect.hb); RT._reconnect.hb = null; }
+}
+
+function scheduleReconnect(reason = ''){
+  if (RT._reconnect.stop) return; // nie reconnecten, wenn absichtlich beendet
+  stopHeartbeat();
+
+  const attempt = RT._reconnect.tries++;
+  const base = Math.min(10000, 500 * Math.pow(2, attempt)); // 0.5s .. 10s
+  const jitter = Math.floor(Math.random() * 250);
+  const delay = base + jitter;
+
+  console.warn('[RT] reconnect in', delay, 'ms', reason ? '('+reason+')' : '');
+  clearTimeout(RT._reconnect.timer);
+  RT._reconnect.timer = setTimeout(() => {
+    try { initRealtime(window.CC_CONFIG || null); } catch(e){ console.warn(e); }
+  }, delay);
+}
+
+// Sichtbarkeits-/Netzwerk-Hooks → schneller reconnecten, wenn sinnvoll
+window.addEventListener('online', () => {
+  if (!RT.ws || RT.ws.readyState !== 1) scheduleReconnect('online');
+});
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && (!RT.ws || RT.ws.readyState > 1)) scheduleReconnect('visible');
+});
+
+
+
 // ---- DEBUG SWITCH -----------------------------------------------------------
 const DBG = { on: localStorage.DEBUG_NOTES === '1' };
 function L(tag, obj = {}) {
@@ -458,7 +504,35 @@ async function initRealtime(config) {
   RT.ws = new WebSocket(u.toString());
 
   RT.ws.onopen = () => {
+    startHeartbeat();
+    RT._reconnect.tries = 0; // Backoff zurücksetzen
+
     if (typeof fitBoardToViewport === 'function') fitBoardToViewport();
+
+    // Mousemove-Listener nur EINMAL binden (wichtig für Reconnect)
+    const boardEl = document.querySelector('.board-area');
+    if (!RT._reconnect.cursorAttached && boardEl) {
+      let last = 0;
+      boardEl.addEventListener('mousemove', (e) => {
+        const now = performance.now();
+        if (now - last < 30) return; // ~33/s
+        last = now;
+
+        const r = boardEl.getBoundingClientRect();
+        const sx = getScaleX(), sy = getScaleY();
+        const { width: worldW, height: worldH } = getWorldSize();
+
+        const xu = (e.clientX - r.left) / sx;
+        const yu = (e.clientY - r.top)  / sy;
+
+        const nx = xu / worldW;
+        const ny = yu / worldH;
+
+        sendRT({ t:'cursor', nx, ny });
+      }, { passive: true });
+
+      RT._reconnect.cursorAttached = true;
+    }
 
     // --- NEU: Gast wartet, bis Owner da ist
     try {
@@ -472,27 +546,6 @@ async function initRealtime(config) {
       }
     } catch(e){ console.warn('[wait owner] onopen', e); }
 
-    const boardEl = document.querySelector('.board-area');
-    let last = 0;
-
-    boardEl.addEventListener('mousemove', (e) => {
-      const now = performance.now();
-      if (now - last < 30) return; // ~33/s
-      last = now;
-
-      // Unskaliert normalisieren: erst Scale herausrechnen, dann gegen unskalierte Fläche normieren
-      const r = boardEl.getBoundingClientRect();
-      const sx = getScaleX(), sy = getScaleY();
-      const { width: worldW, height: worldH } = getWorldSize();
-
-      const xu = (e.clientX - r.left) / sx; // unskaliert relativ zum Board
-      const yu = (e.clientY - r.top)  / sy;
-
-      const nx = xu / worldW;
-      const ny = yu / worldH;
-
-      sendRT({ t: 'cursor', nx, ny });
-    }, { passive: true });
   };
 
   /* === Eingehende RT-Events rAF-bündeln, ohne Logik zu ändern =============== */
@@ -719,6 +772,11 @@ async function initRealtime(config) {
     // --- NEU: Der Owner beendet die Sitzung ---
     if (m.t === 'end_session') {
       if (RT.role !== 'owner') {
+        RT._reconnect.stop = true;
+        stopHeartbeat();
+        try { clearInterval(window.__ownerPoll); } catch {}
+        // <<<
+
         try {
           // Overlay anzeigen und Interaktionen sperren – Tab bleibt offen
           document.documentElement.classList.add('owner-wait-active');
@@ -921,12 +979,20 @@ async function initRealtime(config) {
     }
   };
 
-  RT.ws.onclose = () => {
-    console.log('[RT] close');
+  RT.ws.onclose = (e) => {
+    console.warn('[RT] close', e && e.code, e && e.reason);
+    stopHeartbeat();
     Presence.clearAll();
+    // Nur reconnecten, wenn nicht absichtlich beendet
+    if (!RT._reconnect.stop) scheduleReconnect('close');
   };
 
-  RT.ws.onerror = (e) => console.warn('[RT] error', e);
+  RT.ws.onerror = (e) => {
+    console.warn('[RT] error', e);
+    // Fehler führen oft kurz darauf zu "close" – wir triggern vorsorglich
+    if (!RT._reconnect.stop) scheduleReconnect('error');
+  };
+
 }
 
 function hashState(state) {
@@ -966,6 +1032,7 @@ async function _doSave(reason = 'auto') {
 
 // Wird vom Owner-Dialog (OK/Beenden) aufgerufen:
 window.onOwnerEndSessionConfirmed = function(){
+  RT._reconnect.stop = true;   // <— Reconnect unterbinden
   try { sendRT({ t: 'end_session' }); } catch {}
   try {
     // Schließen delegiert an Wrapper (server.js), NICHT hier navigieren
