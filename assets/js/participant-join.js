@@ -183,10 +183,17 @@ function addParticipantNamePromptStyles() {
   const st = document.createElement('style');
   st.id = 'owner-wait-style';
   st.textContent = `
-    .owner-wait-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:3000}
+    .owner-wait-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:2147483647 }
     .owner-wait-dialog{background:#fff;border-radius:12px;padding:18px 20px;max-width:360px;width:90%;box-shadow:0 10px 25px rgba(0,0,0,.2);text-align:center;font:14px/1.45 system-ui,Segoe UI,Arial}
     .owner-wait-dialog h3{margin:0 0 6px;font-size:18px}
     .owner-wait-spinner{width:20px;height:20px;border:3px solid #ddd;border-top-color:#ff8581;border-radius:50%;margin:10px auto;animation:spin 1s linear infinite}
+    .owner-wait-active .end-session-btn,
+    .owner-wait-active .trash-container,
+    .owner-wait-active #save-toast,
+    .owner-wait-active .stack-hover-tooltip {
+      pointer-events: none !important;
+      z-index: 0 !important;
+    }
     @keyframes spin{to{transform:rotate(360deg)}}
     .owner-ended-dialog p{margin:.5rem 0 1rem}
     .owner-ended-dialog button{padding:8px 12px;border-radius:8px;border:0;background:#1f2937;color:#fff;cursor:pointer}
@@ -195,6 +202,7 @@ function addParticipantNamePromptStyles() {
 })();
 
 window.showWaitingForOwner = function(msg){
+  document.documentElement.classList.add('owner-wait-active');
   if (document.getElementById('owner-wait')) return;
   const o = document.createElement('div');
   o.id = 'owner-wait';
@@ -209,7 +217,8 @@ window.showWaitingForOwner = function(msg){
 };
 
 window.hideWaitingForOwner = function(){
-  const o = document.getElementById('owner-wait');
+  const o = document.getElementById('owner-wait')?.remove();
+  document.documentElement.classList.remove('owner-wait-active');
   if (o) try { o.remove(); } catch {}
 };
 
