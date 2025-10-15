@@ -808,25 +808,39 @@ async function initRealtime(config) {
     }
 
     if (m.t === 'card_flip') {
-      // WICHTIG: flips nicht vom letzten MOVE blockieren lassen → eigener Key
       const gateKey = `flip:${m.id}`;
       if (!shouldApply(gateKey, m.prio || 1)) return;
 
       const el = document.getElementById(m.id);
       if (!el) return;
 
+      // 1) Sicherstellen, dass keine Drag-Blocker aktiv sind
+      el.classList.remove('remote-dragging');
+      if (el._rdTO) { clearTimeout(el._rdTO); el._rdTO = null; }
+
       const want = !!m.flipped;
       const has  = el.classList.contains('flipped');
       if (want !== has) {
+        // 2) Flip-Animation sichtbar machen
+        el.classList.add('flipping');
+        void el.offsetWidth; // Reflow, um die Animation sicher zu starten
+
         el.classList.toggle('flipped', want);
 
-        // optional: Flip-Sound auch bei Remote-Flip abspielen
+        // 3) Aufräumen nach Ende
+        const cleanup = () => {
+          el.classList.remove('flipping');
+          el.removeEventListener('transitionend', cleanup);
+          el.removeEventListener('animationend', cleanup);
+        };
+        el.addEventListener('transitionend', cleanup);
+        el.addEventListener('animationend', cleanup);
+        setTimeout(cleanup, 550); // Fallback
+
+        // Sound beibehalten
         try {
           const snd = window.cardFlipSound || document.getElementById('card-flip-sound');
-          if (snd) {
-            snd.currentTime = 0;
-            snd.play().catch(() => {});
-          }
+          if (snd) { snd.currentTime = 0; snd.play().catch(()=>{}); }
         } catch {}
       }
       return;
