@@ -1489,9 +1489,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // → Normierte Koordinaten berechnen & broadcasten
       if (el.classList.contains('card')) {
-        const { nx, ny } = toNormCard(newLeft, newTop);
-        shouldApply(`move:${ID_DER_KARTE}`, RT_PRI(), performance.now(), RT.uid);
-        sendRT({ t:'card_move', id:el.id, nx, ny, z: el.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
+        const { nx, ny } = toNormCard(pxStage, pyStage);
+        shouldApply(`move:${element.id}`, RT_PRI(), performance.now(), RT.uid);
+        sendRT({ t:'card_move', id: element.id, nx, ny, z: element.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
       } else if (el.classList.contains('notiz') || el.classList.contains('note')) {
         // Notiz: relative zur Bühne normalisieren
         const { nx, ny } = toNorm(newLeft, newTop);
@@ -3651,8 +3651,9 @@ document.addEventListener('DOMContentLoaded', function() {
         _rtRaf = requestAnimationFrame(() => {
           _rtRaf = null;
           const { nx, ny } = toNormCard(pxStage, pyStage);
-          shouldApply(`move:${ID_DER_KARTE}`, RT_PRI(), performance.now(), RT.uid);
-          sendRT({ t:'card_move', id:element.id, nx, ny, z: element.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
+          shouldApply(`move:${element.id}`, RT_PRI(), performance.now(), RT.uid);
+          sendRT({ t:'card_move', id: element.id, nx, ny, z: element.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
+
         });
       };
 
@@ -3694,8 +3695,9 @@ document.addEventListener('DOMContentLoaded', function() {
           const pxStage = (rect.left - boardRect.left) / s;
           const pyStage = (rect.top  - boardRect.top ) / s;
           const { nx, ny } = toNormCard(pxStage, pyStage);
-          shouldApply(`move:${ID_DER_KARTE}`, RT_PRI(), performance.now(), RT.uid);
-          sendRT({ t:'card_move', id:element.id, nx, ny, z:element.style.zIndex||'', prio:RT_PRI(), ts:Date.now() });
+          shouldApply(`move:${element.id}`, RT_PRI(), performance.now(), RT.uid);
+          sendRT({ t:'card_move', id: element.id, nx, ny, z: element.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
+
         }
 
         element.classList.add('being-dragged');
@@ -3795,8 +3797,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const pyStage = ((parentRect.top  - stageRect.top ) / s) + pyLocal;
 
         const { nx, ny } = toNormCard(pxStage, pyStage);
-        shouldApply(`move:${ID_DER_KARTE}`, RT_PRI(), performance.now(), RT.uid);
+        shouldApply(`move:${element.id}`, RT_PRI(), performance.now(), RT.uid);
         sendRT({ t:'card_move', id: element.id, nx, ny, z: element.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
+
 
         if (!element.closest('#card-stack')) normalizeCardZIndex(element);
         if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState();
@@ -3859,7 +3862,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const pyStage = ((parentRect.top  - stageRect.top ) / s) + pyLocal;
 
         const { nx, ny } = toNormCard(pxStage, pyStage);
-        shouldApply(`move:${ID_DER_KARTE}`, RT_PRI(), performance.now(), RT.uid);
+        shouldApply(`move:${element.id}`, RT_PRI(), performance.now(), RT.uid);
         sendRT({ t:'card_move', id: element.id, nx, ny, z: element.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
       }
       document.removeEventListener('mousemove', elementDrag);
