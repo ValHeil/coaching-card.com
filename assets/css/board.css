@@ -661,3 +661,11 @@ html, body {
 }
 
 .card.flipping { animation: flip-card 0.5s ease-in-out !important; }
+
+/* Front/Back-Rotation beim Flip IMMER erlauben */
+.card.flipping .card-front,
+.card.flipping .card-back,
+.card.flipped .card-front,
+.card.flipped .card-back {
+  transition: transform 0.5s !important;
+}
