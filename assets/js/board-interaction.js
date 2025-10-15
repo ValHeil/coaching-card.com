@@ -415,6 +415,18 @@ async function initRealtime(config) {
   RT.ws.onopen = () => {
     if (typeof fitBoardToViewport === 'function') fitBoardToViewport();
 
+    // --- NEU: Gast wartet, bis Owner da ist
+    try {
+      if (RT.role === 'participant') {
+        window.showWaitingForOwner && window.showWaitingForOwner('Warte auf den Ersteller …');
+        // einmalig sofort fragen
+        sendRT({ t: 'owner_status?' });
+        // alle 3s erneut fragen bis Owner da
+        clearInterval(window.__ownerPoll);
+        window.__ownerPoll = setInterval(() => { sendRT({ t: 'owner_status?' }); }, 3000);
+      }
+    } catch(e){ console.warn('[wait owner] onopen', e); }
+
     const boardEl = document.querySelector('.board-area');
     let last = 0;
 
@@ -486,6 +498,75 @@ async function initRealtime(config) {
     }
     if (m.t === 'leave') {
       Presence.remove(m.id);
+      return;
+    }
+
+    // --- NEU: Roster-Snapshot (kommt sofort nach hello) ---
+    if (m.t === 'roster') {
+      if (RT.role === 'participant') {
+        const hasOwner = Array.isArray(m.peers) && m.peers.some(p => p.role === 'owner');
+        if (hasOwner) {
+          clearInterval(window.__ownerPoll);
+          window.hideWaitingForOwner && window.hideWaitingForOwner();
+        } else {
+          window.showWaitingForOwner && window.showWaitingForOwner('Warte auf den Ersteller …');
+        }
+      }
+      return;
+    }
+
+    // --- NEU: Antwort auf owner_status? ---
+    if (m.t === 'owner_status') {
+      if (RT.role === 'participant') {
+        if (m.present) {
+          clearInterval(window.__ownerPoll);
+          window.hideWaitingForOwner && window.hideWaitingForOwner();
+        } else {
+          window.showWaitingForOwner && window.showWaitingForOwner('Warte auf den Ersteller …');
+        }
+      }
+      return;
+    }
+
+    // --- vorhandene presence/leave um Owner-Tracking ergänzen ---
+    if (m.t === 'presence') {
+      // Wer reinkommt, ist ggf. der Owner
+      if (m.role === 'owner') {
+        window.__currentOwnerId = m.id;
+        if (RT.role === 'participant') {
+          clearInterval(window.__ownerPoll);
+          window.hideWaitingForOwner && window.hideWaitingForOwner();
+        }
+      }
+      // bestehende Cursor-UI beibehalten:
+      Presence.ensureCursorEl(m.id, m.color, m.label);
+      return;
+    }
+
+    if (m.t === 'leave') {
+      // wenn der Owner geht → Gäste zurück in den Wartemodus
+      if (RT.role === 'participant' && window.__currentOwnerId && m.id === window.__currentOwnerId) {
+        window.showWaitingForOwner && window.showWaitingForOwner('Warte auf den Ersteller …');
+        // Polling wieder aufnehmen
+        clearInterval(window.__ownerPoll);
+        window.__ownerPoll = setInterval(() => { sendRT({ t:'owner_status?' }); }, 3000);
+      }
+      Presence.remove(m.id);
+      return;
+    }
+
+    // --- NEU: Der Owner beendet die Sitzung ---
+    if (m.t === 'end_session') {
+      if (RT.role !== 'owner') {
+        try {
+          window.showOwnerEndedByCreator && window.showOwnerEndedByCreator();
+          if (window.top && window.top !== window) {
+            window.top.postMessage({ type: 'END_SESSION', sessionId: RT.sid }, '*');
+          } else {
+            window.close();
+          }
+        } catch(e){ console.warn('[end_session guest]', e); }
+      }
       return;
     }
     
@@ -774,6 +855,20 @@ async function _doSave(reason = 'auto') {
     return true;
   } finally { _saveInFlight = false; }
 }
+
+// Wird vom Owner-Dialog (OK/Beenden) aufgerufen:
+window.onOwnerEndSessionConfirmed = function(){
+  try { sendRT({ t: 'end_session' }); } catch {}
+  try {
+    // Schließen delegiert an Wrapper (server.js), NICHT hier navigieren
+    if (window.top && window.top !== window) {
+      window.top.postMessage({ type:'END_SESSION', sessionId: RT.sid }, '*');
+    } else {
+      window.postMessage({ type:'END_SESSION', sessionId: RT.sid }, '*');
+      window.close();
+    }
+  } catch(e){ console.warn('[end_session owner]', e); }
+};
 
 // Sammelpunkt für alle Save-Auslöser
 function saveCurrentBoardState(reason = 'auto') {
@@ -3824,6 +3919,7 @@ document.addEventListener('DOMContentLoaded', function() {
           const state = captureBoardState();
           const blob = new Blob([JSON.stringify({ session_id: Number(sid), state })], { type: 'application/json' });
           navigator.sendBeacon('/api/state', blob);
+          window.onOwnerEndSessionConfirmed && window.onOwnerEndSessionConfirmed();
         }
       } catch {}
 
@@ -3839,7 +3935,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // KEINE eigene Navigation hier! Schließen übernimmt der Wrapper (server.js).
     });
-
 
   }
 

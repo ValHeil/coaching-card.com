@@ -177,6 +177,68 @@ function addParticipantNamePromptStyles() {
 // ---------------- zentrale Steuerung ----------------
 // WICHTIG: Diese Funktion wird von board-interaction.js beim Laden aufgerufen.
 // Teilnehmer-Join: zeigt einfach den Namens-Prompt und lässt das Board weiterladen
+// --- Wartedialog (Gast wartet auf Ersteller) -------------------------------
+(function(){
+  if (document.getElementById('owner-wait-style')) return;
+  const st = document.createElement('style');
+  st.id = 'owner-wait-style';
+  st.textContent = `
+    .owner-wait-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:3000}
+    .owner-wait-dialog{background:#fff;border-radius:12px;padding:18px 20px;max-width:360px;width:90%;box-shadow:0 10px 25px rgba(0,0,0,.2);text-align:center;font:14px/1.45 system-ui,Segoe UI,Arial}
+    .owner-wait-dialog h3{margin:0 0 6px;font-size:18px}
+    .owner-wait-spinner{width:20px;height:20px;border:3px solid #ddd;border-top-color:#ff8581;border-radius:50%;margin:10px auto;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .owner-ended-dialog p{margin:.5rem 0 1rem}
+    .owner-ended-dialog button{padding:8px 12px;border-radius:8px;border:0;background:#1f2937;color:#fff;cursor:pointer}
+  `;
+  document.head.appendChild(st);
+})();
+
+window.showWaitingForOwner = function(msg){
+  if (document.getElementById('owner-wait')) return;
+  const o = document.createElement('div');
+  o.id = 'owner-wait';
+  o.className = 'owner-wait-overlay';
+  o.innerHTML = `
+    <div class="owner-wait-dialog">
+      <h3>Bitte kurz warten …</h3>
+      <div class="owner-wait-spinner" aria-hidden="true"></div>
+      <div>${msg || 'Der Ersteller der Sitzung ist noch nicht da.'}</div>
+    </div>`;
+  document.body.appendChild(o);
+};
+
+window.hideWaitingForOwner = function(){
+  const o = document.getElementById('owner-wait');
+  if (o) try { o.remove(); } catch {}
+};
+
+// --- Hinweis wenn der Owner die Sitzung beendet ---------------------------
+window.showOwnerEndedByCreator = function(){
+  // Falls das Overlay schon offen ist: ersetzen
+  const id = 'owner-ended';
+  if (document.getElementById(id)) return;
+  const o = document.createElement('div');
+  o.id = id;
+  o.className = 'owner-wait-overlay';
+  o.innerHTML = `
+    <div class="owner-wait-dialog owner-ended-dialog">
+      <h3>Sitzung beendet</h3>
+      <p>Der Ersteller hat die Sitzung beendet. Sie können dieses Fenster jetzt schließen.</p>
+      <button id="owner-ended-ok">OK</button>
+    </div>`;
+  document.body.appendChild(o);
+  document.getElementById('owner-ended-ok')?.addEventListener('click', ()=>{
+    try {
+      if (window.top && window.top !== window) {
+        window.top.postMessage({ type:'END_SESSION', sessionId: (window.CC_BOOT?.session?.id) || null }, '*');
+      }
+      window.close();
+    } catch {}
+  });
+};
+
+
 function handleParticipantJoin(session) {
   try {
     if (typeof addParticipantNamePromptStyles === 'function') addParticipantNamePromptStyles();
