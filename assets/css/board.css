@@ -637,3 +637,5 @@ html, body {
 .card.shuffling{
   transition: transform 260ms ease, opacity 180ms linear !important;
 }
+
+.rt-batch-apply .card:hover { transform: none !important; }
