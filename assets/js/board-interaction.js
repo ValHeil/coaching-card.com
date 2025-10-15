@@ -3757,13 +3757,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
       const queueRTCardMove = () => {
         const now = performance.now();
-        // ~33ms → ca. 30 Updates/Sek.
-        if (now - _lastSend < 33) return;
-       
+        if (now - _lastSend < 33) return;          // ~30/s
 
         const px = parseFloat(element.style.left) || 0;
         const py = parseFloat(element.style.top)  || 0;
-        // Minimale Bewegung ignorieren (1px Gate)
+
+        // 1px Gate, verhindert Spam bei Mikrobewegungen
         if (Math.abs(px - _lastPx) < 1 && Math.abs(py - _lastPy) < 1) return;
 
         _lastSend = now; _lastPx = px; _lastPy = py;
@@ -3771,17 +3770,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (_rtRaf) cancelAnimationFrame(_rtRaf);
         _rtRaf = requestAnimationFrame(() => {
           _rtRaf = null;
-
           const { nx, ny } = toNormCard(px, py);
           shouldApply(element.id, RT_PRI());
-          sendRT({
-            t: 'card_move',
-            id: element.id,
-            nx, ny,
-            z: element.style.zIndex || '',
-            prio: RT_PRI(),
-            ts: Date.now()
-          });
+          sendRT({ t:'card_move', id: element.id, nx, ny, z: element.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
         });
       };
 
