@@ -625,11 +625,7 @@ html, body {
   transition: none !important;
   animation: none !important;
 }
-.card .card-front,
-.card .card-back{
-  transition: none !important;
-  animation: none !important;
-}
+
 
 /* Nur gezielt animieren (Flip/Return/Shuffle) */
 .card.returning,
@@ -663,3 +659,5 @@ html, body {
 .card.returning {
   transition: left 260ms ease, top 260ms ease; /* statt nur transform */
 }
+
+.card.flipping { animation: flip-card 0.5s ease-in-out !important; }
