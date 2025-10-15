@@ -700,7 +700,12 @@ async function initRealtime(config) {
             !!document.querySelector('.notiz.being-dragged') ||
             (window.__isEditingNote === true);
 
-          restoreBoardState(state, { skipNotes: skipNotesNow });
+          const skipCardsNow =
+            !!document.querySelector('.card.being-dragged') ||
+            Array.from(document.querySelectorAll('.card')).some(el => el._remoteDragActive === true);
+
+          restoreBoardState(state, { skipNotes: skipNotesNow, skipCards: skipCardsNow });
+
           document.dispatchEvent(new Event('boardStateUpdated')); // bleibt bestehen
 
           window.__HAS_BOOTSTRAPPED__ = true;
@@ -3753,7 +3758,8 @@ document.addEventListener('DOMContentLoaded', function() {
       const queueRTCardMove = () => {
         const now = performance.now();
         // ~33ms → ca. 30 Updates/Sek.
-        if (now - _lastSend < 16) return;
+        if (now - _lastSend < 33) return;
+        if (Math.abs(px - _lastPx) < 2 && Math.abs(py - _lastPy) < 2) return;
 
         const px = parseFloat(element.style.left) || 0;
         const py = parseFloat(element.style.top)  || 0;
@@ -4218,8 +4224,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Notizen NUR aktualisieren, wenn wir nicht lokal tippen (oder nicht angewiesen, sie zu überspringen)
     try { restoreNotes(boardState.notes, opts); } catch(e){ console.warn('restoreNotes:', e); }
 
-    // Karten immer aktualisieren
-    try { restoreCards(boardState.cards); } catch(e){ console.warn('restoreCards:', e); }
+    // NEU: nur wenn nicht explizit übersprungen
+    if (!(opts && opts.skipCards)) {
+      try { restoreCards(boardState.cards); } catch(e){}
+    }
 
     return true;
   }
@@ -4342,7 +4350,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
       withoutAnimations(el, () => {
         // Animationsklassen sicher entfernen
-        el.classList.remove('returning','flipping','shuffling','remote-dragging','being-dragged');
+        el.classList.remove('returning','flipping','shuffling','remote-dragging');
+
+        // Während lokaler oder eingehender Remote-Drags keinerlei Positions-/Stack-Änderungen aus Snapshots
+        const isActive = el.classList.contains('being-dragged') || el._remoteDragActive === true;
+        if (isActive) {
+          // Flip/Z-Index dürfen aktualisiert werden, aber keine Positions-/Parent-Änderungen
+          if (typeof cardData.isFlipped === 'boolean') {
+            el.classList.toggle('flipped', !!cardData.isFlipped);
+          }
+          if (cardData.zIndex !== undefined && cardData.zIndex !== '') {
+            el.style.zIndex = String(cardData.zIndex);
+          }
+          return; // restlichen Restore für diese Karte überspringen
+        }
 
         // Flip-Zustand hart setzen (keine Flip-Animation)
         if (typeof cardData.isFlipped === 'boolean') {
