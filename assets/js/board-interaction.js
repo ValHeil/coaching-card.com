@@ -929,7 +929,8 @@ window.onOwnerEndSessionConfirmed = function(){
 // Sammelpunkt für alle Save-Auslöser
 function saveCurrentBoardState(reason = 'auto') {
   clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(() => { _doSave(reason); }, 400);
+  const defer = Math.max(0, (window.__pauseSnapshotUntil || 0) - Date.now());
+  _saveTimer = setTimeout(() => { _doSave(reason); }, 400 + defer);
   return true;
 }
 
@@ -3658,6 +3659,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
+        // Neue Drag-Session startet: alten Autosave abbrechen und Snapshots kurz pausieren
+        try { clearTimeout(_saveTimer); } catch {}
+        window.__pauseSnapshotUntil = Date.now() + 800; // ~0.8s Puffer gegen Race
 
         const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
         initialParent = element.parentNode;
