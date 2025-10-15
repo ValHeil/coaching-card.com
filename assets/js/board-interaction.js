@@ -3759,7 +3759,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const now = performance.now();
         // ~33ms → ca. 30 Updates/Sek.
         if (now - _lastSend < 33) return;
-        if (Math.abs(px - _lastPx) < 2 && Math.abs(py - _lastPy) < 2) return;
+       
 
         const px = parseFloat(element.style.left) || 0;
         const py = parseFloat(element.style.top)  || 0;
