@@ -587,3 +587,40 @@ html, body {
   backface-visibility: hidden;
   -webkit-font-smoothing: antialiased;
 }
+
+/* … zwei/drei Zeilen darüber … */
+.card, .notiz {
+  position: absolute;
+}
+
+/* >>> OVERRIDES: KEINE Standard-Transitions für Karten-Bewegung <<< */
+.card {
+  transition: none !important;
+  will-change: left, top, transform;
+}
+
+/* Hover-Lift nur wenn NICHT gezogen/remote-bewegt */
+.card:not(.being-dragged):not(.remote-dragging):hover {
+  transform: translateY(-5px);
+}
+
+/* Remote-Bewegung: Interaktion/hover kurz aus, um Flackern zu vermeiden */
+.card.remote-dragging {
+  transition: none !important;
+  animation: none !important;
+  transform: none !important;
+  pointer-events: none !important;
+}
+
+/* Bewegte Spezialfälle DÜRFEN animieren */
+.card.returning,
+.card.flipping,
+.card.shuffling {
+  transition: transform 300ms ease-in-out !important;
+}
+
+/* … zwei/drei Zeilen darunter … */
+.rt-batch-apply .card,
+.rt-batch-apply .notiz {
+  transition: none !important;
+}
