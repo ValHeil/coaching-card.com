@@ -1039,18 +1039,24 @@ async function _doSave(reason = 'auto') {
 }
 
 // Wird vom Owner-Dialog (OK/Beenden) aufgerufen:
-window.onOwnerEndSessionConfirmed = function(){
-  RT._reconnect.stop = true;   // <— Reconnect unterbinden
+window.onOwnerEndSessionConfirmed = async function () {
+  RT._reconnect.stop = true; // Reconnects verhindern
+
+  // 1) letzten Stand hart & sofort speichern
+  try { await flushSaveNow(); } catch (e) { console.warn('[end_session save]', e); }
+
+  // 2) allen Gästen "end_session" senden
   try { sendRT({ t: 'end_session' }); } catch {}
+
+  // 3) den Wrapper (server.js) schließen lassen
   try {
-    // Schließen delegiert an Wrapper (server.js), NICHT hier navigieren
     if (window.top && window.top !== window) {
       window.top.postMessage({ type:'END_SESSION', sessionId: RT.sid }, '*');
     } else {
       window.postMessage({ type:'END_SESSION', sessionId: RT.sid }, '*');
       window.close();
     }
-  } catch(e){ console.warn('[end_session owner]', e); }
+  } catch (e) { console.warn('[end_session owner]', e); }
 };
 
 // Sammelpunkt für alle Save-Auslöser
@@ -1199,8 +1205,8 @@ async function loadSavedBoardState() {
     const state = base64ToJSONUTF8(state_b64); // UTF-8 sicher
     const ok = restoreBoardState(state);
     if (ok) {
-      window.__SUPPRESS_AUTOSAVE__ = false;            // NEU
-      window.__pauseSnapshotUntil  = Date.now() + 500; // NEU
+      window.__SUPPRESS_AUTOSAVE__ = false;            
+      window.__pauseSnapshotUntil  = Date.now() + 1500; 
     }
     return ok;
   } catch (e) {
@@ -1993,8 +1999,12 @@ document.addEventListener('DOMContentLoaded', function() {
       }
 
       // kurz warten, dann mischen + gespeicherten Zustand versuchen
-      setTimeout(() => { if (typeof shuffleCards === 'function') shuffleCards(); }, 300);
-      try { if (typeof loadSavedBoardState === 'function') loadSavedBoardState(); } catch(e) { console.warn('Zustand konnte nicht geladen werden:', e); }
+      (async () => {
+        const restored = await loadSavedBoardState(); // true/false vom Restore nutzen
+        if (!restored) {
+          setTimeout(() => { try { shuffleCards(); } catch(e) { console.warn(e); } }, 300);
+        }
+      })();
     });
   }
 
