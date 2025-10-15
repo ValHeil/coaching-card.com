@@ -231,13 +231,22 @@
   transition: none !important;
 }
 
-/* Remote-Apply: keine Transitions/Animationen zwischen WS-Paketen */
-.card.remote-dragging,
-.card.remote-dragging * {
+/* Remote-Apply: Animationen aus — Flip-Geometrie bleibt erhalten */
+.card.remote-dragging {
   transition: none !important;
   animation: none !important;
-  transform: none !important; /* falls irgendein Effekt aktiv war */
+  transform: none !important; /* nur die Karte selbst neutralisieren (Hover etc.) */
 }
+
+/* Wichtig: Front/Back dürfen ihre rotateY-Transforms behalten */
+.card.remote-dragging .card-front,
+.card.remote-dragging .card-back {
+  transition: none !important; /* kein Flipp-Übergang während Drag */
+  /* KEIN transform hier setzen! */
+}
+
+/* Sicherheit gegen Hover */
+.card.remote-dragging:hover { transform: none !important; }
 
 /* Aktiviere Transitions nur für Flip und Shuffle */
 .card.flipping, .card.shuffling {
