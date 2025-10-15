@@ -1186,6 +1186,10 @@ document.addEventListener('DOMContentLoaded', function() {
         content.style.wordBreak = 'break-word';
         content.style.overflowWrap = 'anywhere';
         noteEl._autoGrowInProgress = false;
+        // Beim Ziehen KEIN Autosave (vermeidet Snapshot-Jitter)
+        if (!noteEl.classList.contains('being-dragged')) {
+          debouncedSave();
+        }
 
         debouncedSave();
       }
@@ -3879,11 +3883,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const notes = [];
     document.querySelectorAll('.notiz').forEach(notiz => {
       const elRect   = notiz.getBoundingClientRect();
-      const stageRect= getStageRect();
-      const left     = Math.round(elRect.left - stageRect.left);
-      const top      = Math.round(elRect.top  - stageRect.top);
-      const nx       = world.width  ? left / world.width  : 0;
-      const ny       = world.height ? top  / world.height : 0;
+      const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
+      // erst ent-skaliert relativ zur Bühne, dann normalisiert:
+      const leftStage = (elRect.left - stageRect.left) / s;
+      const topStage  = (elRect.top  - stageRect.top ) / s;
+      const nx = world.width  ? (leftStage / world.width)  : 0;
+      const ny = world.height ? (topStage  / world.height) : 0;
+      // für left/top Strings im State lieber die ent-skalierten Bühnen-Pixel schreiben
+      const left = Math.round(leftStage);
+      const top  = Math.round(topStage);
 
       notes.push({
         id: notiz.id,
@@ -3985,18 +3993,15 @@ document.addEventListener('DOMContentLoaded', function() {
       let leftPx = noteData.left || '';
       let topPx  = noteData.top  || '';
       if (typeof noteData.nx === 'number' && typeof noteData.ny === 'number') {
-        const p = fromNorm(noteData.nx, noteData.ny); // Bühnen-Pixel (unskaliert)
-        const parent = el.parentElement || document.querySelector('.board-area') || document.body;
+        const p = fromNorm(noteData.nx, noteData.ny);     // Stage-Pixel (unskaliert)
         const parentRect = parent.getBoundingClientRect();
-        const stageRect  = getStageRect(); // skaliert
+        const stageRect  = getStageRect();                // skaliert
         const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
-
         const left = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
         const top  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
-        leftPx = left + 'px';
-        topPx  = top  + 'px';
       }
-      el.style.left = leftPx; el.style.top = topPx;
+      el.style.left = left + 'px';
+      el.style.top  = top  + 'px';
 
       if (noteData.zIndex !== undefined) el.style.zIndex = noteData.zIndex;
       if (noteData.backgroundColor) el.style.backgroundColor = noteData.backgroundColor;
