@@ -224,6 +224,7 @@ window.hideWaitingForOwner = function(){
 
 // --- Hinweis wenn der Owner die Sitzung beendet ---------------------------
 window.showOwnerEndedByCreator = function(){
+  document.documentElement.classList.add('owner-wait-active'); // Neu
   // Falls das Overlay schon offen ist: ersetzen
   const id = 'owner-ended';
   if (document.getElementById(id)) return;
@@ -233,7 +234,7 @@ window.showOwnerEndedByCreator = function(){
   o.innerHTML = `
     <div class="owner-wait-dialog owner-ended-dialog">
       <h3>Sitzung beendet</h3>
-      <p>Der Ersteller hat die Sitzung beendet. Sie können dieses Fenster jetzt schließen.</p>
+      <p>Der Die Sitzung wurde beendet. Sie können dieses Fenster jetzt schließen.</p>
       <button id="owner-ended-ok">OK</button>
     </div>`;
   document.body.appendChild(o);

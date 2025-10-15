@@ -720,13 +720,12 @@ async function initRealtime(config) {
     if (m.t === 'end_session') {
       if (RT.role !== 'owner') {
         try {
+          // Overlay anzeigen und Interaktionen sperren – Tab bleibt offen
+          document.documentElement.classList.add('owner-wait-active');
           window.showOwnerEndedByCreator && window.showOwnerEndedByCreator();
-          if (window.top && window.top !== window) {
-            window.top.postMessage({ type: 'END_SESSION', sessionId: RT.sid }, '*');
-          } else {
-            window.close();
-          }
-        } catch(e){ console.warn('[end_session guest]', e); }
+        } catch (e) {
+          console.warn('[end_session guest]', e);
+        }
       }
       return;
     }
