@@ -277,45 +277,38 @@ function placeCardInStackInstant(el, data) {
 }
 
 // --- Live-Broadcast für die Focus Note -----------------------------
-function attachFocusNoteLiveSync(){
+function attachFocusNoteLiveSync() {
   const editable = document.getElementById('focus-note-editable');
   const display  = document.getElementById('focus-note-display');
   if (!editable) return;
 
-  // Remote-Setter ohne Echo
-  let _silentSet = false;
+  // Remote-Setter: Editor + Anzeige updaten, aber kein Echo erzeugen
+  let _mute = false;
   window.__ccSetFocusNote = (txt) => {
-    _silentSet = true;
-    if ('value' in editable) editable.value = txt;
-    else editable.textContent = txt;
-
-    if (display) {
-      const t = (txt || '').trim();
-      if (!t) {
-        display.textContent = 'Schreiben sie hier die Focus Note der Sitzung rein';
-        display.classList.remove('has-content');
-      } else {
-        display.textContent = txt;
-        display.classList.add('has-content');
-      }
-    }
-    queueMicrotask(() => { _silentSet = false; });
+    _mute = true;
+    const val = (typeof txt === 'string') ? txt : '';
+    if ('value' in editable) editable.value = val;
+    else editable.innerText = val;
+    if (display) display.innerText = val;
+    queueMicrotask(() => { _mute = false; });
   };
 
-  // Debounced RT-Update wie bei Notizen (~120ms)
-  let _deb = null;
-  const fire = () => {
-    if (_silentSet) return;
-    const txt = ('value' in editable) ? editable.value : editable.innerText;
-    sendRT({ t: 'focus_update', content: txt, prio: RT_PRI(), ts: Date.now() });
+  // Entprelltes Live-Senden wie bei Notizen
+  let deb = 0;
+  const emit = () => {
+    if (_mute) return;
+    clearTimeout(deb);
+    deb = setTimeout(() => {
+      const txt = ('value' in editable) ? editable.value : editable.innerText;
+      sendRT({ t: 'focus_update', content: txt, prio: RT_PRI(), ts: Date.now() });
+      // Optional: lokale Anzeige parallel live mitziehen
+      if (display) display.innerText = txt;
+    }, 120);
   };
 
-  ['input','keyup','change'].forEach(evt => {
-    editable.addEventListener(evt, () => {
-      clearTimeout(_deb);
-      _deb = setTimeout(fire, 120);
-    });
-  });
+  ['beforeinput','input','keyup','paste','cut'].forEach(evt =>
+    editable.addEventListener(evt, emit)
+  );
 }
 
 // -------- Presence / Cursor UI (baut auf RT aus Schritt 2 auf) --------
@@ -710,22 +703,9 @@ async function initRealtime(config) {
       const focusEl = document.getElementById('focus-note-editable');
       if (!focusEl) return;
 
-      // Owner-Vorrang: Wenn ich gerade tippe UND ich kein Owner bin,
-      // aber die Nachricht vom Owner kommt -> Owner gewinnt, sonst lokale Eingabe bevorzugen.
-      const iAmOwner = isOwner && typeof isOwner === 'function' ? isOwner() : false;
-      const isEditingLocally = (document.activeElement === focusEl);
-      const msgFromOwner = (m.role === 'owner');
-
-      if (isEditingLocally && !iAmOwner && !msgFromOwner) {
-        // Ich (Gast) tippe grade selbst; ignorier Teilnehmer-Updates
-        return;
-      }
-      // Wenn ich (Gast) tippe, aber Owner schickt Update -> anwenden
-      // Wenn ich Owner bin -> einfach anwenden
-
       const txt = (typeof m.content === 'string') ? m.content : '';
       if (typeof window.__ccSetFocusNote === 'function') {
-        window.__ccSetFocusNote(txt);  // setzt ohne Echo
+        window.__ccSetFocusNote(txt); // setzt Editor + Anzeige ohne Echo
       } else {
         if ('value' in focusEl) focusEl.value = txt;
         else focusEl.innerText = txt;
