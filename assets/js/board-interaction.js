@@ -549,6 +549,13 @@ async function initRealtime(config) {
     const el = document.getElementById(m.id);
     if (!el) return;
 
+    el.classList.add('remote-dragging');
+    clearTimeout(el._rdTO);
+    el._rdTO = setTimeout(() => {
+      el.classList.remove('remote-dragging');
+      el._rdTO = null;
+    }, 90);
+
     // Falls Karte noch im Stapel hängt → in Bühne verschieben (wie bei dir)
     const stage = document.getElementById('cards-container') || document.querySelector('.board-area');
     if (el.closest('#card-stack') && stage) {
@@ -562,8 +569,9 @@ async function initRealtime(config) {
       ? fromNormCard(m.nx, m.ny)
       : { x: m.x, y: m.y };
 
-    el.style.left = Math.round(x) + 'px';
-    el.style.top  = Math.round(y) + 'px';
+    const p = (typeof m.nx === 'number') ? fromNormCard(m.nx, m.ny) : { x: m.x, y: m.y };
+    el.style.left = Math.round(p.x) + 'px';
+    el.style.top  = Math.round(p.y) + 'px';
     const lx = Math.round(x) + 'px', ly = Math.round(y) + 'px';
     if (el.style.left !== lx) el.style.left = lx;
     if (el.style.top  !== ly) el.style.top  = ly;
@@ -571,8 +579,6 @@ async function initRealtime(config) {
 
     // Z-Reihenfolge beibehalten (dein Helper)
     if (!el.closest('#card-stack') && window.normalizeCardZIndex) window.normalizeCardZIndex(el);
-
-    // Dein bisheriges Save-Trigger-Event
   
   }
 
@@ -3696,6 +3702,8 @@ document.addEventListener('DOMContentLoaded', function() {
  
   // Element draggable machen - angepasst für Karten
   function makeDraggable(element) {
+    if (element.__dragHandlersAttached) return;
+    element.__dragHandlersAttached = true;
     console.log("Mache Element draggable:", element.id || "Unbekanntes Element");
     
     // Für Notizen die bestehende Logik verwenden
@@ -3706,33 +3714,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let _rtRaf = null;
     let _rtPending = false;
-
-    // ersetzt die alte Variante mit elRect/stageRect
-    function queueRTCardMove(){
-      _rtPending = true;
-      if (_rtRaf) return;
-      _rtRaf = requestAnimationFrame(() => {
-        _rtRaf = null;
-        if (!_rtPending) return;
-        _rtPending = false;
-
-        // UNSKALIERTE px direkt aus style.left/top
-        const px = parseFloat(element.style.left) || 0;
-        const py = parseFloat(element.style.top)  || 0;
-        const { nx, ny } = toNormCard(px, py);
-
-        shouldApply(element.id, RT_PRI());
-        sendRT({
-          t: 'card_move',
-          id: element.id,
-          nx, ny,
-          z: element.style.zIndex || '',
-          prio: RT_PRI(),
-          ts: Date.now()
-        });
-      });
-    }
-
 
     
     // Für Karten, benutzerdefiniertes Drag-and-Drop implementieren
