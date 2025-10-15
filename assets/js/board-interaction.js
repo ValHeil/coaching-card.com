@@ -1783,6 +1783,41 @@ document.addEventListener('DOMContentLoaded', function() {
         this.blur(); // Fokus entfernen, löst das blur-Event aus
       }
     });
+
+    // --- Live-Sync direkt am Focus-Editor (Owner & Gäste) ---
+    (function () {
+      const focusNoteEditable = document.getElementById('focus-note-editable');
+      const focusNoteDisplay  = document.getElementById('focus-note-display');
+      if (!focusNoteEditable) return;
+
+      let t = null;
+      const emit = () => {
+        clearTimeout(t);
+        t = setTimeout(() => {
+          const txt = focusNoteEditable.textContent || '';
+          // an alle senden (Owner & Gäste)
+          if (typeof sendRT === 'function') {
+            sendRT({ t: 'focus_update', content: txt, prio: RT_PRI && RT_PRI() || 1, ts: Date.now() });
+          }
+          // lokale Anzeige live mitziehen (auch wenn das Edit-Feld sichtbar ist)
+          if (focusNoteDisplay) {
+            const trimmed = txt.trim();
+            if (trimmed) {
+              focusNoteDisplay.textContent = txt;
+              focusNoteDisplay.classList.add('has-content');
+            } else {
+              focusNoteDisplay.textContent = 'Schreiben sie hier die Focus Note der Sitzung rein';
+              focusNoteDisplay.classList.remove('has-content');
+            }
+          }
+        }, 120);
+      };
+
+      // robust: deckt alle gängigen Eingabewege ab (Tastatur, Paste, IME)
+      ['input','beforeinput','keyup','paste','cut','compositionend'].forEach(evt => {
+        focusNoteEditable.addEventListener(evt, emit);
+      });
+    })();
   };
 
   function imageExists(src) {
