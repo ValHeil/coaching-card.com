@@ -201,6 +201,9 @@ const RTBatch = (() => {
       const top  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
       el.style.left = left + 'px';
       el.style.top  = top  + 'px';
+      const nx = left + 'px', ny = top + 'px';
+      if (el.style.left !== nx) el.style.left = nx;
+      if (el.style.top  !== ny) el.style.top  = ny;
     });
     noteMoves.clear();
 
@@ -214,7 +217,7 @@ const RTBatch = (() => {
 
     window.__RT_APPLYING__ = false;
     document.documentElement.classList.remove('rt-batch-apply');
-
+    
     // Einmaliges Event für „Status hat sich geändert“
     document.dispatchEvent(new Event('boardStateUpdated'));
   }
@@ -553,13 +556,16 @@ async function initRealtime(config) {
 
     el.style.left = Math.round(x) + 'px';
     el.style.top  = Math.round(y) + 'px';
+    const lx = Math.round(x) + 'px', ly = Math.round(y) + 'px';
+    if (el.style.left !== lx) el.style.left = lx;
+    if (el.style.top  !== ly) el.style.top  = ly;
     if (m.z !== undefined && m.z !== '') el.style.zIndex = String(m.z);
 
     // Z-Reihenfolge beibehalten (dein Helper)
     if (!el.closest('#card-stack') && window.normalizeCardZIndex) window.normalizeCardZIndex(el);
 
     // Dein bisheriges Save-Trigger-Event
-    document.dispatchEvent(new Event('boardStateUpdated'));
+  
   }
 
   function applyIncomingNoteMove(m) {
@@ -580,6 +586,9 @@ async function initRealtime(config) {
 
     el.style.left = left + 'px';
     el.style.top  = top  + 'px';
+    const nx = left + 'px', ny = top + 'px';
+    if (el.style.left !== nx) el.style.left = nx;
+    if (el.style.top  !== ny) el.style.top  = ny;
   }
 
   function applyIncomingCursor(m) {
@@ -618,6 +627,9 @@ async function initRealtime(config) {
 
       document.documentElement.classList.remove('rt-batch-apply');
       window.__RT_APPLYING__ = false;
+      // Hinweis: boardStateUpdated wird in deinen Applys (Karte) ohnehin gefeuert.
+      // Ein Ereignis für alle gebündelten Änderungen
+      document.dispatchEvent(new Event('boardStateUpdated'));
       // Hinweis: boardStateUpdated wird in deinen Applys (Karte) ohnehin gefeuert.
     }
 
@@ -2170,6 +2182,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Bei Änderung des Board-Status (neue Karten) Tracking erneuern
     document.addEventListener('boardStateUpdated', () => {
       // Wenn gerade ein contenteditable aktiv ist, warte einfach ab
+      if (document.activeElement && document.activeElement.isContentEditable) return;
+      // Nicht während rAF-Apply neu binden – spart massiv Arbeit
+      if (window.__RT_APPLYING__) return;
       if (document.activeElement && document.activeElement.isContentEditable) return;
       setupCardHoverTracking();
     });
