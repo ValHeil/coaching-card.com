@@ -639,3 +639,27 @@ html, body {
 }
 
 .rt-batch-apply .card:hover { transform: none !important; }
+
+
+/* 1) Killswitch nur außerhalb spezieller Animationszustände */
+.card:not(.flipping):not(.shuffling):not(.returning),
+.rt-batch-apply .card,
+.card.remote-dragging {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* 2) Flip braucht die Rotationstransition auf Front/Back wieder aktiv */
+.card-front, .card-back {
+  transition: transform 0.5s;
+}
+
+/* 3) Shuffle-Keyframes explizit erlauben (überstimmt Killswitch) */
+.card.shuffling {
+  animation: shuffle-card 0.5s ease-in-out !important;
+}
+
+/* 4) Back-Animation: entweder links/top animieren ... */
+.card.returning {
+  transition: left 260ms ease, top 260ms ease; /* statt nur transform */
+}
