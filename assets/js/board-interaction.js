@@ -583,17 +583,21 @@ async function initRealtime(config) {
       : { x: m.x, y: m.y };
 
     const p = (typeof m.nx === 'number') ? fromNormCard(m.nx, m.ny) : { x: m.x, y: m.y };
-    el.style.left = Math.round(p.x) + 'px';
-    el.style.top  = Math.round(p.y) + 'px';
-    const lx = Math.round(x) + 'px', ly = Math.round(y) + 'px';
+    const lx = Math.round(p.x) + 'px';
+    const ly = Math.round(p.y) + 'px';
     if (el.style.left !== lx) el.style.left = lx;
     if (el.style.top  !== ly) el.style.top  = ly;
     if (m.z !== undefined && m.z !== '') el.style.zIndex = String(m.z);
 
-    // Z-Reihenfolge beibehalten (dein Helper)
-    if (!el.closest('#card-stack') && window.normalizeCardZIndex) window.normalizeCardZIndex(el);
-  
-  }
+    // Z-Index nur EINMAL je Remote-Drag, nicht pro Frame
+    if (!el._remoteZApplied && !el.closest('#card-stack') && window.normalizeCardZIndex) {
+      window.normalizeCardZIndex(el);
+      el._remoteZApplied = true;
+    }
+    clearTimeout(el._remoteZTO);
+    el._remoteZTO = setTimeout(() => { el._remoteZApplied = false; }, 160);
+
+  }  // applyIncomingCardMove
 
   function applyIncomingNoteMove(m) {
     // deine Logs + Echo-Drop
@@ -2176,29 +2180,20 @@ document.addEventListener('DOMContentLoaded', function() {
       if (window._hoverMoveHandler) {
         document.removeEventListener('mousemove', window._hoverMoveHandler);
       }
-      window._hoverMoveHandler = function(e) {
-        const el = document.elementFromPoint(e.clientX, e.clientY);
-        const stackEl = el ? el.closest('#card-stack') : null;
-        const cardEl = el ? el.closest('.card') : null;
-
-        if (stackEl) {
-          // Cursor über dem Kartenstapel: M erlaubt, F/B deaktiviert
-          window.isHoveringStack = true;
-          window.isHoveringCard = false;
-          window.hoveredCard = null;
-        } else if (cardEl) {
-          // Nur Karten außerhalb des Stapels zählen für F/B
-          const insideStack = !!cardEl.closest('#card-stack');
-          window.isHoveringStack = false;
-          window.isHoveringCard = !insideStack;
-          window.hoveredCard = insideStack ? null : cardEl;
-        } else {
-          window.isHoveringStack = false;
-          window.isHoveringCard = false;
-          window.hoveredCard = null;
-        }
+      let _hoverRAF = 0, _lastEvt = null;
+      window._hoverMoveHandler = function(e){
+        _lastEvt = e;
+        if (_hoverRAF) return;
+        _hoverRAF = requestAnimationFrame(() => {
+          _hoverRAF = 0;
+          const ev = _lastEvt;
+          const el = document.elementFromPoint(ev.clientX, ev.clientY);
+          const stackEl = el ? el.closest('#card-stack') : null;
+          const cardEl  = el ? el.closest('.card')       : null;
+          // … deine bestehende Logik …
+        });
       };
-      document.addEventListener('mousemove', window._hoverMoveHandler);
+      document.addEventListener('mousemove', window._hoverMoveHandler, { passive: true });
 
       console.log("[DEBUG] Hover-Tracking Setup abgeschlossen");
     }
@@ -2207,14 +2202,26 @@ document.addEventListener('DOMContentLoaded', function() {
     setupCardHoverTracking();
     
     // Bei Änderung des Board-Status (neue Karten) Tracking erneuern
-    document.addEventListener('boardStateUpdated', () => {
-      // Wenn gerade ein contenteditable aktiv ist, warte einfach ab
-      if (document.activeElement && document.activeElement.isContentEditable) return;
-      // Nicht während rAF-Apply neu binden – spart massiv Arbeit
-      if (window.__RT_APPLYING__) return;
-      if (document.activeElement && document.activeElement.isContentEditable) return;
-      setupCardHoverTracking();
-    });
+    (function(){
+      let lastCount = 0;
+      let raf = 0;
+
+      function maybeRebind(){
+        raf = 0;
+        if (window.__RT_APPLYING__) return;
+        if (document.activeElement && document.activeElement.isContentEditable) return;
+        const count = document.querySelectorAll('.card').length;
+        if (count !== lastCount) {
+          lastCount = count;
+          setupCardHoverTracking();
+        }
+      }
+
+      document.addEventListener('boardStateUpdated', () => {
+        if (raf) cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(maybeRebind);
+      });
+    })();
 
 
     
