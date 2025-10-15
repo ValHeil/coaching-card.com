@@ -171,6 +171,14 @@ const RTBatch = (() => {
       const el = document.getElementById(id);
       if (!el) return;
 
+      // NEU: Während des rAF-Applies Transitions/Anim. der Karte hart aus
+      el.classList.add('remote-dragging');
+      clearTimeout(el._rdTO);
+      el._rdTO = setTimeout(() => {
+        el.classList.remove('remote-dragging');
+        el._rdTO = null;
+      }, 90);
+
       // ggf. vom Stapel lösen
       const stage = document.getElementById('cards-container') || document.querySelector('.board-area');
       if (el.closest('#card-stack') && stage) {
@@ -2189,12 +2197,6 @@ document.addEventListener('DOMContentLoaded', function() {
       setupCardHoverTracking();
     });
 
-    // Jede Board-Änderung (lokal/remote) -> speichern (Owner-gated + debounced)
-    document.addEventListener('boardStateUpdated', () => {
-      if (!window.__RT_APPLYING__) {
-        saveCurrentBoardState('user'); // unverändert – aber nur bei lokalen Änderungen
-      }
-    });
 
     
     // Debug-Ausgabe hinzufügen, um den Status zu überwachen
@@ -3744,19 +3746,35 @@ document.addEventListener('DOMContentLoaded', function() {
       let isHoveringOverStack = false;
 
       let _rtRaf = null, _rtPending = false;
+      // NEU: simple Throttle + Delta-Gate
+      let _lastSend = 0, _lastPx = 0, _lastPy = 0;
+
       const queueRTCardMove = () => {
-        _rtPending = true;
-        if (_rtRaf) return;
+        const now = performance.now();
+        // ~33ms → ca. 30 Updates/Sek.
+        if (now - _lastSend < 33) return;
+
+        const px = parseFloat(element.style.left) || 0;
+        const py = parseFloat(element.style.top)  || 0;
+        // Minimale Bewegung ignorieren (1px Gate)
+        if (Math.abs(px - _lastPx) < 1 && Math.abs(py - _lastPy) < 1) return;
+
+        _lastSend = now; _lastPx = px; _lastPy = py;
+
+        if (_rtRaf) cancelAnimationFrame(_rtRaf);
         _rtRaf = requestAnimationFrame(() => {
           _rtRaf = null;
-          if (!_rtPending) return;
-          _rtPending = false;
 
-          const px = parseFloat(element.style.left) || 0;
-          const py = parseFloat(element.style.top)  || 0;
           const { nx, ny } = toNormCard(px, py);
           shouldApply(element.id, RT_PRI());
-          sendRT({ t:'card_move', id:element.id, nx,ny, z:element.style.zIndex||'', prio:RT_PRI(), ts:Date.now() });
+          sendRT({
+            t: 'card_move',
+            id: element.id,
+            nx, ny,
+            z: element.style.zIndex || '',
+            prio: RT_PRI(),
+            ts: Date.now()
+          });
         });
       };
 
