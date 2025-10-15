@@ -1808,41 +1808,6 @@ document.addEventListener('DOMContentLoaded', function() {
         this.blur(); // Fokus entfernen, löst das blur-Event aus
       }
     });
-
-    // --- Live-Sync direkt am Focus-Editor (Owner & Gäste) ---
-    (function () {
-      const focusNoteEditable = document.getElementById('focus-note-editable');
-      const focusNoteDisplay  = document.getElementById('focus-note-display');
-      if (!focusNoteEditable) return;
-
-      let t = null;
-      const emit = () => {
-        clearTimeout(t);
-        t = setTimeout(() => {
-          const txt = focusNoteEditable.textContent || '';
-          // an alle senden (Owner & Gäste)
-          if (typeof sendRT === 'function') {
-            sendRT({ t: 'focus_update', content: txt, prio: RT_PRI && RT_PRI() || 1, ts: Date.now() });
-          }
-          // lokale Anzeige live mitziehen (auch wenn das Edit-Feld sichtbar ist)
-          if (focusNoteDisplay) {
-            const trimmed = txt.trim();
-            if (trimmed) {
-              focusNoteDisplay.textContent = txt;
-              focusNoteDisplay.classList.add('has-content');
-            } else {
-              focusNoteDisplay.textContent = 'Schreiben sie hier die Focus Note der Sitzung rein';
-              focusNoteDisplay.classList.remove('has-content');
-            }
-          }
-        }, 120);
-      };
-
-      // robust: deckt alle gängigen Eingabewege ab (Tastatur, Paste, IME)
-      ['input','beforeinput','keyup','paste','cut','compositionend'].forEach(evt => {
-        focusNoteEditable.addEventListener(evt, emit);
-      });
-    })();
   };
 
   function imageExists(src) {
@@ -4645,42 +4610,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Markieren, dass das Dashboard neu geladen werden soll
     sessionStorage.setItem('dashboard_reload_requested', 'true');
   });
-
-
-  // ---- Focus Note: Senden ------------------------------------------
-  (function initFocusNoteSend(){
-    // Das Eingabefeld der Focus-Note (id kann bei dir ein <textarea> ODER ein contenteditable sein)
-    const focusEl = document.getElementById('focus-note-editable');
-    if (!focusEl) return;
-
-    // Echo-Schutz: Wenn wir programmgesteuert setzen, nicht erneut senden
-    let _focusSetByRemote = false;
-    function setFocusTextSilently(txt){
-      _focusSetByRemote = true;
-      if ('value' in focusEl) focusEl.value = txt;
-      else focusEl.innerText = txt;
-      // nach dem Setzen Flag in der nächsten Task wieder löschen
-      queueMicrotask(()=>{ _focusSetByRemote = false; });
-    }
-
-    // Merke diese Setter-Funktion global (wir nutzen sie im Receiver)
-    window.__ccSetFocusNote = setFocusTextSilently;
- 
-    let _deb = null;
-    const handler = () => {
-      if (_focusSetByRemote) return; // kein Echo
-      clearTimeout(_deb);
-      _deb = setTimeout(() => {
-        const txt = ('value' in focusEl) ? focusEl.value : focusEl.innerText;
-        sendRT({ t: 'focus_update', content: txt, prio: RT_PRI(), ts: Date.now() });
-      }, 120);
-    };
-
-    // robust: auf mehreren Events lauschen
-    ['input','keyup','change'].forEach(evt => {
-      focusEl.addEventListener(evt, handler);
-    });
-  })();
 
 
 });
