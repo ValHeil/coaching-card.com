@@ -117,7 +117,6 @@
   height: var(--card-h);
   perspective: 1000px;
   cursor: grab;
-  transition: transform 0.2s ease-out; /* top/left raus! */
   will-change: transform, left, top;   /* Hint für die Engine */
 }
 
@@ -514,12 +513,6 @@
   transition: transform 300ms ease !important;
 }
 
-/* Grundtransitionen für Kartenbewegung */
-.card {
-  transition: left 330ms cubic-bezier(.2,.7,.2,1), top 330ms cubic-bezier(.2,.7,.2,1), transform 200ms ease-out;
-  will-change: left, top, transform;
-}
-
 /* Rückflug explizit kennzeichnen – gleiche Zeiten wie oben */
 .card.returning {
   transition: left 330ms cubic-bezier(.2,.7,.2,1), top 330ms cubic-bezier(.2,.7,.2,1), transform 200ms ease-out;
@@ -623,4 +616,24 @@ html, body {
 .rt-batch-apply .card,
 .rt-batch-apply .notiz {
   transition: none !important;
+}
+
+/* Kartenbewegung = keine Layout-Transitions */
+.card,
+.rt-batch-apply .card,
+.card.remote-dragging{
+  transition: none !important;
+  animation: none !important;
+}
+.card .card-front,
+.card .card-back{
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Nur gezielt animieren (Flip/Return/Shuffle) */
+.card.returning,
+.card.flipping,
+.card.shuffling{
+  transition: transform 260ms ease, opacity 180ms linear !important;
 }
