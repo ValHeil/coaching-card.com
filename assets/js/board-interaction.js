@@ -143,98 +143,6 @@ function fitBoardToViewport() {
 }
 
 
-// === RT Frame-Batching: sammelt eingehende WS-Updates und wendet sie rAF-basiert an ===
-window.__RT_APPLYING__ = false;
-
-const RTBatch = (() => {
-  const cardMoves = new Map();  // id -> { nx, ny, z }
-  const noteMoves = new Map();  // id -> { nx, ny }
-  const cursorMoves = [];       // Array von { id, nx, ny, color, label }
-  let raf = 0;
-
-  function schedule() { if (!raf) raf = requestAnimationFrame(apply); }
-
-  function queueCardMove(id, payload) { cardMoves.set(id, payload); schedule(); }
-  function queueNoteMove(id, payload) { noteMoves.set(id, payload); schedule(); }
-  function queueCursor(payload) { cursorMoves.push(payload); schedule(); }
-
-  function apply() {
-    raf = 0;
-    document.documentElement.classList.add('rt-batch-apply');
-    window.__RT_APPLYING__ = true;
-
-    const boardEl = document.querySelector('.board-area') || document.body;
-    const { width: worldW, height: worldH } = getWorldSize();
-
-    // Karten
-    cardMoves.forEach((m, id) => {
-      const el = document.getElementById(id);
-      if (!el) return;
-
-      // NEU: Während des rAF-Applies Transitions/Anim. der Karte hart aus
-      el.classList.add('remote-dragging');
-      clearTimeout(el._rdTO);
-      el._rdTO = setTimeout(() => {
-        el.classList.remove('remote-dragging');
-        el._rdTO = null;
-      }, 90);
-
-      // ggf. vom Stapel lösen
-      const stage = document.getElementById('cards-container') || document.querySelector('.board-area');
-      if (el.closest('#card-stack') && stage) {
-        try { el.parentNode && el.parentNode.removeChild(el); } catch {}
-        stage.appendChild(el);
-        el.style.position = 'absolute';
-      }
-
-      const p = (typeof m.nx === 'number') ? fromNormCard(m.nx, m.ny) : { x: m.x, y: m.y };
-      el.style.left = Math.round(p.x) + 'px';
-      el.style.top  = Math.round(p.y) + 'px';
-      if (m.z !== undefined && m.z !== '') el.style.zIndex = String(m.z);
-
-      if (!el.closest('#card-stack') && window.normalizeCardZIndex) {
-        window.normalizeCardZIndex(el);
-      }
-    });
-    cardMoves.clear();
-
-    // Notizen
-    noteMoves.forEach((m, id) => {
-      const { el } = ensureNoteEl(id);
-      const p = fromNorm(m.nx, m.ny);
-      const parentRect = el.parentNode.getBoundingClientRect();
-      const stageRect  = getStageRect();
-      const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
-      const left = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
-      const top  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
-      el.style.left = left + 'px';
-      el.style.top  = top  + 'px';
-      const nx = left + 'px', ny = top + 'px';
-      if (el.style.left !== nx) el.style.left = nx;
-      if (el.style.top  !== ny) el.style.top  = ny;
-    });
-    noteMoves.clear();
-
-    // Cursor
-    for (const m of cursorMoves) {
-      const xu = (typeof m.nx === 'number') ? m.nx * worldW : m.x;
-      const yu = (typeof m.ny === 'number') ? m.ny * worldH : m.y;
-      Presence.move(m.id, xu, yu, m.color, m.label);
-    }
-    cursorMoves.length = 0;
-
-    window.__RT_APPLYING__ = false;
-    document.documentElement.classList.remove('rt-batch-apply');
-    
-    // Einmaliges Event für „Status hat sich geändert“
-    document.dispatchEvent(new Event('boardStateUpdated'));
-  }
-
-  return { queueCardMove, queueNoteMove, queueCursor };
-})();
-
-
-
 function toNorm(px, py) {
   const { width, height } = getStageSizeUnscaled();
   return { nx: px / width, ny: py / height };
@@ -542,62 +450,91 @@ async function initRealtime(config) {
 
   /* === Eingehende RT-Events rAF-bündeln, ohne Logik zu ändern =============== */
 
-  // 1a) Die drei Apply-Funktionen benutzen GENAU deine bisherige Logik aus den Cases.
-  //     (Damit bleibt alles Verhalten identisch – nur der Zeitpunkt wird geglättet.)
+  // Empfängt Kartenbewegungen (RT) und setzt sie ruckelfrei auf dem Board um.
+  // Unterstützt normalisierte Koordinaten (nx, ny) oder Pixel (x, y).
   function applyIncomingCardMove(m) {
-    if (!shouldApply(m.id, m.prio || 1)) return;
+    // Prioritäten-/Owner-Gate wie gehabt
+    if (!shouldApply(m.id, (m.prio || 1))) return;
+
     const el = document.getElementById(m.id);
     if (!el) return;
 
+    // Während des Remote-Applies Hover-/Transitions unterdrücken
     el.classList.add('remote-dragging');
-    clearTimeout(el._rdTO);
+    if (el._rdTO) clearTimeout(el._rdTO);
     el._rdTO = setTimeout(() => {
       el.classList.remove('remote-dragging');
       el._rdTO = null;
-    }, 90);
+    }, 250);
 
-    // Z nur EINMAL pro Remote-Drag „anheben“
-    if (!el._remoteDragActive) {
-      el._remoteDragActive = true;
-      // wenn Sender Z mitschickt, reicht das – sonst optional lokal leicht anheben
-      if (m.z !== undefined && m.z !== '') {
-        el.style.zIndex = String(m.z);
-      } else if (typeof getHighestInteractiveZIndex === 'function') {
-        el.style.zIndex = String(getHighestInteractiveZIndex() + 1);
-      }
-    }
-    clearTimeout(el._remoteDragEndTO);
-    el._remoteDragEndTO = setTimeout(() => { el._remoteDragActive = false; }, 160);
+    // Bühne/Stage finden (wie in deinem Projekt üblich)
+    const boardArea = document.querySelector('.board-area') || document.body;
+    const stage = document.getElementById('cards-container') || boardArea;
 
-    // Falls Karte noch im Stapel hängt → in Bühne verschieben (wie bei dir)
-    const stage = document.getElementById('cards-container') || document.querySelector('.board-area');
-    if (el.closest('#card-stack') && stage) {
-      try { el.parentNode && el.parentNode.removeChild(el); } catch {}
-      stage.appendChild(el);
+    // Falls Karte noch auf dem Stapel liegt: auf die Bühne holen
+    if (el.closest && el.closest('#card-stack')) {
+      try {
+        stage.appendChild(el);
+      } catch (_) {}
       el.style.position = 'absolute';
     }
 
-    // Position aus Normalform (deine Umrechnung)
-    const { x, y } = (typeof m.nx === 'number')
-      ? fromNormCard(m.nx, m.ny)
-      : { x: m.x, y: m.y };
-
-    const p = (typeof m.nx === 'number') ? fromNormCard(m.nx, m.ny) : { x: m.x, y: m.y };
-    const lx = Math.round(p.x) + 'px';
-    const ly = Math.round(p.y) + 'px';
-    if (el.style.left !== lx) el.style.left = lx;
-    if (el.style.top  !== ly) el.style.top  = ly;
-    if (m.z !== undefined && m.z !== '') el.style.zIndex = String(m.z);
-
-    // Z-Index nur EINMAL je Remote-Drag, nicht pro Frame
-    if (!el._remoteZApplied && !el.closest('#card-stack') && window.normalizeCardZIndex) {
-      window.normalizeCardZIndex(el);
-      el._remoteZApplied = true;
+    // Eingehende Position bestimmen: aus Normalform oder direkt in Pixeln
+    let p = null;
+    if (typeof m.nx === 'number' && typeof m.ny === 'number' && typeof fromNormCard === 'function') {
+      p = fromNormCard(m.nx, m.ny);        // Projekt-Helfer: Weltkoordinaten (Pixel) berechnen
+    } else if (typeof m.x === 'number' && typeof m.y === 'number') {
+      p = { x: m.x, y: m.y };               // Fallback: Pixelwerte direkt verwenden
+    } else {
+      return; // kein gültiger Payload
     }
-    clearTimeout(el._remoteZTO);
-    el._remoteZTO = setTimeout(() => { el._remoteZApplied = false; }, 160);
 
-  }  // applyIncomingCardMove
+    // Aktuellen Zoom/Scale der Board-Fläche ermitteln (dataset bevorzugt, sonst Transform-Matrix)
+    let s = 1;
+    const ds = boardArea && boardArea.dataset ? (boardArea.dataset.scale || boardArea.dataset.zoom || '') : '';
+    if (ds) {
+      const sv = parseFloat(ds);
+      if (!Number.isNaN(sv) && sv > 0) s = sv;
+    } else {
+      const tr = getComputedStyle(boardArea).transform;
+      if (tr && tr !== 'none') {
+        // matrix(a, b, c, d, tx, ty) -> uniform scale ~ (|a|+|d|)/2
+        const mtx = tr.match(/matrix\(([-\d.,\s]+)\)/);
+        if (mtx) {
+          const parts = mtx[1].split(',').map(v => parseFloat(v.trim()));
+          if (parts.length >= 4) {
+            const a = Math.abs(parts[0]);
+            const d = Math.abs(parts[3]);
+            const sc = (a + d) / 2;
+            if (sc && !Number.isNaN(sc)) s = sc;
+          }
+        }
+      }
+    }
+
+    // Parent-Offset relativ zur Board-Area abziehen (wie bei Notizen),
+    // damit Links/Rechts/Jitter bei unterschiedlichen Containern ausbleibt.
+    const parent = el.parentElement || stage;
+    const parentRect = parent.getBoundingClientRect();
+    const stageRect  = boardArea.getBoundingClientRect();
+
+    const left = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
+    const top  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
+
+    // Anwenden
+    el.style.left = left + 'px';
+    el.style.top  = top  + 'px';
+    if (m.z !== undefined && m.z !== null && m.z !== '') {
+      el.style.zIndex = String(m.z);
+    }
+
+    // Optionales Hook/Signal für State-Updates
+    try {
+      document.dispatchEvent(new CustomEvent('boardStateUpdated', { detail: { type: 'card_move', id: m.id } }));
+    } catch (_) {
+      // no-op
+    }
+  }
 
   function applyIncomingNoteMove(m) {
     // deine Logs + Echo-Drop
