@@ -12,16 +12,19 @@ let _saveInFlight = false;
 let _lastStateHash = '';
 
 // ---- RT-Owner-Priorität & Koordinaten-Helper ---------------------
-const RT_PRI = () => (isOwner() ? 2 : 1); // Owner gewinnt bei Kollisionen
-const RT_LAST = new Map(); // objectId -> { prio, ts }
+const RT_PRI = () => (isOwner() ? 2 : 1);
+const RT_LAST = new Map(); // key -> { prio, ts, sender }
 
-// 150ms-Fenster: wenn in diesem Fenster bereits etwas Höherwertiges passierte, ignorieren
-function shouldApply(objId, incomingPrio, now = performance.now()) {
-  const last = RT_LAST.get(objId);
-  if (!last) { RT_LAST.set(objId, { prio: incomingPrio, ts: now }); return true; }
+function shouldApply(objKey, incomingPrio, now = performance.now(), senderId = null) {
+  const last = RT_LAST.get(objKey);
+  if (!last) {
+    RT_LAST.set(objKey, { prio: incomingPrio, ts: now, sender: senderId });
+    return true;
+  }
   const fresh = (now - last.ts) <= 150;
-  const ok = !fresh || (incomingPrio > last.prio);
-  if (ok) RT_LAST.set(objId, { prio: incomingPrio, ts: now });
+  const sameSender = senderId && last.sender && senderId === last.sender;
+  const ok = !fresh || sameSender || (incomingPrio > last.prio);
+  if (ok) RT_LAST.set(objKey, { prio: incomingPrio, ts: now, sender: senderId });
   return ok;
 }
 
@@ -429,13 +432,15 @@ async function initRealtime(config) {
 
   // Empfängt Kartenbewegungen (RT) und setzt sie ruckelfrei auf dem Board um.
   // Unterstützt normalisierte Koordinaten (nx, ny) oder Pixel (x, y).
+  // Empfängt Kartenbewegungen (RT) und setzt sie ruckelfrei auf dem Board um.
   function applyIncomingCardMove(m) {
-    if (!shouldApply(m.id, m.prio || 1)) return;
+    // Gleich-priorisierte Frames desselben Senders NICHT droppen
+    if (!shouldApply(`move:${m.id}`, m.prio || 1, performance.now(), m.idFrom || null)) return;
 
     const el = document.getElementById(m.id);
     if (!el) return;
 
-    // Transitions/hover bei Remote-Apply unterdrücken
+    // Remote-Apply: Hover/Transitions kurz unterdrücken
     el.classList.add('remote-dragging');
     clearTimeout(el._rdTO);
     el._rdTO = setTimeout(() => { el.classList.remove('remote-dragging'); el._rdTO = null; }, 90);
@@ -449,9 +454,9 @@ async function initRealtime(config) {
       el.style.position = 'absolute';
     }
 
-    // Eingehende Position: erst in Stage-Pixel
+    // Eingehende Position: erst in Stage-Pixel (unkaliert), dann parent-lokal
     const p = (typeof m.nx === 'number' && typeof m.ny === 'number')
-      ? fromNormCard(m.nx, m.ny)    // -> Stage-Pixel (unkaliert)
+      ? fromNormCard(m.nx, m.ny)
       : { x: m.x, y: m.y };
 
     const s = parseFloat(boardArea?.dataset.scale || '1') || 1;
@@ -471,7 +476,7 @@ async function initRealtime(config) {
   function applyIncomingNoteMove(m) {
     // deine Logs + Echo-Drop
     L('MOVE_RECV', { id: m.id, from: m.uid || 'unknown', nx: m.nx, ny: m.ny });
-    if (m.uid && RT && m.uid === RT.uid) return;
+    if (m.idFrom && RT && m.idFrom === RT.uid) return;
 
     const { el } = ensureNoteEl(m.id);
 
@@ -1485,7 +1490,7 @@ document.addEventListener('DOMContentLoaded', function() {
       // → Normierte Koordinaten berechnen & broadcasten
       if (el.classList.contains('card')) {
         const { nx, ny } = toNormCard(newLeft, newTop);
-        shouldApply(el.id, RT_PRI());
+        shouldApply(`move:${ID_DER_KARTE}`, RT_PRI(), performance.now(), RT.uid);
         sendRT({ t:'card_move', id:el.id, nx, ny, z: el.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
       } else if (el.classList.contains('notiz') || el.classList.contains('note')) {
         // Notiz: relative zur Bühne normalisieren
@@ -3646,7 +3651,7 @@ document.addEventListener('DOMContentLoaded', function() {
         _rtRaf = requestAnimationFrame(() => {
           _rtRaf = null;
           const { nx, ny } = toNormCard(pxStage, pyStage);
-          shouldApply(element.id, RT_PRI());
+          shouldApply(`move:${ID_DER_KARTE}`, RT_PRI(), performance.now(), RT.uid);
           sendRT({ t:'card_move', id:element.id, nx, ny, z: element.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
         });
       };
@@ -3681,14 +3686,15 @@ document.addEventListener('DOMContentLoaded', function() {
           // Startposition relativ zur Board-Area (mit Scale) setzen
           element.style.position = 'absolute';
           element.style.left = ((rect.left - boardRect.left) / s) + 'px';
-          element.style.top  = ((rect.top  - boardRect.top)  / s) + 'px';
+          element.style.top  = ((rect.top  - boardRect.top ) / s) + 'px';
           try { cardStack.removeChild(element); } catch {}
           boardArea.appendChild(element);
 
-          // Einmalig RT "card_move" direkt nach dem Umhängen (boardRect wiederverwenden!)
+          // Einmalig RT "card_move" direkt nach dem Umhängen
           const pxStage = (rect.left - boardRect.left) / s;
           const pyStage = (rect.top  - boardRect.top ) / s;
           const { nx, ny } = toNormCard(pxStage, pyStage);
+          shouldApply(`move:${ID_DER_KARTE}`, RT_PRI(), performance.now(), RT.uid);
           sendRT({ t:'card_move', id:element.id, nx, ny, z:element.style.zIndex||'', prio:RT_PRI(), ts:Date.now() });
         }
 
@@ -3789,7 +3795,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const pyStage = ((parentRect.top  - stageRect.top ) / s) + pyLocal;
 
         const { nx, ny } = toNormCard(pxStage, pyStage);
-        shouldApply(element.id, RT_PRI());
+        shouldApply(`move:${ID_DER_KARTE}`, RT_PRI(), performance.now(), RT.uid);
         sendRT({ t:'card_move', id: element.id, nx, ny, z: element.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
 
         if (!element.closest('#card-stack')) normalizeCardZIndex(element);
@@ -3853,7 +3859,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const pyStage = ((parentRect.top  - stageRect.top ) / s) + pyLocal;
 
         const { nx, ny } = toNormCard(pxStage, pyStage);
-        shouldApply(element.id, RT_PRI());
+        shouldApply(`move:${ID_DER_KARTE}`, RT_PRI(), performance.now(), RT.uid);
         sendRT({ t:'card_move', id: element.id, nx, ny, z: element.style.zIndex || '', prio: RT_PRI(), ts: Date.now() });
       }
       document.removeEventListener('mousemove', elementDrag);
