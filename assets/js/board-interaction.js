@@ -276,6 +276,48 @@ function placeCardInStackInstant(el, data) {
   el.style.transition = prev || '';
 }
 
+// --- Live-Broadcast für die Focus Note -----------------------------
+function attachFocusNoteLiveSync(){
+  const editable = document.getElementById('focus-note-editable');
+  const display  = document.getElementById('focus-note-display');
+  if (!editable) return;
+
+  // Remote-Setter ohne Echo
+  let _silentSet = false;
+  window.__ccSetFocusNote = (txt) => {
+    _silentSet = true;
+    if ('value' in editable) editable.value = txt;
+    else editable.textContent = txt;
+
+    if (display) {
+      const t = (txt || '').trim();
+      if (!t) {
+        display.textContent = 'Schreiben sie hier die Focus Note der Sitzung rein';
+        display.classList.remove('has-content');
+      } else {
+        display.textContent = txt;
+        display.classList.add('has-content');
+      }
+    }
+    queueMicrotask(() => { _silentSet = false; });
+  };
+
+  // Debounced RT-Update wie bei Notizen (~120ms)
+  let _deb = null;
+  const fire = () => {
+    if (_silentSet) return;
+    const txt = ('value' in editable) ? editable.value : editable.innerText;
+    sendRT({ t: 'focus_update', content: txt, prio: RT_PRI(), ts: Date.now() });
+  };
+
+  ['input','keyup','change'].forEach(evt => {
+    editable.addEventListener(evt, () => {
+      clearTimeout(_deb);
+      _deb = setTimeout(fire, 120);
+    });
+  });
+}
+
 // -------- Presence / Cursor UI (baut auf RT aus Schritt 2 auf) --------
 const Presence = (() => {
   let layer;
@@ -1430,6 +1472,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Focus Note erstellen
     createFocusNote();
+
+    // Anzeige/Editor-Verhalten sicher initialisieren
+    if (typeof setupFocusNoteEditable === 'function') {
+      setupFocusNoteEditable();
+    }
+
+    // Live-RT-Sync der Focus Note aktivieren (muss NACH createFocusNote passieren)
+    attachFocusNoteLiveSync();
 
     // Karten erstellen (abhängig vom Board-Typ)
     createCards();
