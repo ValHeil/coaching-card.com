@@ -1234,7 +1234,7 @@ async function loadSavedBoardState() {
     const state = base64ToJSONUTF8(state_b64); // UTF-8 sicher
     const ok = restoreBoardState(state);
     if (ok) {
-      try { window._lastStateHash = hashState(state); } catch {}
+      try { _lastStateHash = hashState(state); } catch {}
       window.__SUPPRESS_AUTOSAVE__ = false;            
       window.__pauseSnapshotUntil  = Date.now() + 1500; 
     }
@@ -4156,13 +4156,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // (optional) Zustand persistieren – nicht blockierend
       try {
-        const sid = new URLSearchParams(location.search).get('id');
-        if (sid && typeof captureBoardState === 'function' && navigator.sendBeacon) {
-          const state = captureBoardState();
-          const blob = new Blob([JSON.stringify({ session_id: Number(sid), state })], { type: 'application/json' });
-          navigator.sendBeacon('/api/state', blob);
-          window.onOwnerEndSessionConfirmed && window.onOwnerEndSessionConfirmed();
-        }
+        window.onOwnerEndSessionConfirmed && window.onOwnerEndSessionConfirmed();
       } catch {}
 
       // Wichtig: dem *Wrapper-Tab* sagen, dass er sich selbst schließen soll
@@ -4269,7 +4263,7 @@ document.addEventListener('DOMContentLoaded', function() {
         nx, ny,                   // ← statt left/top
         zIndex: card.style.zIndex,
         isFlipped: card.classList.contains('flipped'),
-        inStack: card.closest('#card-stack') !== null,
+        inStack: !!(card.parentElement && card.parentElement.id === 'card-stack'),
         placedAt: card.dataset.placedAt || null
       });
     });
