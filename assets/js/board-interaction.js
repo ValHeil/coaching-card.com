@@ -1628,6 +1628,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Board mit Karten und Notizen initialisieren
   const initializeBoard = () => {
+
+    //Werte aus dem Board-Template (vom Server) nehmen
+    const tpl = (window.CC_BOOT?.session?.board_template) || null;
+    const sample = tpl?.widgets?.find?.(w => w.type === 'sampleCard');
+
+    if (sample) {
+      // Kartengröße global (CSS vars) setzen
+      const cardW = Math.round(sample.w || 120);
+      document.documentElement.style.setProperty('--card-w', cardW + 'px');
+      document.documentElement.style.setProperty('--card-h', Math.round(cardW * (260/295)) + 'px');
+
+      // Kartenstapel an Position der Beispielkarte
+      requestAnimationFrame(() => {
+        const stack = document.getElementById('card-stack') || document.querySelector('.cards-container');
+        if (!stack) return;
+        stack.style.position = 'absolute';
+        stack.style.left = (sample.x || 40) + 'px';
+        stack.style.top  = (sample.y || 40) + 'px';
+      });
+    }
     // Basiseinstellungen für das Board (Hintergrund etc.) basierend auf dem Board-Typ
     document.querySelector('.board-area').classList.add(`board-type-${boardType}`);
 
