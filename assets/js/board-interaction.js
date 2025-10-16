@@ -1211,7 +1211,22 @@ async function loadSavedBoardState() {
       console.debug('[STATE] loaded version', window.__STATE_VERSION);
     } catch {}
     if (!state_b64) {
-      console.log('[DEBUG] Kein Zustand in der DB vorhanden.');
+      console.log('[DEBUG] Kein Zustand in der DB vorhanden – hebe Autosave-Gate auf.');
+      // Gate für neue Sitzungen öffnen, damit Änderungen überhaupt gespeichert werden
+      window.__SUPPRESS_AUTOSAVE__ = false;
+      // kleine Schonfrist, damit das Board fertig initialisieren kann
+      window.__pauseSnapshotUntil  = Date.now() + 1500;
+
+      // Optional: gleich einen initialen Snapshot erzeugen (nur Owner)
+      // So ist *sofort* etwas in der DB, auch ohne erste Interaktion.
+      setTimeout(() => {
+        try {
+          if (typeof flushSaveNow === 'function' && typeof isOwner === 'function' && isOwner()) {
+            flushSaveNow();
+          }
+        } catch {}
+      }, 800);
+
       return false;
     }
 
