@@ -4214,35 +4214,38 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Erfasst alle Notizzettel und ihre Eigenschaften
   function captureAllNotes() {
-    const world = getWorldSize();
-    const notes = [];
+    const world     = getWorldSize();
+    const stageRect = getStageRect(); // ← fehlte vorher
+    const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
+
+    const out = [];
     document.querySelectorAll('.notiz').forEach(notiz => {
-      const elRect   = notiz.getBoundingClientRect();
-      const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
-      // erst ent-skaliert relativ zur Bühne, dann normalisiert:
-      const leftStage = (elRect.left - stageRect.left) / s;
-      const topStage  = (elRect.top  - stageRect.top ) / s;
+      const rect = notiz.getBoundingClientRect();
+
+      // relativ zur Bühne ent-skaliert
+      const leftStage = (rect.left - stageRect.left) / s;
+      const topStage  = (rect.top  - stageRect.top ) / s;
+
+      // normierte Koordinaten für robuste Replays
       const nx = world.width  ? (leftStage / world.width)  : 0;
       const ny = world.height ? (topStage  / world.height) : 0;
-      // für left/top Strings im State lieber die ent-skalierten Bühnen-Pixel schreiben
-      const left = Math.round(leftStage);
-      const top  = Math.round(topStage);
 
-      notes.push({
+      out.push({
         id: notiz.id,
         nx, ny,
-        left: left + 'px',
-        top:  top  + 'px',
+        left: Math.round(leftStage) + 'px',
+        top:  Math.round(topStage)  + 'px',
         width:  notiz.style.width  || '',
         height: notiz.style.height || '',
         zIndex: notiz.style.zIndex || '',
         backgroundColor: notiz.style.backgroundColor || '',
         rotation: notiz.style.getPropertyValue('--rotation') || '',
-        // WICHTIG: reiner Text statt innerHTML
+        // Text statt innerHTML – sicher gegen Markup
         content: getNoteText(notiz)
       });
     });
-    return notes;
+
+    return out;
   }
 
 
@@ -4317,30 +4320,34 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const seen = new Set();
     const stage = document.getElementById('notes-container')
-            || document.querySelector('.notes-container')
-            || document.getElementById('session-board')
-            || document.querySelector('.board-area')
-            || document.body;
+          || document.querySelector('.notes-container')
+          || document.getElementById('session-board')
+          || document.querySelector('.board-area')
+          || document.body;
+
+    const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
+    const stageRect = getStageRect();
 
     notes.forEach(noteData => {
       const { el } = ensureNoteEl(noteData.id); // erzeugt + hängt Handler an
       el.style.position = 'absolute';
 
-      // nx/ny → px
-      let leftPx = noteData.left || '';
-      let topPx  = noteData.top  || '';
+      // Position aus nx/ny (bevorzugt) oder Fallback left/top übernehmen
+      let leftPx, topPx;
       if (typeof noteData.nx === 'number' && typeof noteData.ny === 'number') {
-        const p = fromNorm(noteData.nx, noteData.ny);     // Stage-Pixel (unskaliert)
-        const parentRect = parent.getBoundingClientRect();
-        const stageRect  = getStageRect();                // skaliert
-        const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
-        const left = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
-        const top  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
+        const p = fromNorm(noteData.nx, noteData.ny); // Bühnen-Pixel (unskaliert)
+        const parentRect = (el.parentElement || stage).getBoundingClientRect();
+        leftPx = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
+        topPx  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
+      } else {
+        leftPx = parseFloat(noteData.left) || 0;
+        topPx  = parseFloat(noteData.top)  || 0;
       }
-      el.style.left = left + 'px';
-      el.style.top  = top  + 'px';
 
-      if (noteData.zIndex !== undefined) el.style.zIndex = noteData.zIndex;
+      el.style.left = leftPx + 'px';
+      el.style.top  = topPx  + 'px';
+
+      if (noteData.zIndex !== undefined && noteData.zIndex !== '') el.style.zIndex = String(noteData.zIndex);
       if (noteData.backgroundColor) el.style.backgroundColor = noteData.backgroundColor;
       if (noteData.rotation) el.style.setProperty('--rotation', noteData.rotation);
       if (noteData.width)  el.style.width  = noteData.width;
@@ -4351,7 +4358,7 @@ document.addEventListener('DOMContentLoaded', function() {
       seen.add(noteData.id);
     });
 
-    // Verwaiste Notizen entfernen
+    // Verwaiste Notizen entfernen (wenn sie nicht mehr im State sind)
     document.querySelectorAll('.notiz').forEach(el => {
       if (!seen.has(el.id)) el.remove();
     });
