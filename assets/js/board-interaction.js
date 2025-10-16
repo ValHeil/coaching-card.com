@@ -1036,7 +1036,8 @@ async function _doSave(reason = 'auto') {
 
   const state = captureBoardState();
   const h = hashState(state);
-  if (h === _lastStateHash && reason !== 'force') return false;
+  // Duplikate NIE speichern – auch nicht bei "force"
+  if (h === _lastStateHash) return false;
 
   _lastStateHash = h; _saveInFlight = true;
   try {
@@ -1233,6 +1234,7 @@ async function loadSavedBoardState() {
     const state = base64ToJSONUTF8(state_b64); // UTF-8 sicher
     const ok = restoreBoardState(state);
     if (ok) {
+      try { window._lastStateHash = hashState(state); } catch {}
       window.__SUPPRESS_AUTOSAVE__ = false;            
       window.__pauseSnapshotUntil  = Date.now() + 1500; 
     }
@@ -4730,9 +4732,9 @@ document.addEventListener('DOMContentLoaded', function() {
     debouncedSave();
   });
 
-  // In board-interaction.js am Ende der DOMContentLoaded-Funktion
+
   window.addEventListener('beforeunload', function () {
-    try { flushSaveNow(); } catch {}
+    try { saveCurrentBoardState(); } catch {}
     try { sessionStorage.setItem('dashboard_reload_requested', 'true'); } catch {}
   });
 
