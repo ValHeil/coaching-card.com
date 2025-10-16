@@ -1028,24 +1028,49 @@ function isOwner() {
 
 async function _doSave(reason = 'auto') {
   if (!isOwner()) return false;
-  if (window.__SUPPRESS_AUTOSAVE__ && reason !== 'force') return false; // NEU: Boot-Gate
+  if (window.__SUPPRESS_AUTOSAVE__ && reason !== 'force') return false; // Boot-Gate
   if (_saveInFlight) return false;
+
+  // WICHTIG: Beim erzwungenen Save (Schließen) OHNE Änderungen NICHT neu messen!
+  if (reason === 'force' && window.__DIRTY__ === false) {
+    return false; // nichts zu tun, Stand ist bereits in DB
+  }
+
   const sid = new URLSearchParams(location.search).get('id');
   if (!sid) return false;
-  if (typeof captureBoardState !== 'function') { console.warn('[Autosave] captureBoardState fehlt (noch)'); return false; }
+  if (typeof captureBoardState !== 'function') {
+    console.warn('[Autosave] captureBoardState fehlt (noch)');
+    return false;
+  }
 
+  // DOM messen (nur wenn nötig) und Hash bilden
   const state = captureBoardState();
   const h = hashState(state);
-  // Duplikate NIE speichern – auch nicht bei "force"
-  if (h === _lastStateHash) return false;
 
-  _lastStateHash = h; _saveInFlight = true;
+  // Duplikate NIE speichern – auch nicht bei "force"
+  if (h === _lastStateHash) {
+    window.__DIRTY__ = false;
+    return false;
+  }
+
+  _saveInFlight = true;
   try {
-    await persistStateToServer(state);
-    sendRT({ t: 'state_full', state, prio: 3, ts: Date.now() }); // bleibt wie gehabt
-    return true;
-  } finally { _saveInFlight = false; }
+    const ok = await persistStateToServer(state);
+    if (ok) {
+      window.__LAST_GOOD_STATE__ = state; // letzten guten Stand puffern
+      _lastStateHash = h;
+      window.__DIRTY__ = false;
+      try { showSaveToast && showSaveToast(); } catch {}
+    }
+    return !!ok;
+  } catch (e) {
+    console.warn('[Autosave] persist failed', e);
+    return false;
+  } finally {
+    _saveInFlight = false;
+  }
 }
+
 
 // Wird vom Owner-Dialog (OK/Beenden) aufgerufen:
 window.onOwnerEndSessionConfirmed = async function () {
@@ -1070,6 +1095,11 @@ window.onOwnerEndSessionConfirmed = async function () {
 
 // Sammelpunkt für alle Save-Auslöser
 function saveCurrentBoardState(reason = 'auto') {
+  // Nur echte lokale Interaktionen als „dirty“ markieren
+  // (keine RT-Übernahme, kein Zeit-Intervall, kein Load)
+  if (reason !== 'rt' && reason !== 'interval' && reason !== 'load') {
+    window.__DIRTY__ = true;
+  }
   clearTimeout(_saveTimer);
   const defer = Math.max(0, (window.__pauseSnapshotUntil || 0) - Date.now());
   _saveTimer = setTimeout(() => { _doSave(reason); }, 400 + defer);
@@ -1235,6 +1265,8 @@ async function loadSavedBoardState() {
     const ok = restoreBoardState(state);
     if (ok) {
       try { _lastStateHash = hashState(state); } catch {}
+      window.__LAST_GOOD_STATE__ = state;   // ← letzten guten Stand puffern
+      window.__DIRTY__ = false;             // ← nach Restore keine offenen Änderungen
       window.__SUPPRESS_AUTOSAVE__ = false;            
       window.__pauseSnapshotUntil  = Date.now() + 1500; 
     }
@@ -1321,6 +1353,8 @@ function initializeParticipantJoin() {
 document.addEventListener('DOMContentLoaded', function() {
   window.__SUPPRESS_AUTOSAVE__ = true;        // Save bis zum ersten Snapshot unterdrücken
   window.__pauseSnapshotUntil  = Date.now() + 1500; // kleine zusätzliche Schonfrist
+  window.__DIRTY__ = false;                   // gibt es ungespeicherte Änderungen?
+  window.__LAST_GOOD_STATE__ = null;          // letzter bestätigter Snapshot (geladen/gespeichert)
   // Elemente auswählen
   const ok =
     (window.handleSessionJoinOwnerAware && window.handleSessionJoinOwnerAware()) ||
@@ -4498,7 +4532,7 @@ document.addEventListener('DOMContentLoaded', function() {
   function setupSaveAndCloseButton() {
     // Automatisches Speichern in regelmäßigen Abständen
     const autoSaveInterval = setInterval(() => {
-      saveCurrentBoardState();
+      saveCurrentBoardState('interval'); // markiert NICHT als dirty
     }, 60000); // Alle 60 Sekunden
     
     // Speichern beim Beenden der Sitzung
@@ -4522,8 +4556,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Speichern bei Verlassen der Seite
     window.addEventListener('beforeunload', (e) => {
-      saveCurrentBoardState();
-      // Kein Dialog nötig, da automatisch gespeichert wird
+      if (typeof isOwner === 'function' && isOwner() && window.__DIRTY__ === true) {
+        try { flushSaveNow(); } catch {}
+      }
     });
     
     // Speichern beim Drücken von Strg+S
@@ -4728,7 +4763,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
   window.addEventListener('beforeunload', function () {
-    try { saveCurrentBoardState(); } catch {}
+    try {
+      if (typeof isOwner === 'function' && isOwner() && window.__DIRTY__ === true) {
+        if (typeof flushSaveNow === 'function') flushSaveNow(); // synchroner Versuch
+      }
+    } catch {}
     try { sessionStorage.setItem('dashboard_reload_requested', 'true'); } catch {}
   });
 
