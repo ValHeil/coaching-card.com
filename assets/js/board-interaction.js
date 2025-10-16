@@ -340,6 +340,12 @@ function initFocusNoteLive() {
   // Alle relevanten Eingabewege abdecken (echtes Live-Typing)
   ['input','beforeinput','keyup','paste','cut','compositionend'].forEach(evt => {
     editable.addEventListener(evt, emit);
+    // bei jeder Eingabe zusätzlich Autosave (debounced)
+    editable.addEventListener('input', () => {
+      try {
+        if (typeof debouncedSave === 'function') debouncedSave();
+      } catch {}
+    });
   });
 }
 
@@ -800,6 +806,8 @@ async function initRealtime(config) {
         const disp = document.getElementById('focus-note-display');
         if (disp) disp.textContent = t || 'Schreiben sie hier die Focus Note der Sitzung rein';
       }
+      // Owner persistiert den neuen Stand (Teilnehmer-Änderung)
+      try { if (typeof isOwner === 'function' && isOwner()) saveCurrentBoardState('rt'); } catch {}
       return;
     }
 
@@ -1196,7 +1204,12 @@ async function loadSavedBoardState() {
     const res = await fetch(`/api/state?id=${encodeURIComponent(sessionId)}`);
     if (!res.ok) throw new Error(await res.text());
 
-    const { state_b64 } = await res.json();
+    const { state_b64, version } = await res.json();
+    // Version fürs Debugging merken & loggen
+    try {
+      window.__STATE_VERSION = Number.isFinite(version) ? version : (version ? parseInt(version, 10) : 0);
+      console.debug('[STATE] loaded version', window.__STATE_VERSION);
+    } catch {}
     if (!state_b64) {
       console.log('[DEBUG] Kein Zustand in der DB vorhanden.');
       return false;
@@ -4651,7 +4664,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // 2) Zustand aus DB wiederherstellen, sobald Karten existieren
   if (typeof waitForCards === 'function' && typeof loadSavedBoardState === 'function') {
-    //waitForCards().then(() => { try { loadSavedBoardState(); } catch(e) { console.warn(e); } });
+     waitForCards().then(() => { try { loadSavedBoardState(); } catch(e) { console.warn(e); } });
   }
 
   // UI-Helfer
