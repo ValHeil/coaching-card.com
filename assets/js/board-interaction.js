@@ -191,7 +191,7 @@ async function fetchBoardTemplate(slug) {
   return {
     worldW: 2400,
     worldH: 1350,
-    bgColor: '#f3ead7',
+    bgColor: '#f9ecd2',
     bgImage: null,
     widgets: [] // keine Widgets -> Karten & Notizen funktionieren dennoch
   };
@@ -1923,7 +1923,7 @@ document.addEventListener('DOMContentLoaded', function() {
       area.style.width  = Math.round(tpl.worldW) + 'px';
       area.style.height = Math.round(tpl.worldH) + 'px';
     }
-    area.style.backgroundColor = tpl.bgColor || '#f3ead7';
+    area.style.backgroundColor = tpl.bgColor || '#f9ecd2';
     if (tpl.bgImage) {
       area.style.backgroundImage = `url(${tpl.bgImage})`;
       area.style.backgroundSize  = 'cover';
@@ -1949,7 +1949,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const el = document.createElement('div');
       el.className = 'board-bg-rect tpl-node';
       el.style.borderRadius = (p.radius != null ? p.radius : 12) + 'px';
-      el.style.background   = p.color || '#f3ead7';
+      el.style.background   = p.color || '#f9ecd2';
       if (p.opacity != null) el.style.opacity = String(p.opacity);
       if (p.borderWidth)  el.style.boxShadow = 'none';
       if (p.borderStyle || p.borderWidth || p.borderColor) {
