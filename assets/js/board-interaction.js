@@ -1923,7 +1923,7 @@ document.addEventListener('DOMContentLoaded', function() {
       area.style.width  = Math.round(tpl.worldW) + 'px';
       area.style.height = Math.round(tpl.worldH) + 'px';
     }
-    if (tpl.bgColor) area.style.backgroundColor = tpl.bgColor || '#f3ead7';
+    area.style.backgroundColor = tpl.bgColor || '#f3ead7';
     if (tpl.bgImage) {
       area.style.backgroundImage = `url(${tpl.bgImage})`;
       area.style.backgroundSize  = 'cover';
