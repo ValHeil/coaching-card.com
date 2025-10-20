@@ -1144,12 +1144,16 @@ window.addEventListener('message', (ev) => {
 
   // H1 oben füllen
   const sess = d.config.session || {};
-  if (sess.name) {
-    const h = document.getElementById('board-title');
-    if (h) h.textContent = sess.name;
+  const boardFromBoot =
+    sess.board ||
+    d.config.board ||
+    (sess.board_template && (sess.board_template.slug || sess.board_template.id || sess.board_template.name));
+
+  if (boardFromBoot) {
+    window.boardType = (typeof canonBoardSlug === 'function')
+      ? canonBoardSlug(boardFromBoot)
+      : String(boardFromBoot);
   }
-  if (sess.board) window.boardType = (typeof canonBoardSlug === 'function') ? canonBoardSlug(sess.board) : (sess.board||'board1');
-  if (sess.deck)  window.deck      = (typeof canonDeckSlug  === 'function') ? canonDeckSlug(sess.deck)  : (sess.deck||'deck1');
 
   // Falls das Board bereits mit einem anderen Typ gebootet wurde → neu aufbauen
   try {
@@ -1316,17 +1320,21 @@ window.CC_BOOT = window.CC_BOOT || {};
 // ------------------------------------------------------------------
 function resolveBoardAndDeck() {
   const url = new URLSearchParams(location.search);
-  const rawBoard = url.get('board') || (window.CC_BOOT && window.CC_BOOT.board) || (window.sessionData && window.sessionData.boardId) || 'board1';
-  const rawDeck  = url.get('deck')  || (window.CC_BOOT && window.CC_BOOT.deck)  || 'deck1';
+  const rawBoard =
+    url.get('board') ||
+    window.CC_BOOT?.board ||
+    window.CC_BOOT?.session?.board ||
+    window.CC_BOOT?.session?.board_template?.slug ||
+    window.sessionData?.boardId ||
+    'board1';
 
-  let b = canonBoardSlug(rawBoard);
-  let d = canonDeckSlug(rawDeck);
+  const rawDeck =
+    url.get('deck') ||
+    window.CC_BOOT?.deck ||
+    window.CC_BOOT?.session?.deck ||
+    'deck1';
 
-  // Fallbacks: nur wenn LEER → default
-  if (!b) b = 'board1';
-  if (!d) d = 'deck1';
-
-  return { board: b, deck: d };
+  return { board: canonBoardSlug(rawBoard), deck: canonDeckSlug(rawDeck) };
 }
 
 
@@ -1351,8 +1359,9 @@ function handleSessionJoin() {
   // Board-Key ermitteln (QS > CC_BOOT.board > boot.board > Default)
   const boardCandidate =
     qs.get('board') ||
-    (window.CC_BOOT && window.CC_BOOT.board) ||
+    window.CC_BOOT?.board ||
     boot.board ||
+    boot.board_template?.slug ||
     'board1';
 
   const effectiveBoard =
