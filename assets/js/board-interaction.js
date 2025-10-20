@@ -83,43 +83,36 @@ function fitBoardToViewport() {
   const area = document.querySelector('.board-area');
   if (!area) return;
 
-  const { width: worldW, height: worldH } = getWorldSize(); // z.B. 2400x1350
+  const { width: worldW, height: worldH } = getWorldSize();
+
+  // WP-Adminbar berücksichtigen (wie im Builder)
+  const adminBarH = document.getElementById('wpadminbar')?.offsetHeight || 0;
+
   const vw = window.innerWidth  || document.documentElement.clientWidth;
-  const vh = window.innerHeight || document.documentElement.clientHeight;
+  const vh = (window.innerHeight || document.documentElement.clientHeight) - adminBarH;
 
-  const MODE = 'cover';
+  // contain statt cover
+  const scale = Math.min(vw / worldW, vh / worldH);
 
-  let sx, sy, ox = 0, oy = 0;
-  if (MODE === 'stretch') {
-    sx = vw / worldW; sy = vh / worldH;
-  } else {
-    const contain = Math.min(vw / worldW, vh / worldH);
-    const cover   = Math.max(vw / worldW, vh / worldH);
-    const s = (MODE === 'cover') ? cover : contain;
-    sx = sy = s;
-    ox = Math.floor((vw - worldW * s) / 2);
-    oy = 0; // <- WICHTIG: oben anheften, nichts mehr oben abschneiden
-  }
+  // horizontal zentrieren; vertikal unter die Adminbar setzen (optional: + mittig)
+  const offX = Math.floor((vw - worldW * scale) / 2);
+  const offY = adminBarH; // oder: adminBarH + Math.floor((vh - worldH*scale)/2)
 
   area.style.transformOrigin = 'top left';
   area.style.width  = worldW + 'px';
   area.style.height = worldH + 'px';
-
-  // Vollflächig, ohne Scroll
   area.style.position = 'fixed';
   area.style.left = '0';
   area.style.top  = '0';
   area.style.margin = '0';
   area.style.padding = '0';
+  area.style.transform = `translate(${offX}px, ${offY}px) scale(${scale})`;
 
-  area.style.transform = `translate(${ox}px, 0) scale(${sx}, ${sy})`;
-
-  area.dataset.scaleX = String(sx);
-  area.dataset.scaleY = String(sy);
-  area.dataset.scale  = String(sx);
-  area.dataset.offsetX = String(ox);
-  area.dataset.offsetY = String(oy);
+  area.dataset.scaleX = area.dataset.scaleY = area.dataset.scale = String(scale);
+  area.dataset.offsetX = String(offX);
+  area.dataset.offsetY = String(offY);
 }
+
 
 
 function toNorm(px, py) {
