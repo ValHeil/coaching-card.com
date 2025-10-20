@@ -201,8 +201,9 @@ function applySampleCardFromTemplate(tpl) {
     const stack = document.getElementById('card-stack') || document.querySelector('.cards-container');
     if (!stack) return;
     stack.style.position = 'absolute';
-    stack.style.left = (sample.x ?? 40) + 'px';
-    stack.style.top  = (sample.y ?? 40) + 'px';
+    stack.style.left = (sample.x || 40) + 'px';
+    stack.style.top  = (sample.y || 40) + 'px';
+    stack.style.zIndex = '200'; // über bgrect (10) & Platzhaltern
   });
 }
 
@@ -1952,7 +1953,9 @@ document.addEventListener('DOMContentLoaded', function() {
       } else {
         el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
       }
-      place(el, w);
+      el.style.pointerEvents = 'none';
+      el.style.zIndex = '10';  // niedriger Layer für Hintergründe
+      place(el, w);            // w.z würde diesen Wert ggf. überschreiben
     });
 
     // --- cardholder: visuelle Zonen für Karten
