@@ -79,7 +79,6 @@ function getWorldSize() {
   return { width: area.offsetWidth, height: area.offsetHeight };
 }
 
-// board-interaction.js
 function fitBoardToViewport() {
   const area = document.querySelector('.board-area');
   if (!area) return;
@@ -167,6 +166,29 @@ if (typeof window.normalizeCardZIndex === 'function' && typeof normalizeCardZInd
   var normalizeCardZIndex = window.normalizeCardZIndex;
 }
 
+// Wartet kurz auf CC_INIT (postMessage) oder gibt nach Timeout auf
+function waitForBootConfig(timeoutMs = 800) {
+  return new Promise((resolve) => {
+    // Schon vorhanden? sofort weiter
+    if (window.CC_BOOT && (window.CC_BOOT.board || (window.CC_BOOT.session && (window.CC_BOOT.session.board || window.CC_BOOT.session.board_template)))) {
+      return resolve(true);
+    }
+    // Auf CC_INIT warten
+    const onMsg = (ev) => {
+      const d = ev.data || {};
+      if (d.type === 'CC_INIT' && d.config) {
+        window.removeEventListener('message', onMsg);
+        resolve(true);
+      }
+    };
+    window.addEventListener('message', onMsg);
+    // Fallback: nach timeout weiter
+    setTimeout(() => {
+      window.removeEventListener('message', onMsg);
+      resolve(false);
+    }, timeoutMs);
+  });
+}
 
 
 // ---- NOTE/NOTIZ: robustes Erzeugen & Selektieren -----------------
@@ -1128,6 +1150,13 @@ window.addEventListener('message', (ev) => {
   }
   if (sess.board) window.boardType = (typeof canonBoardSlug === 'function') ? canonBoardSlug(sess.board) : (sess.board||'board1');
   if (sess.deck)  window.deck      = (typeof canonDeckSlug  === 'function') ? canonDeckSlug(sess.deck)  : (sess.deck||'deck1');
+
+  // Falls das Board bereits mit einem anderen Typ gebootet wurde → neu aufbauen
+  try {
+    if (document.readyState !== 'loading' && typeof window.rebuildBoard === 'function') {
+      window.rebuildBoard();
+    }
+  } catch (e) { console.warn('[CC_INIT] rebuild failed', e); }
   
   try { initRealtime(d.config); } catch(e) { console.warn('[RT] init failed', e); }
 
@@ -1744,6 +1773,16 @@ document.addEventListener('DOMContentLoaded', function() {
   };
   
 
+  // Board anhand der aktuellen window.boardType/window.deck neu aufbauen
+  window.rebuildBoard = function() {
+    const area = document.querySelector('.board-area');
+    if (area) area.innerHTML = '';
+    initializeBoard();
+    if (typeof waitForCards === 'function' && typeof loadSavedBoardState === 'function') {
+      waitForCards().then(() => { try { loadSavedBoardState(); } catch(e) { console.warn(e); } });
+    }
+    if (typeof fitBoardToViewport === 'function') { fitBoardToViewport(); }
+  };
 
 
   // Ablageplätze für Karten erstellen
@@ -4726,14 +4765,21 @@ document.addEventListener('DOMContentLoaded', function() {
   loadSession();
 
   // 1) Board/Deck ermitteln und Board aufbauen
-  const resolved = (typeof resolveBoardAndDeck === 'function')
-    ? resolveBoardAndDeck()
-    : { board: (window.boardType || 'board1'), deck: (window.deck || 'deck1') };
+  // Kurzes Warten auf CC_INIT (falls in Wrapper geöffnet) – sonst Timeout
+  waitForBootConfig(800).then(() => {
+    const resolved = (typeof resolveBoardAndDeck === 'function')
+      ? resolveBoardAndDeck()
+      : { board: (window.boardType || 'board1'), deck: (window.deck || 'deck1') };
 
-  window.boardType = resolved.board;
-  window.deck      = resolved.deck;
+    window.boardType = resolved.board;
+    window.deck      = resolved.deck;
 
-  initializeBoard();     // <— fehlte, baut Stapel, Notizblock, Layout etc.
+    initializeBoard();
+    // 2) Zustand aus DB wiederherstellen, sobald Karten existieren
+    if (typeof waitForCards === 'function' && typeof loadSavedBoardState === 'function') {
+      waitForCards().then(() => { try { loadSavedBoardState(); } catch(e) { console.warn(e); } });
+    }
+  });
 
   // 2) Zustand aus DB wiederherstellen, sobald Karten existieren
   if (typeof waitForCards === 'function' && typeof loadSavedBoardState === 'function') {
