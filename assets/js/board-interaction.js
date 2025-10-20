@@ -1972,30 +1972,35 @@ document.addEventListener('DOMContentLoaded', function() {
       const p  = (w && w.props) || {};
       const el = document.createElement('div');
       el.className = 'board-bg-rect tpl-node';
-      el.dataset.id = w.id || '';                  // späteres Finden per ID
-      el.style.position = 'absolute';
-      el.style.borderRadius = (p.radius != null ? p.radius : 12) + 'px';
-      el.style.pointerEvents = 'none';             // Karten bleiben klickbar
+      el.dataset.id = w.id || '';
 
-      // Hintergrundfarbe + Opazität (ohne Kinder auszubleichen)
-      const bg = (p.color || '#f3ead7');
-      const op = (typeof p.opacity === 'number' ? p.opacity : 1);
-      el.style.backgroundColor = hexToRgba(bg, op);
+      // Position/Größe/Z zuerst
+      place(el, w); // setzt left/top/width/height/zIndex
 
-      // Rand (optional)
-      const bw = (p.borderWidth | 0);
-      if (bw > 0) {
-        const bcol = hexToRgba(p.borderColor || '#000000',
-                              (typeof p.borderOpacity === 'number' ? p.borderOpacity : 1));
-        el.style.border = `${bw}px ${p.borderStyle || 'solid'} ${bcol}`;
+      // nicht interaktiv (Karten darüber bleiben klickbar)
+      el.style.pointerEvents = 'none';
+
+      // Eckenradius
+      el.style.borderRadius = ((p.radius != null ? p.radius : 12)) + 'px';
+
+      // Füllung über RGBA (nicht Element-Opacity!)
+      const fillCol = p.color || w.color || '#f3ead7';
+      const fillA   = (typeof p.opacity === 'number') ? p.opacity : 1;
+      el.style.backgroundColor = hexToRgba(fillCol, fillA);
+
+      // Rand (optional, inkl. eigener Opazität)
+      const bW = p.borderWidth ?? 0;
+      const bStyle = p.borderStyle || 'solid';
+      if (bW > 0 && bStyle !== 'none') {
+        const bCol = p.borderColor || '#000000';
+        const bA   = (typeof p.borderOpacity === 'number') ? p.borderOpacity : 1;
+        el.style.border = `${bW}px ${bStyle} ${hexToRgba(bCol, bA)}`;
       } else {
         el.style.border = 'none';
       }
 
-      // Schatten wie bisher
+      // dezenter innerer Rahmen wie zuvor
       el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
-
-      place(el, w);  // setzt left/top/width/height/zIndex
     });
 
 
