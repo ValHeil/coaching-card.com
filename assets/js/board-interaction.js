@@ -1168,11 +1168,18 @@ window.addEventListener('message', (ev) => {
 
 // Kanonische Slugs -> interne Keys
 function canonBoardSlug(s='') {
-  s = (s || '').toString().toLowerCase();
-  if (['problem-lösung','problem-loesung','problemlösung','problem','problem_loesung','board_problem_loesung'].includes(s)) return 'board1';
-  if (['boardtest','testboard','board_test'].includes(s)) return 'boardTest';
-  return s || 'board1';
+  const raw = (s || '').toString().trim();
+  const low = raw.toLowerCase();
+  // Legacy-Mappings weiter unterstützen:
+  if (['problem-lösung','problem-loesung','problemlösung','problem','problem_loesung','board_problem_loesung'].includes(low)) return 'board1';
+  if (['boardtest','testboard','board_test'].includes(low)) return 'boardTest';
+  // Neu: beliebige Slugs zulassen (sanitizen, kein Fallback auf board1)
+  return raw
+    .replace(/\s+/g, '-')          // Leerzeichen → Bindestrich
+    .replace(/[^a-zA-Z0-9_-]/g, '')// unsichere Zeichen raus
+    .toLowerCase();
 }
+
 function canonDeckSlug(s='') {
   s = (s || '').toString().toLowerCase();
   if (['starterdeck','starter','deck_starter','startkarten'].includes(s)) return 'deck1';
@@ -4776,10 +4783,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // 1) Board/Deck ermitteln und Board aufbauen
   // Kurzes Warten auf CC_INIT (falls in Wrapper geöffnet) – sonst Timeout
   waitForBootConfig(800).then(() => {
-    const resolved = (typeof resolveBoardAndDeck === 'function')
-      ? resolveBoardAndDeck()
-      : { board: (window.boardType || 'board1'), deck: (window.deck || 'deck1') };
-
+    const resolved = resolveBoardAndDeck();
     window.boardType = resolved.board;
     window.deck      = resolved.deck;
 
