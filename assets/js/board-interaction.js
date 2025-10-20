@@ -1293,8 +1293,8 @@ function resolveBoardAndDeck() {
   let b = canonBoardSlug(rawBoard);
   let d = canonDeckSlug(rawDeck);
 
-  // Fallbacks: wenn trotzdem etwas Exotisches reinrutscht -> board1/deck1
-  if (!['board1','boardTest'].includes(b)) b = 'board1';
+  // Fallbacks: nur wenn LEER → default
+  if (!b) b = 'board1';
   if (!d) d = 'deck1';
 
   return { board: b, deck: d };
@@ -1595,7 +1595,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const rawDeck  = url.get('deck')  || window.CC_BOOT?.deck  || window.CC_BOOT?.session?.deck  || 'deck1';
     let effBoard = canonBoardSlug(rawBoard);
     let effDeck  = canonDeckSlug(rawDeck);
-    if (!['board1','boardTest'].includes(effBoard)) effBoard = 'board1';
+    if (!effBoard) effBoard = 'board1';
     if (!effDeck) effDeck = 'deck1';
 
     // Sessiondaten minimal belegen (Name kommt aus CC_BOOT.session)
@@ -2007,8 +2007,6 @@ document.addEventListener('DOMContentLoaded', function() {
   // Karten erstellen und als Stapel anordnen
   // Kartenstapel für board1/boardTest erzeugen (Decks robust auflösen)
   function createCards() {
-    // Nur unsere Board-Typen haben den Kartenstapel
-    if (window.boardType !== 'board1' && window.boardType !== 'boardTest') return;
 
     // Helfer lokal
     const canonDeckSlug = (s = '') => {
@@ -2040,7 +2038,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Globale Arrays initialisieren
     window.cards = [];
     const deckSlug = resolveDeck();
-    const deckPath = `assets/cards/${deckSlug}`;
+    const deckPath = `/app/assets/cards/${deckSlug}`;
 
     // Anzahl Karten feststellen und Stapel aufbauen
     if (typeof detectCardCount !== 'function') {
@@ -2071,7 +2069,9 @@ document.addEventListener('DOMContentLoaded', function() {
           <div class="card-front">
             <img src="${deckPath}/card${i}.png" alt="Karte ${i}" style="width:100%;height:100%;object-fit:contain;">
           </div>
-          <div class="card-back"><div class="card-back-design"></div></div>
+          <div class="card-back" style="background-image:url('${deckPath}/card-back.png')">
+            <div class="card-back-design"></div>
+          </div>
         `;
 
         // Interaktionen
