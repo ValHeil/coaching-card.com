@@ -1694,21 +1694,12 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     }
     // Basiseinstellungen für das Board (Hintergrund etc.) basierend auf dem Board-Typ
-    document.querySelector('.board-area').classList.add(`board-type-${boardType}`);
-
-    // Ablageplätze für Karten erstellen
-    createCardPlaceholders();
-
-    // Focus Note erstellen
-    createFocusNote();
+    buildBoardFromTemplate(tpl);  // rendert dynamisch aus WP-Template
 
     initFocusNoteLive();
 
     // Karten erstellen (abhängig vom Board-Typ)
     createCards();
-
-    // Vorhandene Notizen laden (falls vorhanden)
-    //loadNotes();
 
     // Teilnehmerliste initialisieren
     initializeParticipants();
@@ -1787,6 +1778,126 @@ document.addEventListener('DOMContentLoaded', function() {
 
     fitBoardToViewport();
   };
+
+  //Erzeugt generisch wichtigste Widgets aus WP-Template
+  function buildBoardFromTemplate(tpl) {
+    const area =
+      document.querySelector('.board-area') ||
+      document.getElementById('session-board') ||
+      document.body;
+
+    // Aufräumen: alte Template-Knoten (bei Rebuild)
+    area.querySelectorAll('.tpl-node').forEach(el => el.remove());
+
+    if (!tpl || !Array.isArray(tpl.widgets)) {
+      console.warn('[TPL] kein gültiges Template – fallback');
+      // Fallback auf die alten (nur wenn du willst)
+      // createCardPlaceholders();
+      // createFocusNote();
+      return;
+    }
+
+    // Optional: Welt/Canvas-Größe und Hintergrund
+    if (tpl.worldW && tpl.worldH) {
+      area.style.position = area.style.position || 'relative';
+      area.style.width  = Math.round(tpl.worldW) + 'px';
+      area.style.height = Math.round(tpl.worldH) + 'px';
+    }
+    if (tpl.bgColor) area.style.backgroundColor = tpl.bgColor;
+    if (tpl.bgImage) {
+      area.style.backgroundImage = `url(${tpl.bgImage})`;
+      area.style.backgroundSize  = 'cover';
+      area.style.backgroundPosition = 'center';
+    }
+
+    const px = (n) => (Math.round(n || 0) + 'px');
+
+    function place(el, w) {
+      el.classList.add('tpl-node');
+      el.style.position = 'absolute';
+      if (w.x != null) el.style.left   = px(w.x);
+      if (w.y != null) el.style.top    = px(w.y);
+      if (w.w != null) el.style.width  = px(w.w);
+      if (w.h != null) el.style.height = px(w.h);
+      if (w.z != null) el.style.zIndex = String(100 + (w.z|0));
+      area.appendChild(el);
+    }
+
+    // --- bgrect zuerst (Z-Reihenfolge)
+    tpl.widgets.filter(w => w.type === 'bgrect').forEach(w => {
+      const el = document.createElement('div');
+      el.className = 'board-bg-rect tpl-node';
+      el.style.borderRadius = '12px';
+      el.style.background   = w.color || '#f5f5f5';
+      el.style.opacity      = (w.opacity != null) ? String(w.opacity) : '1';
+      el.style.boxShadow    = '0 0 0 1px rgba(0,0,0,0.06) inset';
+      place(el, w);
+    });
+
+    // --- cardholder: visuelle Zonen für Karten
+    tpl.widgets.filter(w => w.type === 'cardholder').forEach(w => {
+      const el = document.createElement('div');
+      el.className = 'board-cardholder tpl-node';
+      el.dataset.role = 'placeholder';
+      el.style.border = '2px dashed rgba(0,0,0,.2)';
+      el.style.borderRadius = '14px';
+      el.style.background = 'rgba(255,255,255,.6)';
+      el.style.backdropFilter = 'blur(2px)';
+      el.style.display = 'flex';
+      el.style.alignItems = 'center';
+      el.style.justifyContent = 'center';
+      el.style.textAlign = 'center';
+      el.style.padding = '8px';
+      el.style.pointerEvents = 'auto';
+      el.textContent = (w.label || w.name || 'Ablage');
+
+      place(el, w);
+    });
+
+    // --- focusNote: große Fokus-Notiz an Template-Position
+    const focus = tpl.widgets.find(w => w.type === 'focusNote');
+    if (focus) {
+      try {
+        const parent = (typeof ensureNotesContainer === 'function') ? ensureNotesContainer() : area;
+        // Id fix/konstant – eine Fokusnotiz
+        const nid = 'focus-note';
+        const { el, content } = (typeof ensureNoteEl === 'function') ? ensureNoteEl(nid) : (function(){
+          const n = document.createElement('div');
+          n.className = 'notiz';
+          n.id = nid;
+          const c = document.createElement('div');
+          c.className = 'notiz-content';
+          c.setAttribute('contenteditable', 'false');
+          n.appendChild(c);
+          parent.appendChild(n);
+          return { el:n, content:c };
+        })();
+
+        el.classList.add('tpl-node');
+        el.style.position = 'absolute';
+        el.style.left   = px(focus.x || 0);
+        el.style.top    = px(focus.y || 0);
+        if (focus.w) el.style.width  = px(focus.w);
+        if (focus.h) el.style.height = px(focus.h);
+        el.style.background = '#FFF8DC'; // sanftes Gelb (kann später aus Template kommen)
+        el.style.borderRadius = '10px';
+        el.style.boxShadow = '0 2px 8px rgba(0,0,0,.08)';
+
+        const defaultText = (window.focusNoteTexts && window.focusNoteTexts[window.boardType])
+          || 'Fokus der Sitzung';
+        content.textContent = focus.text || defaultText;
+
+        // Draggable/Resize/AutoGrow wieder aktivieren
+        try { attachNoteResizeObserver && attachNoteResizeObserver(el); } catch {}
+        try { attachNoteAutoGrow && attachNoteAutoGrow(el); } catch {}
+        try { setupNoteEditingHandlers && setupNoteEditingHandlers(el); } catch {}
+        try { enhanceDraggableNote && enhanceDraggableNote(el); } catch {}
+      } catch (e) {
+        console.warn('Fokus-Note konnte nicht erstellt werden:', e);
+      }
+    }
+  }
+
   
 
   // Board anhand der aktuellen window.boardType/window.deck neu aufbauen
