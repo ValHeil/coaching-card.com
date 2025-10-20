@@ -113,16 +113,22 @@ function fitBoardToViewport() {
   area.dataset.offsetY = String(offY);
 }
 
-// Hilfsfunktion einmal oberhalb definieren:
-function hexToRgba(hex, a = 1) {
-  const m = (hex || '').toString().trim().replace('#','');
-  if (m.length === 3) {
-    const r = parseInt(m[0]+m[0], 16), g = parseInt(m[1]+m[1], 16), b = parseInt(m[2]+m[2], 16);
-    return `rgba(${r},${g},${b},${a})`;
-  }
-  const r = parseInt(m.substring(0,2),16), g = parseInt(m.substring(2,4),16), b = parseInt(m.substring(4,6),16);
-  return `rgba(${r},${g},${b},${a})`;
+// holt Props aus w.props ODER (legacy) top-level w.foo
+function gprop(w, key, def) {
+  if (w && w.props && w.props[key] !== undefined) return w.props[key];
+  if (w && w[key]   !== undefined) return w[key];
+  return def;
 }
+
+function hexToRgba(hex, alpha = 1) {
+  const h = (hex||'').replace('#','');
+  const s = h.length === 3 ? h.split('').map(c=>c+c).join('') : h;
+  const r = parseInt(s.slice(0,2)||'00',16);
+  const g = parseInt(s.slice(2,4)||'00',16);
+  const b = parseInt(s.slice(4,6)||'00',16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 
 function toNorm(px, py) {
   const { width, height } = getStageSizeUnscaled();
@@ -206,21 +212,29 @@ function applySampleCardFromTemplate(tpl) {
 
   const cw = Math.round(sample.w || 120);
   const ch = Math.round(cw * (260/295));
-  document.documentElement.style.setProperty('--card-w', cw + 'px');
-  document.documentElement.style.setProperty('--card-h', ch + 'px');
+  document.documentElement.style.setProperty('--card-w', `${cw}px`);
+  document.documentElement.style.setProperty('--card-h', `${ch}px`);
 
-  const widgets = Array.isArray(tpl.widgets) ? tpl.widgets : [];
-  const box = (sample?.props?.bgId)
-    ? widgets.find(w => w.type === 'bgrect' && w.id === sample.props.bgId)
-    : widgets
-        .filter(w => w.type === 'bgrect')
-        .find(b => (sample.x >= b.x && sample.x <= (b.x + b.w) &&
-                    sample.y >= b.y && sample.y <= (b.y + b.h)));
+  const W = Array.isArray(tpl.widgets) ? tpl.widgets : [];
 
+  // 1) bevorzugt verlinkte Box über id
+  const linkId = gprop(sample,'bgId',null);
+  let box = linkId ? W.find(w => w.type==='bgrect' && w.id===linkId) : null;
+
+  // 2) sonst die Box, die sample.x/y „enthält“
+  if (!box) {
+    box = W.filter(w => w.type==='bgrect')
+           .find(b => (sample.x >= b.x && sample.x <= b.x + b.w &&
+                       sample.y >= b.y && sample.y <= b.y + b.h));
+  }
+
+  // 3) fallback: sample.x/y
   let left = (sample.x ?? 40);
   let top  = (sample.y ?? 40);
 
-  if (box) {
+  // 4) zentrieren, wenn Box vorhanden
+  if (box && typeof box.x==='number' && typeof box.y==='number' &&
+      typeof box.w==='number' && typeof box.h==='number') {
     left = Math.round(box.x + (box.w - cw) / 2);
     top  = Math.round(box.y + (box.h - ch) / 2);
   }
@@ -229,14 +243,11 @@ function applySampleCardFromTemplate(tpl) {
     const stack = document.getElementById('card-stack') || document.querySelector('.cards-container');
     if (!stack) return;
     stack.style.position = 'absolute';
-    stack.style.left = left + 'px';
-    stack.style.top  = top  + 'px';
-    stack.style.zIndex = '200'; // sicher vor der BG-Box
+    stack.style.left = `${left}px`;
+    stack.style.top  = `${top}px`;
+    stack.style.zIndex = '200';
   });
 }
-
-
-
 
 
 /* === Z-Index Helper global bereitstellen (fix für RT.ws.onmessage) === */
@@ -1830,6 +1841,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     loadTpl
       .then((tpl) => {
+        console.debug('[TPL bgrects]', (tpl?.widgets || []).filter(w => w.type === 'bgrect'));
+        console.debug('[TPL sample]',  (tpl?.widgets || []).find(w => w.type === 'sampleCard'));
         if (!tpl) { console.warn('[TPL] leer – kein Render'); return; }
         applySampleCardFromTemplate(tpl);   // Stapel positionieren & Cardmaß
         buildBoardFromTemplate(tpl);        // Widgets/Hintergrund zeichnen
@@ -1969,39 +1982,39 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- bgrect zuerst (Z-Reihenfolge)
     tpl.widgets.filter(w => w.type === 'bgrect').forEach(w => {
-      const p  = (w && w.props) || {};
       const el = document.createElement('div');
-      el.className = 'board-bg-rect tpl-node';
-      el.dataset.id = w.id || '';
+      el.className   = 'board-bg-rect tpl-node';
+      el.dataset.id  = w.id || '';
 
-      // Position/Größe/Z zuerst
-      place(el, w); // setzt left/top/width/height/zIndex
+      // zuerst positionieren (left/top/w/h/z) – deine place(..) nutzt w.x,y,w,h,w.z
+      place(el, w);
 
-      // nicht interaktiv (Karten darüber bleiben klickbar)
+      // nicht klickfangend & weit hinten
       el.style.pointerEvents = 'none';
+      if (!w.z) el.style.zIndex = '10';
 
-      // Eckenradius
-      el.style.borderRadius = ((p.radius != null ? p.radius : 12)) + 'px';
+      // Optik aus props ODER legacy top-level
+      const radius = gprop(w,'radius',12);
+      el.style.borderRadius = `${Math.round(radius)}px`;
 
-      // Füllung über RGBA (nicht Element-Opacity!)
-      const fillCol = p.color || w.color || '#f3ead7';
-      const fillA   = (typeof p.opacity === 'number') ? p.opacity : 1;
+      const fillCol = gprop(w,'color','#f3ead7');
+      const fillA   = gprop(w,'opacity',1);
       el.style.backgroundColor = hexToRgba(fillCol, fillA);
 
-      // Rand (optional, inkl. eigener Opazität)
-      const bW = p.borderWidth ?? 0;
-      const bStyle = p.borderStyle || 'solid';
-      if (bW > 0 && bStyle !== 'none') {
-        const bCol = p.borderColor || '#000000';
-        const bA   = (typeof p.borderOpacity === 'number') ? p.borderOpacity : 1;
-        el.style.border = `${bW}px ${bStyle} ${hexToRgba(bCol, bA)}`;
+      const bw   = gprop(w,'borderWidth',0);
+      const bsty = gprop(w,'borderStyle','solid');
+      if (bw > 0 && bsty !== 'none') {
+        const bcol = gprop(w,'borderColor','#000000');
+        const ba   = gprop(w,'borderOpacity',1);
+        el.style.border = `${bw}px ${bsty} ${hexToRgba(bcol, ba)}`;
       } else {
         el.style.border = 'none';
       }
 
-      // dezenter innerer Rahmen wie zuvor
-      el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
+      // dezenter innerer Rahmen (falls kein expliziter Rand gesetzt ist)
+      if (bw === 0) el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
     });
+
 
 
     // --- cardholder: visuelle Zonen für Karten
