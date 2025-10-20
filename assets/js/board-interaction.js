@@ -136,6 +136,47 @@ function fromNorm(nx, ny) {
 function toNormCard(px, py)   { return toNorm(px, py); }
 function fromNormCard(nx, ny) { return fromNorm(nx, ny); }
 
+// Liefert ein schlankes Template-Objekt (egal welche Rohform ankommt)
+function normalizeTemplate(raw) {
+  if (!raw) return null;
+  const tpl = raw.template || raw.board || raw; // erlaubte Varianten
+  const widgets = Array.isArray(tpl.widgets) ? tpl.widgets : [];
+  return {
+    worldW: tpl.worldW || tpl.width  || tpl.w || null,
+    worldH: tpl.worldH || tpl.height || tpl.h || null,
+    bgColor: tpl.bgColor || tpl.backgroundColor || null,
+    bgImage: tpl.bgImage || tpl.backgroundImage || null,
+    widgets
+  };
+}
+
+// Holt /app/assets/boards/<slug>/board.json (falls nichts im CC_BOOT steckt)
+async function fetchBoardTemplate(slug) {
+  const safe = (slug || '').toString().trim().toLowerCase();
+  const url = `/app/assets/boards/${safe}/board.json?ts=${Date.now()}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status} beim Laden von ${url}`);
+  const json = await res.json();
+  return normalizeTemplate(json);
+}
+
+// Kartenslot aus sampleCard anwenden (Position & Cardmaß)
+function applySampleCardFromTemplate(tpl) {
+  const sample = tpl?.widgets?.find?.(w => w.type === 'sampleCard');
+  if (!sample) return;
+  const cw = Math.round(sample.w || 120);
+  document.documentElement.style.setProperty('--card-w', cw + 'px');
+  document.documentElement.style.setProperty('--card-h', Math.round(cw * (260/295)) + 'px');
+  requestAnimationFrame(() => {
+    const stack = document.getElementById('card-stack') || document.querySelector('.cards-container');
+    if (!stack) return;
+    stack.style.position = 'absolute';
+    stack.style.left = (sample.x ?? 40) + 'px';
+    stack.style.top  = (sample.y ?? 40) + 'px';
+  });
+}
+
+
 
 /* === Z-Index Helper global bereitstellen (fix für RT.ws.onmessage) === */
 if (!window.getHighestInteractiveZIndex) {
@@ -1694,18 +1735,40 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     }
     // Basiseinstellungen für das Board (Hintergrund etc.) basierend auf dem Board-Typ
-    buildBoardFromTemplate(tpl);  // rendert dynamisch aus WP-Template
+    const bootTplRaw =
+      window.CC_BOOT?.session?.board_template ||
+      window.CC_BOOT?.board_template ||
+      null;
 
-    initFocusNoteLive();
+    const bootTpl = normalizeTemplate(bootTplRaw);
 
-    // Karten erstellen (abhängig vom Board-Typ)
+    // 1) erst Karten erzeugen (Container existiert), dann Template anwenden
     createCards();
 
-    // Teilnehmerliste initialisieren
-    initializeParticipants();
+    // 2) Template aus Boot oder via fetch laden und rendern
+    const loadTpl = bootTpl ? Promise.resolve(bootTpl) : fetchBoardTemplate(window.boardType);
 
-    // Mülleimer hinzufügen
-    addTrashContainer();
+    loadTpl
+      .then((tpl) => {
+        if (!tpl) { console.warn('[TPL] leer – kein Render'); return; }
+        applySampleCardFromTemplate(tpl);   // Stapel positionieren & Cardmaß
+        buildBoardFromTemplate(tpl);        // Widgets/Hintergrund zeichnen
+      })
+      .catch((err) => {
+        console.warn('[TPL] Laden fehlgeschlagen:', err);
+      })
+      .finally(() => {
+        // vorhandene Initialisierung beibehalten
+        try { initializeParticipants && initializeParticipants(); } catch(e){}
+        try { addTrashContainer && addTrashContainer(); } catch(e){}
+        try { initFocusNoteLive && initFocusNoteLive(); } catch(e){}
+        try {
+          if (typeof waitForCards === 'function' && typeof loadSavedBoardState === 'function') {
+            waitForCards().then(() => { try { loadSavedBoardState(); } catch(e) { console.warn(e); } });
+          }
+        } catch(e){}
+      });
+
 
         // Add drop handling to allow repositioning cards and notes
     const boardArea = document.querySelector('.board-area');
@@ -2188,8 +2251,11 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     // Zielcontainer (linke Info-Box) suchen
-    const infoBox = document.querySelector('.board-info-box') || document.getElementById('board-info-box');
-    if (!infoBox) { console.warn('createCards(): .board-info-box nicht gefunden'); return; }
+    const infoBox = document.querySelector('.board-info-box') || document.getElementById('board-info-box') || document.querySelector('.board-area');
+    if (!infoBox) {
+      console.warn('createCards(): kein Container gefunden – weder .board-info-box noch .board-area');
+      return;
+    }
 
     // Container vorbereiten
     infoBox.textContent = '';
