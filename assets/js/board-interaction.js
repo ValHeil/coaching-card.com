@@ -150,14 +150,51 @@ function normalizeTemplate(raw) {
   };
 }
 
-// Holt /app/assets/boards/<slug>/board.json (falls nichts im CC_BOOT steckt)
+// 1st: /app/assets/boards/<slug>/board.json
+// 2nd: /wp-json/cc/v1/boards/<slug> (liefert { template: {...} })
+// 3rd: sinnvolles Minimal-Template (kein harter Fehler)
 async function fetchBoardTemplate(slug) {
   const safe = (slug || '').toString().trim().toLowerCase();
-  const url = `/app/assets/boards/${safe}/board.json?ts=${Date.now()}`;
-  const res = await fetch(url, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`HTTP ${res.status} beim Laden von ${url}`);
-  const json = await res.json();
-  return normalizeTemplate(json);
+
+  // Versuch 1: statische Assets
+  try {
+    const url = `/app/assets/boards/${safe}/board.json?ts=${Date.now()}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (res.ok) {
+      const json = await res.json();
+      return normalizeTemplate(json);
+    }
+    if (res.status !== 404) {
+      throw new Error(`HTTP ${res.status} beim Laden von ${url}`);
+    }
+  } catch (e) {
+    console.debug('[TPL] asset fetch fail', e);
+  }
+
+  // Versuch 2: WP-REST (gleicher Origin)
+  try {
+    const wpUrl = `/wp-json/cc/v1/boards/${encodeURIComponent(safe)}`;
+    const res2  = await fetch(wpUrl, { cache: 'no-store' });
+    if (res2.ok) {
+      const data = await res2.json();
+      const tpl  = data?.template || data?.board_template || data;
+      const norm = normalizeTemplate(tpl);
+      if (norm) return norm;
+    }
+  } catch (e) {
+    console.debug('[TPL] wp-rest fetch fail', e);
+  }
+
+  // Versuch 3: Minimal-Template, damit UI weiter funktioniert
+  // (sinnvoll speziell für Legacy board1)
+  console.warn(`[TPL] kein Template gefunden für "${safe}" – nutze Basis-Template`);
+  return {
+    worldW: 2400,
+    worldH: 1350,
+    bgColor: '#f5f5f5',
+    bgImage: null,
+    widgets: [] // keine Widgets -> Karten & Notizen funktionieren dennoch
+  };
 }
 
 // Kartenslot aus sampleCard anwenden (Position & Cardmaß)
@@ -1372,7 +1409,7 @@ function resolveBoardAndDeck() {
     url.get('board') ||
     window.CC_BOOT?.board ||
     window.CC_BOOT?.session?.board ||
-    window.CC_BOOT?.session?.board_template?.slug ||
+    window.CC_BOOT?.session?.board_template?.slug ||   // << wichtig
     window.sessionData?.boardId ||
     'board1';
 
@@ -1714,6 +1751,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Board mit Karten und Notizen initialisieren
   const initializeBoard = () => {
+    console.debug('[BOOT]', {
+      fromUrl: new URLSearchParams(location.search).get('board'),
+      fromBootBoard: window.CC_BOOT?.board,
+      fromBootSessionBoard: window.CC_BOOT?.session?.board,
+      fromBootTpl: !!window.CC_BOOT?.session?.board_template,
+      resolvedBoardType: window.boardType
+    });
 
     //Werte aus dem Board-Template (vom Server) nehmen
     const tpl = (window.CC_BOOT?.session?.board_template) || null;
