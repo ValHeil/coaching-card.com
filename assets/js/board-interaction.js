@@ -113,7 +113,16 @@ function fitBoardToViewport() {
   area.dataset.offsetY = String(offY);
 }
 
-
+// Hilfsfunktion einmal oberhalb definieren:
+function hexToRgba(hex, a = 1) {
+  const m = (hex || '').toString().trim().replace('#','');
+  if (m.length === 3) {
+    const r = parseInt(m[0]+m[0], 16), g = parseInt(m[1]+m[1], 16), b = parseInt(m[2]+m[2], 16);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+  const r = parseInt(m.substring(0,2),16), g = parseInt(m.substring(2,4),16), b = parseInt(m.substring(4,6),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
 
 function toNorm(px, py) {
   const { width, height } = getStageSizeUnscaled();
@@ -194,18 +203,43 @@ async function fetchBoardTemplate(slug) {
 function applySampleCardFromTemplate(tpl) {
   const sample = tpl?.widgets?.find?.(w => w.type === 'sampleCard');
   if (!sample) return;
+
   const cw = Math.round(sample.w || 120);
+  const ch = Math.round(cw * (260/295));
   document.documentElement.style.setProperty('--card-w', cw + 'px');
-  document.documentElement.style.setProperty('--card-h', Math.round(cw * (260/295)) + 'px');
+  document.documentElement.style.setProperty('--card-h', ch + 'px');
+
+  const widgets = Array.isArray(tpl.widgets) ? tpl.widgets : [];
+  const bgById = sample?.props?.bgId
+    ? widgets.find(w => w.type === 'bgrect' && (w.id === sample.props.bgId))
+    : null;
+
+  // Fallback: die bgrect finden, die die sampleCard-Position "enthält"
+  const bgFallback = widgets
+    .filter(w => w.type === 'bgrect')
+    .find(b => (sample.x >= b.x && sample.x <= (b.x + b.w) &&
+                sample.y >= b.y && sample.y <= (b.y + b.h)));
+
+  const box = bgById || bgFallback || null;
+
+  let left = (sample.x ?? 40);
+  let top  = (sample.y ?? 40);
+
+  if (box) {
+    left = Math.round(box.x + (box.w - cw) / 2);
+    top  = Math.round(box.y + (box.h - ch) / 2);
+  }
+
   requestAnimationFrame(() => {
     const stack = document.getElementById('card-stack') || document.querySelector('.cards-container');
     if (!stack) return;
     stack.style.position = 'absolute';
-    stack.style.left = (sample.x || 40) + 'px';
-    stack.style.top  = (sample.y || 40) + 'px';
-    stack.style.zIndex = '200'; // über bgrect (10) & Platzhaltern
+    stack.style.left = left + 'px';
+    stack.style.top  = top  + 'px';
+    stack.style.zIndex = '200'; // sicher vor der bgrect
   });
 }
+
 
 
 
@@ -1939,23 +1973,35 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- bgrect zuerst (Z-Reihenfolge)
     tpl.widgets.filter(w => w.type === 'bgrect').forEach(w => {
-      const p = prop(w);
+      const p = (w && w.props) || {};
       const el = document.createElement('div');
       el.className = 'board-bg-rect tpl-node';
-      el.style.borderRadius = (p.radius != null ? p.radius : 12) + 'px';
-      el.style.background   = p.color || '#f9ecd2';
-      if (p.opacity != null) el.style.opacity = String(p.opacity);
-      if (p.borderWidth)  el.style.boxShadow = 'none';
-      if (p.borderStyle || p.borderWidth || p.borderColor) {
-        el.style.borderStyle = p.borderStyle || 'solid';
-        el.style.borderWidth = (p.borderWidth || 0) + 'px';
-        el.style.borderColor = p.borderColor || 'rgba(0,0,0,0.06)';
-      } else {
-        el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
-      }
+
+      // Position/Größe zuerst
+      place(el, w);
+
+      // Interaktionen blockieren & stets hinter Karten liegen
       el.style.pointerEvents = 'none';
-      el.style.zIndex = '10';  // niedriger Layer für Hintergründe
-      place(el, w);            // w.z würde diesen Wert ggf. überschreiben
+      el.style.zIndex = String(100 + (w.z|0)); // bleibt niedrig, Karten kommen später höher
+
+      // Eckenradius
+      el.style.borderRadius = ((p.radius != null ? p.radius : 12)) + 'px';
+
+      // Füllung: RGBA statt Element-Opacity
+      const fillCol = p.color || w.color || '#f3ead7';
+      const fillA   = (typeof p.opacity === 'number') ? p.opacity : 1;
+      el.style.backgroundColor = hexToRgba(fillCol, fillA);
+
+      // Rand
+      const bW = p.borderWidth ?? 0;
+      const bStyle = p.borderStyle || 'solid';
+      if (bW > 0 && bStyle !== 'none') {
+        const bCol = p.borderColor || '#000000';
+        const bA   = (typeof p.borderOpacity === 'number') ? p.borderOpacity : 1;
+        el.style.border = `${bW}px ${bStyle} ${hexToRgba(bCol, bA)}`;
+      } else {
+        el.style.border = 'none';
+      }
     });
 
     // --- cardholder: visuelle Zonen für Karten
