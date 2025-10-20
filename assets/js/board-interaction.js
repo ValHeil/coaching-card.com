@@ -1478,6 +1478,9 @@ document.addEventListener('DOMContentLoaded', function() {
   window.__pauseSnapshotUntil  = Date.now() + 1500; // kleine zusätzliche Schonfrist
   window.__DIRTY__ = false;                   // gibt es ungespeicherte Änderungen?
   window.__LAST_GOOD_STATE__ = null;          // letzter bestätigter Snapshot (geladen/gespeichert)
+
+  // sorgt dafür, dass das Standard-Beige aus CSS greift
+  document.body.classList.add('board-container');
   // Elemente auswählen
   const ok =
     (window.handleSessionJoinOwnerAware && window.handleSessionJoinOwnerAware()) ||
@@ -1762,6 +1765,15 @@ document.addEventListener('DOMContentLoaded', function() {
     //Werte aus dem Board-Template (vom Server) nehmen
     const tpl = (window.CC_BOOT?.session?.board_template) || null;
     const sample = tpl?.widgets?.find?.(w => w.type === 'sampleCard');
+
+    const area = document.querySelector('.board-area');
+    if (area && tpl) {
+      const bg = tpl.bgColor || tpl.backgroundColor || null;
+      const bgImg = tpl.bgImage || tpl.backgroundImage || null;
+
+      if (bg) area.style.backgroundColor = bg;
+      if (bgImg) area.style.backgroundImage = `url('${bgImg}')`;
+    }
 
     if (sample) {
       // Kartengröße global (CSS vars) setzen
