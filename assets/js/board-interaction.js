@@ -1888,6 +1888,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   //Erzeugt generisch wichtigste Widgets aus WP-Template
   function buildBoardFromTemplate(tpl) {
+    const prop = (w) => (w && w.props) || {};
     const area =
       document.querySelector('.board-area') ||
       document.getElementById('session-board') ||
@@ -1932,23 +1933,34 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- bgrect zuerst (Z-Reihenfolge)
     tpl.widgets.filter(w => w.type === 'bgrect').forEach(w => {
+      const p = prop(w);
       const el = document.createElement('div');
       el.className = 'board-bg-rect tpl-node';
-      el.style.borderRadius = '12px';
-      el.style.background   = w.color || '#f5f5f5';
-      el.style.opacity      = (w.opacity != null) ? String(w.opacity) : '1';
-      el.style.boxShadow    = '0 0 0 1px rgba(0,0,0,0.06) inset';
+      el.style.borderRadius = (p.radius != null ? p.radius : 12) + 'px';
+      el.style.background   = p.color || '#f5f5f5';
+      if (p.opacity != null) el.style.opacity = String(p.opacity);
+      if (p.borderWidth)  el.style.boxShadow = 'none';
+      if (p.borderStyle || p.borderWidth || p.borderColor) {
+        el.style.borderStyle = p.borderStyle || 'solid';
+        el.style.borderWidth = (p.borderWidth || 0) + 'px';
+        el.style.borderColor = p.borderColor || 'rgba(0,0,0,0.06)';
+      } else {
+        el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
+      }
       place(el, w);
     });
 
     // --- cardholder: visuelle Zonen für Karten
     tpl.widgets.filter(w => w.type === 'cardholder').forEach(w => {
+      const p = prop(w);
       const el = document.createElement('div');
       el.className = 'board-cardholder tpl-node';
       el.dataset.role = 'placeholder';
-      el.style.border = '2px dashed rgba(0,0,0,.2)';
-      el.style.borderRadius = '14px';
-      el.style.background = 'rgba(255,255,255,.6)';
+      el.textContent = p.label || w.label || w.name || 'Ablage';
+      // sanfte Standardoptik, aber Props erlauben Überschreibung
+      el.style.border = (p.borderWidth ? p.borderWidth + 'px' : '2px') + ' dashed ' + (p.borderColor || 'rgba(0,0,0,0.2)');
+      el.style.borderRadius = (p.radius != null ? p.radius : 14) + 'px';
+      el.style.background   = p.background || 'rgba(255,255,255,0.6)';
       el.style.backdropFilter = 'blur(2px)';
       el.style.display = 'flex';
       el.style.alignItems = 'center';
@@ -1956,8 +1968,6 @@ document.addEventListener('DOMContentLoaded', function() {
       el.style.textAlign = 'center';
       el.style.padding = '8px';
       el.style.pointerEvents = 'auto';
-      el.textContent = (w.label || w.name || 'Ablage');
-
       place(el, w);
     });
 
@@ -1965,6 +1975,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const focus = tpl.widgets.find(w => w.type === 'focusNote');
     if (focus) {
       try {
+        const p = prop(focus);
         const parent = (typeof ensureNotesContainer === 'function') ? ensureNotesContainer() : area;
         // Id fix/konstant – eine Fokusnotiz
         const nid = 'focus-note';
@@ -1992,7 +2003,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const defaultText = (window.focusNoteTexts && window.focusNoteTexts[window.boardType])
           || 'Fokus der Sitzung';
-        content.textContent = focus.text || defaultText;
+        content.textContent = (p.text || focus.text || defaultText);
+        // optional: p.background, p.radius etc. berücksichtigen
+        if (p.background) el.style.background = p.background;
+        if (p.radius != null) el.style.borderRadius = p.radius + 'px';
 
         // Draggable/Resize/AutoGrow wieder aktivieren
         try { attachNoteResizeObserver && attachNoteResizeObserver(el); } catch {}
@@ -2003,6 +2017,71 @@ document.addEventListener('DOMContentLoaded', function() {
         console.warn('Fokus-Note konnte nicht erstellt werden:', e);
       }
     }
+
+    // --- description: Infobox/Fließtext aus Template
+    tpl.widgets.filter(w => w.type === 'description').forEach(w => {
+      const p = prop(w);
+      const el = document.createElement('div');
+      el.className = 'board-description-box tpl-node';
+      // Inhalt: bevorzugt HTML, sonst Plaintext
+      if (p.html) {
+        el.innerHTML = p.html;
+      } else {
+        const h = document.createElement('h3');
+        h.textContent = p.title || w.title || 'Info';
+        const t = document.createElement('p');
+        t.textContent = p.text || w.text || '';
+        el.appendChild(h); el.appendChild(t);
+      }
+      // einfache Styles (Props erlauben Theme)
+      if (p.background) el.style.background = p.background;
+      if (p.color)      el.style.color = p.color;
+      if (p.radius != null) el.style.borderRadius = p.radius + 'px';
+      if (p.borderWidth) {
+        el.style.borderStyle = p.borderStyle || 'solid';
+        el.style.borderWidth = p.borderWidth + 'px';
+        el.style.borderColor = p.borderColor || 'rgba(0,0,0,0.1)';
+      }
+      el.style.padding = (p.padding != null ? p.padding : 8) + 'px';
+      place(el, w);
+    });
+
+    // --- notepad: Bereich für Notizen (aus dem Builder), inkl. Farbe/Rahmen
+    tpl.widgets
+      .filter(w => w.type === 'notepad' || w.type === 'bb-notepad')
+      .forEach(w => {
+        const p = (typeof prop === 'function') ? prop(w) : (w.props || w); // robust
+        // vorhandenen Container nehmen oder neu erstellen
+        let el = document.getElementById('notes-container') || document.querySelector('.notes-container');
+        const isNew = !el;
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'notes-container';
+          el.className = 'notes-container tpl-node';
+        }
+
+        // Optik aus Template-Props
+        el.style.borderRadius = (p.radius != null ? p.radius : 12) + 'px';
+        el.style.background   = p.background || p.color || 'rgba(255,248,220,0.5)'; // sanftes Gelb als Default
+        if (p.borderStyle || p.borderWidth || p.borderColor) {
+          el.style.borderStyle = p.borderStyle || 'solid';
+          el.style.borderWidth = (p.borderWidth || 0) + 'px';
+          el.style.borderColor = p.borderColor || 'rgba(0,0,0,0.08)';
+        } else {
+          el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
+        }
+
+        // Position/Größe laut Template
+        place(el, w); // nutzt die vorhandene place(..)-Hilfsfunktion
+
+        // Erst jetzt anhängen (falls neu)
+        if (isNew) area.appendChild(el);
+
+        // Sicherheit: existierende Notizen in den Container umhängen
+        document.querySelectorAll('.notiz').forEach(n => { if (!el.contains(n)) el.appendChild(n); });
+      });
+      
+
   }
 
   
