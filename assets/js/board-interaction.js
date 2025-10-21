@@ -2363,7 +2363,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           });
         }, { passive:false });
 
-        el.style.cursor = 'crosshair'; // visuelles Feedback
+        el.style.cursor = 'grab'; // visuelles Feedback
         el.__noteInit = true;
       });
 
@@ -3191,6 +3191,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     attachNoteAutoGrow(note);
     setupNoteEditingHandlers(note);
     enhanceDraggableNote(note);
+    // Sofort als Drag kennzeichnen und Cursor setzen
+    note.classList.add('being-dragged');
+    document.body.classList.add('ccs-no-select');
+    document.onselectstart = () => false;
+    document.body.style.cursor = 'grabbing';
 
     const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
     const parentRect = parent.getBoundingClientRect();
@@ -3252,15 +3257,21 @@ document.addEventListener('DOMContentLoaded', async function() {
       document.removeEventListener('mousemove', move);
       document.removeEventListener('mouseup', up);
 
-      // Normierte Koordinaten wie beim späteren Drag ermitteln
-      const stageRect = getStageRect();               // skaliert
-      const px = parseFloat(note.style.left) || 0;    // unskaliert im Parent
+      // Cursor/Selection zurücksetzen
+      document.body.classList.remove('ccs-no-select');
+      document.onselectstart = null;
+      document.body.style.removeProperty('cursor');
+      note.classList.remove('being-dragged');
+
+      // Normierte Koordinaten wie beim späteren Drag ermitteln & senden
+      const stageRect = getStageRect();
+      const px = parseFloat(note.style.left) || 0;
       const py = parseFloat(note.style.top)  || 0;
       const pxStage = ((parentRect.left - stageRect.left) / s) + px;
       const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
       const { nx, ny } = toNorm(pxStage, pyStage);
-
       sendRT({ t:'note_move', id:note.id, nx, ny, prio:RT_PRI(), ts:Date.now() });
+
       if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState();
     };
 
