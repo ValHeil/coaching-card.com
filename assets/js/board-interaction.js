@@ -471,7 +471,16 @@ function initFocusNoteLive() {
   // Editor schließen auf Blur oder Enter (ohne Shift)
   function closeEditor(){ editable.style.display = 'none'; display.style.display = 'flex'; }
   editable.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); editable.blur(); }
+    // Enter erzeugt einen normalen Absatz – NICHT beenden
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+      // nichts tun → Browser fügt Zeilenumbruch ein
+      return;
+    }
+    // Optional: STRG/⌘+Enter beendet Editieren
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      editable.blur();
+    }
   });
   editable.addEventListener('blur', closeEditor);
 
