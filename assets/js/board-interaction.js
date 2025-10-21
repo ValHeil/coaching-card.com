@@ -2339,8 +2339,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Erst jetzt anhängen (falls neu)
         if (isNew) area.appendChild(el);
 
-        if (!el.__noteInit) {
-        el.addEventListener('mousedown', startDragNewNote);
+        el.dataset.role = 'notepad';
+        el.setAttribute('draggable', 'false');
+        el.addEventListener('dragstart', e => e.preventDefault());
+
+        // Nur wenn auf den Hintergrund des Blocks geklickt wird (nicht auf eine vorhandene Notiz)
+        el.addEventListener('mousedown', (e) => {
+          if (e.button !== 0) return;
+          if (e.target.closest('.notiz, .note')) return; // nicht auslösen, wenn man eine existierende Notiz anklickt
+          startDragNewNote(e); // erzeugt & zieht einen neuen Notizzettel aus genau diesem Container
+        });
 
         // Touch-Support: erzeugt ein „Mausäquivalent“ mit button=0
         el.addEventListener('touchstart', (e) => {
@@ -2357,13 +2365,11 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         el.style.cursor = 'crosshair'; // visuelles Feedback
         el.__noteInit = true;
-      }
-
-        // Sicherheit: existierende Notizen in den Container umhängen
-        document.querySelectorAll('.notiz').forEach(n => { if (!el.contains(n)) el.appendChild(n); });
       });
-      
 
+      // Sicherheit: existierende Notizen in den Container umhängen
+      document.querySelectorAll('.notiz').forEach(n => { if (!el.contains(n)) el.appendChild(n); });
+      
   }
 
   
@@ -4084,19 +4090,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         console.error("Fehler beim Drop-Handling:", error);
       }
 
-      // Board-Element & Scale holen
-      const area = document.querySelector('.board-area');
-      const boardRect = area.getBoundingClientRect();
-      const scale = parseFloat(area?.dataset.scale || '1');
-
-      // >>> NEU: unskalierte Drop-Position berechnen
-      const x = Math.round((e.clientX - boardRect.left) / scale);
-      const y = Math.round((e.clientY - boardRect.top)  / scale);
-
-      // Element mittig ablegen
-      draggedElement.style.left = `${Math.round(x - (draggedElement.offsetWidth  / 2))}px`;
-      draggedElement.style.top  = `${Math.round(y - (draggedElement.offsetHeight / 2))}px`;
-
     }
     
     // Event-Listener für die verbesserte Drag & Drop-Funktionalität hinzufügen
@@ -4469,6 +4462,9 @@ document.addEventListener('DOMContentLoaded', async function() {
  
   // Element draggable machen - angepasst für Karten
   function makeDraggable(element) {
+    if (element.id === 'notes-container' || element.classList.contains('notes-container')) {
+      return; // Notizblock bleibt fixiert
+    }
     if (element.__dragHandlersAttached) return;
     element.__dragHandlersAttached = true;
     console.log("Mache Element draggable:", element.id || "Unbekanntes Element");
