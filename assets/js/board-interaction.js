@@ -206,28 +206,55 @@ async function fetchBoardTemplate(slug) {
 }
 
 // Kartenslot aus sampleCard anwenden (Position & Cardmaß)
+// Kartenslot aus sampleCard anwenden (Position & Cardmaß)
 function applySampleCardFromTemplate(tpl) {
   const sample = tpl?.widgets?.find?.(w => w.type === 'sampleCard');
   if (!sample) return;
 
-  const cw = Math.round(gprop(sample, 'cardWidth', sample.w || 120));
-  const ch = Math.round(gprop(sample, 'cardHeight', sample.h || cw * (260 / 295)));
-  document.documentElement.style.setProperty('--card-w', `${cw}px`);
-  document.documentElement.style.setProperty('--card-h', `${ch}px`);
-
   const W = Array.isArray(tpl.widgets) ? tpl.widgets : [];
 
   // 1) bevorzugt verlinkte Box über id
-  const linkId = gprop(sample,'bgId',null);
-  let box = linkId ? W.find(w => w.type==='bgrect' && w.id===linkId) : null;
+  const linkId = gprop(sample, 'bgId', null);
+  let box = linkId ? W.find(w => w.type === 'bgrect' && w.id === linkId) : null;
 
   // 2) sonst die Box, die sample.x/y „enthält“
   if (!box) {
-    box = W.filter(w => w.type==='bgrect')
+    box = W.filter(w => w.type === 'bgrect')
            .find(b => (sample.x >= b.x && sample.x <= b.x + b.w &&
                        sample.y >= b.y && sample.y <= b.y + b.h));
   }
 
+  // === Kartengröße bestimmen =========================================
+  const RATIO = 260 / 295; // wie im Builder
+  const PAD   = 20;        // gleicher Abstand wie im Builder
+
+  // Primär: explicit props / legacy w/h
+  let cw = Number(gprop(sample, 'cardWidth',  0)) || 0;
+  let ch = Number(gprop(sample, 'cardHeight', 0)) || 0;
+  if (!cw && sample.w) cw = Math.round(sample.w);
+  if (!ch && sample.h) ch = Math.round(sample.h);
+
+  // Fallback: aus bgrect ableiten (mit demselben 20px Rand)
+  if ((!cw || !ch) && box && Number.isFinite(box.w) && Number.isFinite(box.h)) {
+    // optional Randstärke berücksichtigen
+    const bw = Number(gprop(box, 'borderWidth', 0)) || 0;
+    const availW = Math.max(40, (box.w - 2*PAD - 2*bw));
+    const availH = Math.max(40, (box.h - 2*PAD - 2*bw));
+    const fitW   = Math.floor(Math.min(availW, Math.floor(availH / RATIO)));
+
+    cw = cw || fitW;
+    ch = ch || Math.round((cw || fitW) * RATIO);
+  }
+
+  // letzter Fallback (nur wenn gar keine Box existiert)
+  if (!cw) { cw = 120; ch = Math.round(cw * RATIO); }
+  if (!ch) { ch = Math.round(cw * RATIO); }
+
+  // CSS-Variablen für Kartenbreite/-höhe setzen
+  document.documentElement.style.setProperty('--card-w', `${cw}px`);
+  document.documentElement.style.setProperty('--card-h', `${ch}px`);
+
+  // === Kartenstapel positionieren ====================================
   // 3) fallback: sample.x/y
   let left = (sample.x ?? 40);
   let top  = (sample.y ?? 40);
@@ -248,6 +275,7 @@ function applySampleCardFromTemplate(tpl) {
     stack.style.zIndex = '200';
   });
 }
+
 
 
 /* === Z-Index Helper global bereitstellen (fix für RT.ws.onmessage) === */
@@ -1818,8 +1846,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const bootTpl = normalizeTemplate(bootTplRaw);
 
-    // 1) erst Karten erzeugen (Container existiert), dann Template anwenden
-    createCards();
 
     // 2) Template aus Boot oder via fetch laden und rendern
     const loadTpl = bootTpl ? Promise.resolve(bootTpl) : fetchBoardTemplate(window.boardType);
@@ -1848,8 +1874,11 @@ document.addEventListener('DOMContentLoaded', function() {
       });
 
 
-        // Add drop handling to allow repositioning cards and notes
+    // Add drop handling to allow repositioning cards and notes
     const boardArea = document.querySelector('.board-area');
+
+    // erst Karten erzeugen (Container existiert), dann Template anwenden
+    createCards();
 
     // Enable dropping on the board
     boardArea.addEventListener('dragover', function(e) {
