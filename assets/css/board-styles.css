@@ -143,9 +143,11 @@ body {
   height: auto;
   min-height: 100px;
   margin-top: 10px;
+
   display: flex;
-  justify-content: center;
-  align-items: center;
+  flex-direction: column;      /* ← WICHTIG: Absätze untereinander, nicht nebeneinander */
+  justify-content: center;     /* vertikale Mitte */
+  align-items: stretch;        /* volle Breite – horizontale Ausrichtung via text-align */
 }
 
 #focus-note-editable {
@@ -1121,4 +1123,25 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 .focus-note .focus-note-content:hover,
 .focus-note .focus-note-title:hover {
   background: transparent !important;
+}
+/* Anzeige- und Edit-Element immer über die volle Breite */
+.focus-note-display,
+#focus-note-editable {
+  width: 100%;
+}
+
+/* Keine Input-Optik – wirklich „unsichtbares“ Textfeld */
+#focus-note-editable,
+.focus-note-content[contenteditable="true"] {
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Zeilenumbrüche/Absätze auch wenn die Content-DIV selbst editierbar ist */
+.focus-note-content[contenteditable="true"],
+#focus-note-editable {
+  white-space: pre-wrap;
+  overflow: hidden; /* wächst, scrollt erst am Limit (Auto-Grow macht Höhe) */
 }
