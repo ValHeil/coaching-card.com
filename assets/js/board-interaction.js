@@ -2310,6 +2310,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       el.style.pointerEvents = 'auto';
       el.style.padding = (p.padding != null ? p.padding : 12) + 'px';
 
+      //  Struktur Titel + Body-Wrapper (Body wird vertikal zentriert)
+      const align = ['left','center','right'].includes(p.textAlign) ? p.textAlign : 'center';
+
       // Titel
       const title = document.createElement('div');
       title.className = 'desc-title';
@@ -2319,6 +2322,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       title.style.whiteSpace = 'pre-wrap';
       title.style.wordBreak  = 'break-word';
       title.style.textAlign  = p.titleAlign || p.textAlign || 'center';
+
+      title.style.background = 'transparent';
+      title.style.outline = 'none';
+      title.style.border = 'none';
+      title.style.boxShadow = 'none';
+
       // Schrift-Props aus dem Builder (global)
       if (p.fontSize)   title.style.fontSize   = p.fontSize + 'px';
       if (p.fontFamily) title.style.fontFamily = p.fontFamily;
@@ -2337,6 +2346,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       content.style.background = 'transparent';
       content.style.outline    = 'none';
       content.style.border     = 'none';
+
+      content.style.display = 'flex';
+      content.style.flexDirection = 'column';
+      content.style.justifyContent = 'center';
+      content.style.alignItems = 'stretch';
+      
       // Schrift-Props spiegeln
       if (p.fontSize)   content.style.fontSize   = p.fontSize + 'px';
       if (p.fontFamily) content.style.fontFamily = p.fontFamily;
