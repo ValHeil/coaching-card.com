@@ -164,22 +164,7 @@ function normalizeTemplate(raw) {
 async function fetchBoardTemplate(slug) {
   const safe = (slug || '').toString().trim().toLowerCase();
 
-  // Versuch 1: statische Assets
-  try {
-    const url = `/app/assets/boards/${safe}/board.json?ts=${Date.now()}`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (res.ok) {
-      const json = await res.json();
-      return normalizeTemplate(json);
-    }
-    if (res.status !== 404) {
-      throw new Error(`HTTP ${res.status} beim Laden von ${url}`);
-    }
-  } catch (e) {
-    console.debug('[TPL] asset fetch fail', e);
-  }
-
-  // Versuch 2: WP-REST (gleicher Origin)
+  // Versuch 1: WP-REST (bevorzugt)
   try {
     const wpUrl = `/wp-json/cc/v1/boards/${encodeURIComponent(safe)}`;
     const res2  = await fetch(wpUrl, { cache: 'no-store' });
@@ -193,15 +178,34 @@ async function fetchBoardTemplate(slug) {
     console.debug('[TPL] wp-rest fetch fail', e);
   }
 
-  // Versuch 3: Minimal-Template, damit UI weiter funktioniert
-  // (sinnvoll speziell für Legacy board1)
+  // Versuch 2: statisches Asset
+  try {
+    const url = `/app/assets/boards/${safe}/board.json?ts=${Date.now()}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (res.ok) {
+      const json = await res.json();
+      // Schutz: offensichtliche "not found"-Stubs NICHT verwenden
+      const asText = JSON.stringify(json||{});
+      if (/not\s*found|nicht\s*gefunden/i.test(asText) || json?.error || json?.status === 'not_found') {
+        // nichts zurückgeben → REST-Fallback greift
+      } else {
+        return normalizeTemplate(json);
+      }
+    } else if (res.status !== 404) {
+      throw new Error(`HTTP ${res.status} beim Laden von ${url}`);
+    }
+  } catch (e) {
+    console.debug('[TPL] asset fetch fail', e);
+  }
+
+  // Versuch 3: Minimal-Template
   console.warn(`[TPL] kein Template gefunden für "${safe}" – nutze Basis-Template`);
   return {
     worldW: 2400,
     worldH: 1350,
     bgColor: '#f9ecd2',
     bgImage: null,
-    widgets: [] // keine Widgets -> Karten & Notizen funktionieren dennoch
+    widgets: []
   };
 }
 
@@ -1527,8 +1531,6 @@ function handleSessionJoin() {
 }
 
 
-
-
 // In der board-interaction.js müssen Sie diese Funktion aufrufen
 function initializeParticipantJoin() {
   if (window.addParticipantNamePromptStyles) {
@@ -1536,11 +1538,16 @@ function initializeParticipantJoin() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
   window.__SUPPRESS_AUTOSAVE__ = true;        // Save bis zum ersten Snapshot unterdrücken
   window.__pauseSnapshotUntil  = Date.now() + 1500; // kleine zusätzliche Schonfrist
   window.__DIRTY__ = false;                   // gibt es ungespeicherte Änderungen?
   window.__LAST_GOOD_STATE__ = null;          // letzter bestätigter Snapshot (geladen/gespeichert)
+
+  // --- Boot/Slug vor dem ersten Render sauber auflösen ---
+  await waitForBootConfig(800);
+  const { board } = resolveBoardAndDeck();
+  window.boardType = board;
 
   // sorgt dafür, dass das Standard-Beige aus CSS greift
   document.body.classList.add('board-container');
