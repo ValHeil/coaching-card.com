@@ -1172,3 +1172,8 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 .board-cardholder {
   background: transparent;
 }
+
+:root { --note-w: 180px; --note-h: 180px; }
+
+.notizzettel-box { width: var(--note-w); height: var(--note-h); }
+.notiz           { width: var(--note-w); min-height: var(--note-h); }
