@@ -1109,3 +1109,22 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 .board-area.board-type-boardTest {
   padding: 0 !important;
 }
+
+/* FocusNote im Live-Board: keine sichtbaren Input-Ränder/Oultines */
+.focus-note [contenteditable="true"] {
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Für den Body-Bereich explizit: niemals Rahmen darstellen */
+.focus-note .focus-note-content {
+  border: none !important;
+}
+
+/* Optional: beim Hover keine Hinterlegung suggerieren */
+.focus-note .focus-note-content:hover,
+.focus-note .focus-note-title:hover {
+  background: transparent !important;
+}
