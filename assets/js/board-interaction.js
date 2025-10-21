@@ -2051,24 +2051,73 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 
 
-    // --- cardholder: visuelle Zonen für Karten
+    // --- cardholder: mit Überschrift & Beschreibung aus dem Builder
     tpl.widgets.filter(w => w.type === 'cardholder').forEach(w => {
       const p = prop(w);
       const el = document.createElement('div');
       el.className = 'board-cardholder tpl-node';
       el.dataset.role = 'placeholder';
-      el.textContent = p.label || w.label || w.name || 'Ablage';
-      // sanfte Standardoptik, aber Props erlauben Überschreibung
-      el.style.border = (p.borderWidth ? p.borderWidth + 'px' : '2px') + ' dashed ' + (p.borderColor || 'rgba(0,0,0,0.2)');
-      el.style.borderRadius = (p.radius != null ? p.radius : 14) + 'px';
-      el.style.background   = p.background || 'rgba(255,255,255,0.6)';
-      el.style.backdropFilter = 'blur(2px)';
+
+      // Grundoptik
       el.style.display = 'flex';
-      el.style.alignItems = 'center';
-      el.style.justifyContent = 'center';
-      el.style.textAlign = 'center';
-      el.style.padding = '8px';
-      el.style.pointerEvents = 'auto';
+      el.style.flexDirection = 'column';
+      el.style.background   = p.background || 'rgba(255,255,255,0.6)';
+      el.style.borderRadius = (p.radius != null ? p.radius : 14) + 'px';
+      if (p.borderWidth && (p.borderStyle || 'dashed') !== 'none') {
+        el.style.border = `${p.borderWidth}px ${p.borderStyle || 'dashed'} ${p.borderColor || 'rgba(0,0,0,0.2)'}`;
+      } else {
+        el.style.border = 'none';
+      }
+      el.style.backdropFilter = 'blur(2px)';
+
+      // Top: Überschrift + Beschreibung
+      const top = document.createElement('div');
+      top.style.padding = '8px 12px';
+
+      const title = document.createElement('div');
+      title.textContent = (p.heading || p.title || '').trim() || 'Überschrift';
+      title.style.fontWeight = '700';
+
+      const desc = document.createElement('div');
+      desc.textContent = p.text || p.body || 'Beschreibung';
+
+      // Ausrichtung/Typo vom Builder
+      const align = ['left','center','right'].includes(p.textAlign) ? p.textAlign : 'center';
+      [title, desc].forEach(n => {
+        n.style.textAlign  = align;
+        n.style.whiteSpace = 'pre-wrap';
+        n.style.wordBreak  = 'break-word';
+        if (p.fontSize)   n.style.fontSize   = p.fontSize + 'px';
+        if (p.fontFamily) n.style.fontFamily = p.fontFamily;
+        if (p.fontColor)  n.style.color      = p.fontColor;
+      });
+      if (p.bold)      desc.style.fontWeight     = '700';
+      if (p.italic)    desc.style.fontStyle      = 'italic';
+      if (p.underline) desc.style.textDecoration = 'underline';
+
+      top.appendChild(title);
+      top.appendChild(desc);
+      el.appendChild(top);
+
+      // Trennlinie
+      const sep = document.createElement('div');
+      sep.style.height = '1px';
+      sep.style.background = 'rgba(0,0,0,0.06)';
+      sep.style.margin = '8px 0';
+      el.appendChild(sep);
+
+      // Ablagefläche (zentrierter Platzhaltertext)
+      const space = document.createElement('div');
+      space.className = 'board-cardholder-space';
+      space.style.flex = '1';
+      space.style.display = 'flex';
+      space.style.alignItems = 'center';
+      space.style.justifyContent = 'center';
+      space.style.padding = '8px';
+      space.style.textAlign = 'center';
+      space.textContent = p.label || w.label || w.name || 'Ablage';
+      el.appendChild(space);
+
       place(el, w);
     });
 
