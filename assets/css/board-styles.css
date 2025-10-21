@@ -149,19 +149,13 @@ body {
 }
 
 #focus-note-editable {
-  width: 100%;
-  min-height: 80px;
-  padding: 10px;
-  border: 1px solid #e0e0e0;
-  border-radius: 5px;
-  background-color: rgba(255, 255, 255, 0.9);
-  font-family: 'Playfair Display', serif;
-  font-size: 20px;
-  line-height: 1.5;
-  outline: none;
-  color: #333;
-  font-weight: bold;
-  text-align: center; /* Zentrierung des Texts */
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0;                 /* optional – wenn du wirklich gar keinen Rand willst */
+  white-space: pre-wrap;      /* Enter = Absatz */
+  overflow: hidden;           /* für Auto-Grow – Scroll erst am Limit */
 }
 
 #focus-note-editable:focus {
