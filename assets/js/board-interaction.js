@@ -255,8 +255,9 @@ function applySampleCardFromTemplate(tpl) {
   if (!ch) { ch = Math.round(cw * RATIO); }
 
   // CSS-Variablen für Kartenbreite/-höhe setzen
-  document.documentElement.style.setProperty('--card-w', `${cw}px`);
-  document.documentElement.style.setProperty('--card-h', `${ch}px`);
+  const area = document.querySelector('.board-area') || document.documentElement;
+  area.style.setProperty('--card-w', `${cw}px`);
+  area.style.setProperty('--card-h', `${ch}px`);  
 
   // === Kartenstapel positionieren ====================================
   // 3) fallback: sample.x/y
