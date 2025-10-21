@@ -2094,14 +2094,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         ? hexToRgba(bc, ba).match(/\d+,\d+,\d+,\d+(\.\d+)?/)[0]
         : '197,231,210,' + ba } )` : 'none';
 
-      // Titel + Inhalt
+     // Titel + Inhalt (Defaults merken für "einmalig löschen")
       const titleText = p.title ?? p.heading ?? 'Focus Note';
       const bodyText  = p.body  ?? p.text    ?? '';
+      const defaultTitle = (titleText ?? '').trim();
+      const defaultBody  = (bodyText  ?? '').trim();
 
       const title = document.createElement('div');
       title.className = 'focus-note-title';
       title.textContent = titleText;
-      // editierbar nur wenn im Builder erlaubt
       if (p.titleUserEditable) title.setAttribute('contenteditable', 'true');
 
       const content = document.createElement('div');
@@ -2109,10 +2110,23 @@ document.addEventListener('DOMContentLoaded', async function() {
       content.textContent = bodyText;
       if (p.bodyUserEditable) content.setAttribute('contenteditable', 'true');
 
-      // Layout für sauberes Scrollen statt Wachsen
+      // === Ausrichtung & Schrift aus dem Builder übernehmen ===
+      // Der Builder schreibt die Ausrichtung in props.textAlign (links/center/rechts) :contentReference[oaicite:1]{index=1}
+      const align = (['left','center','right'].includes(p.textAlign) ? p.textAlign : 'center');
+      title.style.textAlign   = align;
+      content.style.textAlign = align;
+
+      // optionale Text-Props aus dem Builder (global für beide Felder)
+      if (p.fontSize)   { title.style.fontSize   = p.fontSize + 'px'; content.style.fontSize   = p.fontSize + 'px'; }
+      if (p.fontColor)  { title.style.color      = p.fontColor;       content.style.color      = p.fontColor; }
+      if (p.fontFamily) { title.style.fontFamily = p.fontFamily;      content.style.fontFamily = p.fontFamily; }
+      if (p.bold)       { content.style.fontWeight = '700'; } // Title hat unten schon 700
+      if (p.italic)     { content.style.fontStyle  = 'italic'; }
+      if (p.underline)  { content.style.textDecoration = 'underline'; }
+
+      // Layout für sauberes Scrollen statt Wachsen (leicht angepasst)
       title.style.padding = '8px 12px';
-      title.style.fontWeight = '700';
-      title.style.textAlign = 'center';
+      title.style.fontWeight = '700'; // behalten
       title.style.borderBottom = '1px solid rgba(0,0,0,0.06)';
       title.style.userSelect = 'text';
 
@@ -2123,10 +2137,29 @@ document.addEventListener('DOMContentLoaded', async function() {
       content.style.wordBreak = 'break-word';
       content.style.userSelect = 'text';
 
+      // === "Einmalig löschen", wenn Admin-Text noch drin ist ===
+      function setupOneTimeClear(node, defaultVal) {
+        let clearedOnce = false;
+        node.addEventListener('focus', () => {
+          const cur = (node.textContent || '').trim();
+          if (!clearedOnce && cur === (defaultVal || '')) {
+            node.textContent = '';
+            clearedOnce = true;
+          }
+        });
+        node.addEventListener('input', () => {
+          // Sobald der Nutzer etwas Eigenes drin hat, nie wieder auto-löschen
+          const cur = (node.textContent || '').trim();
+          if (cur && cur !== (defaultVal || '')) clearedOnce = true;
+        });
+      }
+      if (p.titleUserEditable)  setupOneTimeClear(title,   defaultTitle);
+      if (p.bodyUserEditable)   setupOneTimeClear(content, defaultBody);
+
       el.appendChild(title);
       el.appendChild(content);
 
-      // Platzieren (keine Drag-/Resize-/AutoGrow-Handler!)
+      // Platzieren …
       place(el, focus);
     }
 
