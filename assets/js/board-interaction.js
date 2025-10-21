@@ -2339,6 +2339,26 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Erst jetzt anhängen (falls neu)
         if (isNew) area.appendChild(el);
 
+        if (!el.__noteInit) {
+        el.addEventListener('mousedown', startDragNewNote);
+
+        // Touch-Support: erzeugt ein „Mausäquivalent“ mit button=0
+        el.addEventListener('touchstart', (e) => {
+          try { e.preventDefault(); } catch {}
+          const t = e.touches && e.touches[0];
+          if (!t) return;
+          startDragNewNote({
+            clientX: t.clientX,
+            clientY: t.clientY,
+            button: 0,
+            preventDefault: () => {}
+          });
+        }, { passive:false });
+
+        el.style.cursor = 'crosshair'; // visuelles Feedback
+        el.__noteInit = true;
+      }
+
         // Sicherheit: existierende Notizen in den Container umhängen
         document.querySelectorAll('.notiz').forEach(n => { if (!el.contains(n)) el.appendChild(n); });
       });
@@ -3148,7 +3168,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     
   // Funktion zum Starten des Ziehens eines neuen Notizzettels
   function startDragNewNote(e) {
-    if (e.button !== 0) return;
+    const btn = (typeof e.button === 'number') ? e.button : 0; // Touch hat kein button → als Links-Klick werten
+    if (btn !== 0) return;
     e.preventDefault();
 
     const notizId = 'note-' + Date.now();
