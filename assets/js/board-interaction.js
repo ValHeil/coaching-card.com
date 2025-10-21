@@ -2050,75 +2050,116 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
 
 
-
-    // --- cardholder: mit Überschrift & Beschreibung aus dem Builder
+    // --- cardholder: Zonen inklusive Titel/Desc mit optionaler Bearbeitung ---
     tpl.widgets.filter(w => w.type === 'cardholder').forEach(w => {
-      const p = prop(w);
+      const p = prop(w); // merged props (inkl. title/body + ...UserEditable)
       const el = document.createElement('div');
       el.className = 'board-cardholder tpl-node';
-      el.dataset.role = 'placeholder';
+      el.style.position = 'absolute';
 
-      // Grundoptik
+      // Geometrie aus Template
+      el.style.left   = (w.x || 0) + 'px';
+      el.style.top    = (w.y || 0) + 'px';
+      if (w.w) el.style.width  = w.w + 'px';
+      if (w.h) el.style.height = w.h + 'px';
+
+      // sanfte Standardoptik, aber KEIN Weiß! (Hintergrund nur, wenn explizit gesetzt)
+      el.style.border       = (p.borderWidth ? p.borderWidth + 'px' : '2px') + ' dashed ' + (p.borderColor || 'rgba(0,0,0,0.2)');
+      el.style.borderRadius = (p.radius != null ? p.radius : 14) + 'px';
+      el.style.background   = (p.background != null ? p.background : 'transparent'); // <- statt weiß
+      el.style.backdropFilter = 'blur(2px)';
       el.style.display = 'flex';
       el.style.flexDirection = 'column';
-      el.style.background   = p.background || 'rgba(255,255,255,0.6)';
-      el.style.borderRadius = (p.radius != null ? p.radius : 14) + 'px';
-      if (p.borderWidth && (p.borderStyle || 'dashed') !== 'none') {
-        el.style.border = `${p.borderWidth}px ${p.borderStyle || 'dashed'} ${p.borderColor || 'rgba(0,0,0,0.2)'}`;
-      } else {
-        el.style.border = 'none';
-      }
-      el.style.backdropFilter = 'blur(2px)';
+      el.style.overflow = 'hidden';
+      el.style.pointerEvents = 'auto';
 
-      // Top: Überschrift + Beschreibung
+      // OBERER TEXT-BEREICH
       const top = document.createElement('div');
-      top.style.padding = '8px 12px';
+      top.className = 'ch-top';
+      top.style.flex = '0 0 auto';
+      top.style.padding = '8px 10px 6px 10px';
 
+      // Titel
       const title = document.createElement('div');
-      title.textContent = (p.heading || p.title || '').trim() || 'Überschrift';
-      title.style.fontWeight = '700';
+      title.className = 'ch-title';
+      title.textContent = (p.title ?? p.heading ?? p.name ?? '').trim();
+      title.style.fontWeight = '600';
+      title.style.lineHeight = '1.25';
+      title.style.whiteSpace = 'pre-wrap';
+      title.style.wordBreak = 'break-word';
+      title.style.textAlign = p.titleAlign || p.textAlign || 'left';
 
+      // Text/Body
       const desc = document.createElement('div');
-      desc.textContent = p.text || p.body || 'Beschreibung';
+      desc.className = 'ch-desc';
+      desc.textContent = (p.body ?? p.text ?? '').trim();
+      desc.style.marginTop = '4px';
+      desc.style.lineHeight = '1.3';
+      desc.style.whiteSpace = 'pre-wrap';         // Absatz mit Enter geht nach unten, nicht „rechts“
+      desc.style.wordBreak  = 'break-word';
+      desc.style.overflowWrap = 'anywhere';
+      desc.style.textAlign = p.bodyAlign || p.textAlign || 'left';
 
-      // Ausrichtung/Typo vom Builder
-      const align = ['left','center','right'].includes(p.textAlign) ? p.textAlign : 'center';
-      [title, desc].forEach(n => {
-        n.style.textAlign  = align;
-        n.style.whiteSpace = 'pre-wrap';
-        n.style.wordBreak  = 'break-word';
-        if (p.fontSize)   n.style.fontSize   = p.fontSize + 'px';
-        if (p.fontFamily) n.style.fontFamily = p.fontFamily;
-        if (p.fontColor)  n.style.color      = p.fontColor;
-      });
-      if (p.bold)      desc.style.fontWeight     = '700';
-      if (p.italic)    desc.style.fontStyle      = 'italic';
-      if (p.underline) desc.style.textDecoration = 'underline';
-
-      top.appendChild(title);
-      top.appendChild(desc);
-      el.appendChild(top);
-
-      // Trennlinie
+      // Separator
       const sep = document.createElement('div');
+      sep.className = 'ch-sep';
       sep.style.height = '1px';
-      sep.style.background = 'rgba(0,0,0,0.06)';
-      sep.style.margin = '8px 0';
-      el.appendChild(sep);
+      sep.style.background = 'rgba(0,0,0,0.15)';
 
-      // Ablagefläche (zentrierter Platzhaltertext)
+      // UNTERER ABLEGE-BEREICH (Dropzone)
       const space = document.createElement('div');
-      space.className = 'board-cardholder-space';
-      space.style.flex = '1';
+      space.className = 'ch-space';
+      space.style.flex = '1 1 auto';
+      space.style.position = 'relative';
+      space.style.minHeight = '40px';
       space.style.display = 'flex';
       space.style.alignItems = 'center';
       space.style.justifyContent = 'center';
-      space.style.padding = '8px';
-      space.style.textAlign = 'center';
-      space.textContent = p.label || w.label || w.name || 'Ablage';
+      space.dataset.dropzone = 'cards'; // Hook für deine DnD-Logik
+
+      // Editierbarkeit laut Builder-Flags
+      const makeEditable = (node, allowed, defaultText) => {
+        if (!allowed) return;
+        node.setAttribute('contenteditable', 'true');
+        node.dataset.default = (defaultText || '').trim();
+        let clearedOnce = false;
+        node.addEventListener('focus', () => {
+          // Einmaliges Auto-Löschen: nur wenn noch der Admin-Text drin steht
+          if (!clearedOnce && node.textContent.trim() === node.dataset.default) {
+            node.textContent = '';
+            clearedOnce = true;
+          }
+        });
+        // Autosave/Sync (falls vorhanden)
+        ['input','keyup','paste','cut','blur'].forEach(ev => {
+          node.addEventListener(ev, () => {
+            try { if (typeof debouncedSave === 'function') debouncedSave(); } catch {}
+          });
+        });
+      };
+
+      makeEditable(title, !!p.titleUserEditable, title.textContent);
+      makeEditable(desc,  !!p.bodyUserEditable,  desc.textContent);
+
+      // Zusammenbauen
+      top.appendChild(title);
+      top.appendChild(desc);
+      el.appendChild(top);
+      el.appendChild(sep);
       el.appendChild(space);
 
-      place(el, w);
+      // In den DOM & Größe begrenzen: Der Body darf NICHT höher werden als der obere Bereich
+      place(el, w); // deine bestehende Platzierungsfunktion
+      requestAnimationFrame(() => {
+        // Maximalhöhe des oberen Bereichs begrenzen (z. B. 40% der Boxhöhe, capped)
+        const maxTop = Math.min(Math.round((w.h || el.clientHeight) * 0.4), 220);
+        top.style.maxHeight = maxTop + 'px';
+        // Desc-Scroll statt Überlaufen
+        const used = title.offsetHeight + 10; // plus Innenabstände
+        const maxDesc = Math.max(0, maxTop - used);
+        desc.style.maxHeight = maxDesc + 'px';
+        desc.style.overflowY = 'auto';
+      });
     });
 
     // --- focusNote: große Fokus-Notiz an Template-Position
