@@ -2275,38 +2275,114 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
 
-    // --- description: Infobox/Fließtext aus Template
+    // --- description: Infobox/Fließtext aus Template (mit optionaler Bearbeitung)
     tpl.widgets.filter(w => w.type === 'description').forEach(w => {
-      const p = prop(w);
+      const p  = prop(w); // merged props inkl. heading/text & ...UserEditable
       const el = document.createElement('div');
       el.className = 'board-description-box tpl-node';
-      // Inhalt: bevorzugt HTML, sonst Plaintext
-      if (p.html) {
-        el.innerHTML = p.html;
-      } else {
-        const h = document.createElement('h3');
-        h.textContent = p.title || w.title || 'Info';
-        const t = document.createElement('p');
-        t.textContent = p.text || w.text || '';
-        el.appendChild(h); el.appendChild(t);
-      }
-      // einfache Styles (Props erlauben Theme)
-      if (p.background){
-        const col = p.color || '#ffffff';
-        const a   = (typeof p.opacity === 'number') ? p.opacity : 0.6;
-        el.style.backgroundColor = hexToRgba(col, a);
-      } 
+      el.style.position = 'absolute';
 
-      if (p.color)      el.style.color = p.color;
+      // Geometrie aus Template
+      if (w.x != null) el.style.left = w.x + 'px';
+      if (w.y != null) el.style.top  = w.y + 'px';
+      if (w.w) el.style.width  = w.w + 'px';
+      if (w.h) el.style.height = w.h + 'px';
+
+      // Hintergrund / Rahmen wie im Builder (kein globales opacity!)
+      const fillCol = p.background || p.color || null;
+      const fillA   = (typeof p.opacity === 'number') ? p.opacity : 1;
+      el.style.background = fillCol
+        ? (fillA >= 1 ? fillCol : hexToRgba(fillCol, fillA))
+        : 'transparent';
       if (p.radius != null) el.style.borderRadius = p.radius + 'px';
       if (p.borderWidth) {
         el.style.borderStyle = p.borderStyle || 'solid';
+        const ba = (typeof p.borderOpacity === 'number') ? p.borderOpacity : 1;
+        const bc = p.borderColor || 'rgba(0,0,0,0.15)';
         el.style.borderWidth = p.borderWidth + 'px';
-        el.style.borderColor = p.borderColor || 'rgba(0,0,0,0.1)';
+        el.style.borderColor = (ba >= 1 ? bc : hexToRgba(bc, ba));
       }
-      el.style.padding = (p.padding != null ? p.padding : 8) + 'px';
+
+      // Container: füllt die Box und lässt den Body den restlichen Platz bekommen
+      el.style.display = 'flex';
+      el.style.flexDirection = 'column';
+      el.style.overflow = 'hidden';
+      el.style.pointerEvents = 'auto';
+      el.style.padding = (p.padding != null ? p.padding : 12) + 'px';
+
+      // Titel
+      const title = document.createElement('div');
+      title.className = 'desc-title';
+      title.textContent = (p.title ?? p.heading ?? '').trim() || 'Überschrift';
+      title.style.fontWeight = '700';
+      title.style.lineHeight = '1.25';
+      title.style.whiteSpace = 'pre-wrap';
+      title.style.wordBreak  = 'break-word';
+      title.style.textAlign  = p.titleAlign || p.textAlign || 'center';
+      // Schrift-Props aus dem Builder (global)
+      if (p.fontSize)   title.style.fontSize   = p.fontSize + 'px';
+      if (p.fontFamily) title.style.fontFamily = p.fontFamily;
+      if (p.fontColor)  title.style.color      = p.fontColor;
+
+      // Body (transparentes, feldfüllendes Textfeld)
+      const content = document.createElement('div');
+      content.className = 'desc-content';
+      content.textContent = (p.body ?? p.text ?? '').trim() || 'Beschreibung';
+      content.style.flex = '1 1 auto';
+      content.style.minHeight = '0';          // wichtig für flex + overflow
+      content.style.whiteSpace = 'pre-wrap';
+      content.style.wordBreak  = 'break-word';
+      content.style.overflow   = 'auto';
+      content.style.textAlign  = p.bodyAlign || p.textAlign || 'center';
+      content.style.background = 'transparent';
+      content.style.outline    = 'none';
+      content.style.border     = 'none';
+      // Schrift-Props spiegeln
+      if (p.fontSize)   content.style.fontSize   = p.fontSize + 'px';
+      if (p.fontFamily) content.style.fontFamily = p.fontFamily;
+      if (p.fontColor)  content.style.color      = p.fontColor;
+
+      // === Optionale Bearbeitbarkeit wie bei Cardholder ===
+      function setupOneTimeClear(node, defaultVal) {
+        let clearedOnce = false;
+        node.addEventListener('focus', () => {
+          const cur = (node.textContent || '').trim();
+          if (!clearedOnce && cur === (defaultVal || '')) {
+            node.textContent = '';
+            clearedOnce = true;
+          }
+        });
+        node.addEventListener('input', () => {
+          const cur = (node.textContent || '').trim();
+          if (cur && cur !== (defaultVal || '')) clearedOnce = true;
+        });
+      }
+      const defaultTitle = title.textContent;
+      const defaultBody  = content.textContent;
+
+      if (p.titleUserEditable) {
+        title.setAttribute('contenteditable', 'true');
+        setupOneTimeClear(title, defaultTitle);
+        ['input','keyup','paste','cut','blur'].forEach(ev =>
+          title.addEventListener(ev, () => { try { debouncedSave(); } catch {} })
+        );
+      }
+      if (p.bodyUserEditable) {
+        content.setAttribute('contenteditable', 'true');
+        content.style.cursor = 'text';
+        setupOneTimeClear(content, defaultBody);
+        ['input','keyup','paste','cut','blur'].forEach(ev =>
+          content.addEventListener(ev, () => { try { debouncedSave(); } catch {} })
+        );
+      }
+
+      el.appendChild(title);
+      el.appendChild(content);
+
+      // Platzieren gemäß w.x/w.y/w.w/w.h
       place(el, w);
     });
+
 
     // --- notepad: Bereich für Notizen (aus dem Builder), inkl. Farbe/Rahmen
     tpl.widgets
