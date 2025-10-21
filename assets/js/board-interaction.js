@@ -210,7 +210,7 @@ function applySampleCardFromTemplate(tpl) {
   const sample = tpl?.widgets?.find?.(w => w.type === 'sampleCard');
   if (!sample) return;
 
-  const cw = Math.round(sample.w || 120);
+  const cw = Math.round(gprop(sample, 'cardWidth', sample.w || 120));
   const ch = Math.round(cw * (260/295));
   document.documentElement.style.setProperty('--card-w', `${cw}px`);
   document.documentElement.style.setProperty('--card-h', `${ch}px`);
