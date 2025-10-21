@@ -2064,9 +2064,21 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (w.h) el.style.height = w.h + 'px';
 
       // sanfte Standardoptik, aber KEIN Weiß! (Hintergrund nur, wenn explizit gesetzt)
-      el.style.border       = (p.borderWidth ? p.borderWidth + 'px' : '2px') + ' dashed ' + (p.borderColor || 'rgba(0,0,0,0.2)');
+      const bsty = p.borderStyle || 'dashed';
+      const bw   = (p.borderWidth ?? 2);
+      const bcol = p.borderColor || '#b8b8b8';
+      const ba   = (typeof p.borderOpacity === 'number') ? p.borderOpacity : 1;
+      el.style.border       = (bw > 0 && bsty !== 'none')
+        ? `${bw}px ${bsty} ${ba >= 1 ? bcol : hexToRgba(bcol, ba)}`
+        : 'none';
       el.style.borderRadius = (p.radius != null ? p.radius : 14) + 'px';
-      el.style.background   = (p.background != null ? p.background : 'transparent'); // <- statt weiß
+
+      const fillCol = p.background || p.color || null;
+      const fillA   = (typeof p.opacity === 'number') ? p.opacity : 0;
+      el.style.background = fillCol
+        ? (fillA >= 1 ? fillCol : hexToRgba(fillCol, fillA))
+        : 'transparent';
+
       el.style.backdropFilter = 'blur(2px)';
       el.style.display = 'flex';
       el.style.flexDirection = 'column';
@@ -2087,7 +2099,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       title.style.lineHeight = '1.25';
       title.style.whiteSpace = 'pre-wrap';
       title.style.wordBreak = 'break-word';
-      title.style.textAlign = p.titleAlign || p.textAlign || 'left';
+      title.style.textAlign = p.titleAlign || p.textAlign || 'center';
 
       // Text/Body
       const desc = document.createElement('div');
@@ -2098,7 +2110,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       desc.style.whiteSpace = 'pre-wrap';         // Absatz mit Enter geht nach unten, nicht „rechts“
       desc.style.wordBreak  = 'break-word';
       desc.style.overflowWrap = 'anywhere';
-      desc.style.textAlign = p.bodyAlign || p.textAlign || 'left';
+      desc.style.textAlign = p.bodyAlign || p.textAlign || 'center';
 
       // Separator
       const sep = document.createElement('div');
@@ -2279,7 +2291,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         el.appendChild(h); el.appendChild(t);
       }
       // einfache Styles (Props erlauben Theme)
-      if (p.background) el.style.background = p.background;
+      if (p.background){
+        const col = p.color || '#ffffff';
+        const a   = (typeof p.opacity === 'number') ? p.opacity : 0.6;
+        el.style.backgroundColor = hexToRgba(col, a);
+      } 
+
       if (p.color)      el.style.color = p.color;
       if (p.radius != null) el.style.borderRadius = p.radius + 'px';
       if (p.borderWidth) {
