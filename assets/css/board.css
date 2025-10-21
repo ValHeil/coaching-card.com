@@ -667,3 +667,8 @@ html, body {
 .card.flipped .card-back {
   transition: transform 0.5s !important;
 }
+
+.notes-container {
+  user-select: none;
+  cursor: default; /* oder: cursor: grab; wenn du die Geste betonen willst */
+}
