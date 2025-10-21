@@ -453,6 +453,9 @@ function initFocusNoteLive() {
 
   // Editor öffnen, wenn auf Anzeige geklickt wird
   display.addEventListener('click', () => {
+    // nur wenn Editieren erlaubt ist
+    if (!editable.isContentEditable) return;
+
     display.style.display  = 'none';
     editable.style.display = 'block';
 
@@ -2063,46 +2066,70 @@ document.addEventListener('DOMContentLoaded', async function() {
     // --- focusNote: große Fokus-Notiz an Template-Position
     const focus = tpl.widgets.find(w => w.type === 'focusNote');
     if (focus) {
-      const p = prop(focus);
-
-      // Container: keine .notiz-Klasse => keine Notizzettel-Styles/Shadow/Drag
+      const p = prop(focus); // merged props
+      // Container erstellen
       const el = document.createElement('div');
-      el.id = 'focus-note';
-      el.className = 'tpl-node focus-note';
-      // fixe Position/Größe vom Template
-      place(el, focus); // nutzt die vorhandene place(.) Hilfsfunktion
+      el.className = 'focus-note tpl-node';
+      el.style.position = 'absolute';
+      el.style.boxShadow = 'none';                     // kein Notizzettel-Schatten
+      el.style.display = 'flex';
+      el.style.flexDirection = 'column';
+      el.style.overflow = 'hidden';
+      // Geometrie aus Template
+      el.style.left   = px(focus.x || 0);
+      el.style.top    = px(focus.y || 0);
+      if (focus.w) el.style.width  = px(focus.w);
+      if (focus.h) el.style.height = px(focus.h);
 
-      // reduzierte Optik: kein Schatten
-      el.style.boxShadow = 'none';
-      if (p.background) el.style.background = p.background;
-      if (p.radius != null) el.style.borderRadius = p.radius + 'px';
+      // Optik aus Props
+      const bg  = p.background || p.color || '#e6f6ea';
+      const rad = (p.radius != null ? p.radius : 14);
+      const bw  = (p.borderWidth  != null ? p.borderWidth  : 2);
+      const bs  = (p.borderStyle  || 'solid');
+      const bc  = (p.borderColor  || '#c5e7d2');
+      const ba  = (p.borderOpacity != null ? p.borderOpacity : 1);
+      el.style.background   = bg;
+      el.style.borderRadius = rad + 'px';
+      el.style.border       = bw > 0 && bs !== 'none' ? `${bw}px ${bs} rgba( ${hexToRgba
+        ? hexToRgba(bc, ba).match(/\d+,\d+,\d+,\d+(\.\d+)?/)[0]
+        : '197,231,210,' + ba } )` : 'none';
 
-      // Anzeige + (potenziell) Editor; Editor nur, wenn erlaubt
-      const canEdit = !!p.bodyUserEditable || (typeof isOwner === 'function' && isOwner());
-      el.innerHTML = `
-        <div id="focus-note-display" class="focus-note-display"></div>
-        <div id="focus-note-editable" class="focus-note-editable"
-            contenteditable="${canEdit ? 'true' : 'false'}"
-            style="display:none"></div>
-      `;
+      // Titel + Inhalt
+      const titleText = p.title ?? p.heading ?? 'Focus Note';
+      const bodyText  = p.body  ?? p.text    ?? '';
 
-      // Initialtext setzen (Template/Props/Fallback)
-      const initial =
-        p.text || focus.text ||
-        (window.focusNoteTexts && window.focusNoteTexts[window.boardType]) ||
-        '';
+      const title = document.createElement('div');
+      title.className = 'focus-note-title';
+      title.textContent = titleText;
+      // editierbar nur wenn im Builder erlaubt
+      if (p.titleUserEditable) title.setAttribute('contenteditable', 'true');
 
-      if (typeof window.__ccSetFocusNote === 'function') {
-        window.__ccSetFocusNote(initial);
-      } else {
-        const disp = el.querySelector('#focus-note-display');
-        disp.textContent = (initial || 'Schreiben sie hier die Focus Note der Sitzung rein').trim();
-        disp.classList.toggle('has-content', !!initial.trim());
-      }
+      const content = document.createElement('div');
+      content.className = 'focus-note-content';
+      content.textContent = bodyText;
+      if (p.bodyUserEditable) content.setAttribute('contenteditable', 'true');
 
-      // Live-Editing initialisieren (achtet gleich unten auf Berechtigung)
-      if (typeof initFocusNoteLive === 'function') initFocusNoteLive();
+      // Layout für sauberes Scrollen statt Wachsen
+      title.style.padding = '8px 12px';
+      title.style.fontWeight = '700';
+      title.style.textAlign = 'center';
+      title.style.borderBottom = '1px solid rgba(0,0,0,0.06)';
+      title.style.userSelect = 'text';
+
+      content.style.flex = '1';
+      content.style.padding = '12px';
+      content.style.overflow = 'auto';
+      content.style.whiteSpace = 'pre-wrap';
+      content.style.wordBreak = 'break-word';
+      content.style.userSelect = 'text';
+
+      el.appendChild(title);
+      el.appendChild(content);
+
+      // Platzieren (keine Drag-/Resize-/AutoGrow-Handler!)
+      place(el, focus);
     }
+
 
     // --- description: Infobox/Fließtext aus Template
     tpl.widgets.filter(w => w.type === 'description').forEach(w => {
