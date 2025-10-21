@@ -1174,3 +1174,11 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 }
 
 :root { --note-w: 180px; --note-h: 180px; }
+
+/* Description: keine sichtbaren Ränder/Outlines beim Editieren */
+.board-description-box [contenteditable="true"] {
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
