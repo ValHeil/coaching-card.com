@@ -5299,6 +5299,67 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 });
 
+(function () {
+  const area     = document.querySelector('.focus-note-area');           // Container
+  const titleEl  = area?.querySelector('h2');                            // Überschrift
+  const editable = document.getElementById('focus-note-editable')        // Edit-Feld
+                || area?.querySelector('[contenteditable="true"]');
+
+  if (!area || !editable) return;
+
+  // --- Ausrichtung aus dem Builder übernehmen (wenn als data-* gesetzt) ---
+  // Erwartete data-Attribute: data-align-title, data-align-body
+  const alignTitle = area.dataset.alignTitle || editable.dataset.alignTitle;
+  const alignBody  = area.dataset.alignBody  || editable.dataset.alignBody;
+  if (alignTitle && titleEl) titleEl.style.textAlign = alignTitle;
+  if (alignBody) editable.style.textAlign = alignBody;
+
+  // --- Admin-Default-Text merken (Platzhalter/Starttext aus dem Builder) ---
+  // Erwartete data-Attribute: data-default-title, data-default-text
+  const defaultTitle = titleEl?.dataset.defaultTitle || '';
+  const defaultBody  = editable.dataset.defaultText  || editable.getAttribute('data-default') || '';
+
+  function sameText(a,b){ return (a||'').replace(/\s+/g,' ').trim() === (b||'').replace(/\s+/g,' ').trim(); }
+
+  editable.addEventListener('focus', () => {
+    const userEdited = editable.dataset.userEdited === '1';
+    const looksDefault = defaultBody && sameText(editable.innerText, defaultBody);
+    // Beim ersten Klick nur dann löschen, wenn noch der Admin-Starttext drin ist
+    if (!userEdited && looksDefault) {
+      editable.textContent = '';
+    }
+  });
+
+  editable.addEventListener('input', () => {
+    editable.dataset.userEdited = '1';
+    autoSize();
+  });
+
+  // --- Auto-Grow: wächst bis zur maximal verfügbaren Höhe im Container ---
+  function autoSize() {
+    // verfügbare Höhe = Boxhöhe - (Höhe bis unter die Überschrift) - Innenabstände
+    const areaRect   = area.getBoundingClientRect();
+    const headBottom = titleEl ? titleEl.getBoundingClientRect().bottom - areaRect.top : 0;
+
+    // Puffer (Abstand): passe bei Bedarf an dein Padding im CSS an
+    const padding    = 16;
+    const maxH       = Math.max(0, area.clientHeight - headBottom - padding);
+
+    editable.style.height = 'auto';                 // zurücksetzen
+    const need = editable.scrollHeight;             // gewünschte Höhe
+    const H    = Math.min(need, maxH);
+
+    editable.style.height    = H + 'px';
+    editable.style.overflowY = (need > maxH) ? 'auto' : 'hidden';   // erst am Limit scrollen
+  }
+
+  // Beim Laden und bei Layout-Änderung neu berechnen
+  window.addEventListener('resize', autoSize, { passive: true });
+  try { new ResizeObserver(autoSize).observe(area); } catch {}
+  // Erste Berechnung
+  autoSize();
+})();
+
 window.handleSessionJoin              = window.handleSessionJoin              || handleSessionJoin;
 window.showParticipantNamePrompt      = window.showParticipantNamePrompt      || showParticipantNamePrompt;
 window.addParticipantNamePromptStyles = window.addParticipantNamePromptStyles || addParticipantNamePromptStyles;
