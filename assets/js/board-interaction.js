@@ -2319,7 +2319,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!el) {
           el = document.createElement('div');
           el.id = 'notes-container';
-          el.className = 'notes-container tpl-node';
+          el.className = 'notizzettel-box notes-container tpl-node';
         }
 
         // Optik aus Template-Props
