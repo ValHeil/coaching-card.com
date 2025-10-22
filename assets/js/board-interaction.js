@@ -1876,17 +1876,35 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     loadTpl
       .then((tpl) => {
-        console.debug('[TPL bgrects]', (tpl?.widgets || []).filter(w => w.type === 'bgrect'));
-        console.debug('[TPL sample]',  (tpl?.widgets || []).find(w => w.type === 'sampleCard'));
-        if (!tpl) { console.warn('[TPL] leer – kein Render'); return; }
+        const slug = window.boardType;
+
+        // Wenn kein Template oder leeres Template zurückkommt,
+        // zeigen wir das Fehler-Overlay statt eines Fallback-Boards.
+        // (fetchBoardTemplate() liefert bei "nicht gefunden" ein Minimal-Objekt mit leeren widgets.) 
+        // -> Das werten wir hier als Ladefehler. :contentReference[oaicite:1]{index=1}
+        if (!tpl || !Array.isArray(tpl.widgets) || tpl.widgets.length === 0) {
+          console.warn('[TPL] not found/empty for', slug);
+          if (typeof window.showLoadFailureOverlay === 'function') {
+            window.showLoadFailureOverlay('board', slug);
+          }
+          return; // nichts rendern
+        }
+
+        console.debug('[TPL bgrects]', (tpl.widgets || []).filter(w => w.type === 'bgrect'));
+        console.debug('[TPL sample]',  (tpl.widgets || []).find(w => w.type === 'sampleCard'));
+
+        // normales Rendering
         applySampleCardFromTemplate(tpl);   // Stapel positionieren & Cardmaß
         buildBoardFromTemplate(tpl);        // Widgets/Hintergrund zeichnen
       })
       .catch((err) => {
-        console.warn('[TPL] Laden fehlgeschlagen:', err);
+        console.error('[TPL] fetch/load failed', err);
+        if (typeof window.showLoadFailureOverlay === 'function') {
+          window.showLoadFailureOverlay('board', window.boardType);
+        }
       })
       .finally(() => {
-        // vorhandene Initialisierung beibehalten
+        // vorhandene Initialisierung beibehalten (wie in deiner Datei)
         try { initializeParticipants && initializeParticipants(); } catch(e){}
         try { addTrashContainer && addTrashContainer(); } catch(e){}
         try { initFocusNoteLive && initFocusNoteLive(); } catch(e){}
@@ -2772,12 +2790,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Anzahl Karten feststellen und Stapel aufbauen
     if (typeof detectCardCount !== 'function') {
       console.warn('detectCardCount() fehlt – Karten können nicht geladen werden.');
+      if (typeof window.showLoadFailureOverlay === 'function') {
+        window.showLoadFailureOverlay('cardset', deckSlug);
+      }
       return;
     }
 
     detectCardCount(deckPath).then((total) => {
       if (!total || total < 1) {
         console.warn('Keine Kartenbilder gefunden unter', deckPath);
+        if (typeof window.showLoadFailureOverlay === 'function') {
+          window.showLoadFailureOverlay('cardset', deckSlug);
+        }
         return;
       }
 
@@ -5730,6 +5754,85 @@ function showErrorNotification(message) {
     document.body.removeChild(notification);
   }, 3000);
 }
+
+/* === Load-Failure Overlay (Board/Kartenset) =============================== */
+function ensureLoadFailureStyles(){
+  if (document.getElementById('lf-styles')) return;
+  const st = document.createElement('style');
+  st.id = 'lf-styles';
+  st.textContent = `
+    .modal-open{ overflow:hidden; }
+    #load-failure-overlay{ position:fixed; inset:0; z-index:2147483600; }
+    #load-failure-overlay .lf-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,.5); }
+    #load-failure-overlay .lf-modal{
+      position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+      background:#fff; border-radius:12px; padding:20px;
+      width:min(560px, calc(100vw - 32px));
+      box-shadow:0 20px 60px rgba(0,0,0,.25);
+    }
+    #load-failure-overlay h3{ margin:0 0 8px; font-size:20px; }
+    #load-failure-overlay p{ margin:0 0 14px; line-height:1.4; }
+    #load-failure-overlay .lf-actions{ display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
+    #load-failure-overlay .lf-actions a,
+    #load-failure-overlay .lf-actions button{
+      border:0; background:#e8e8e8; padding:10px 14px; border-radius:10px;
+      text-decoration:none; color:#222; cursor:pointer;
+    }
+    #load-failure-overlay .lf-actions button{ background:#ff6666; color:#fff; }
+  `;
+  document.head.appendChild(st);
+}
+function escapeHtml(s){
+  return String(s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+window.showLoadFailureOverlay = function(kind='board', slug=''){
+  ensureLoadFailureStyles();
+  if (document.getElementById('load-failure-overlay')) return;
+
+  const backUrl = (typeof getSessionsUrl === 'function') ? getSessionsUrl() : '/meine-sessions/';
+  const title   = (kind === 'cardset') ? 'Kartenset konnte nicht geladen werden' : 'Board konnte nicht geladen werden';
+  const text    = (kind === 'cardset')
+      ? `Das ausgewählte Kartenset <b>${escapeHtml(slug)}</b> konnte nicht geladen werden.`
+      : `Das ausgewählte Board <b>${escapeHtml(slug)}</b> konnte nicht geladen werden.`;
+
+  const wrap = document.createElement('div');
+  wrap.id = 'load-failure-overlay';
+  wrap.innerHTML = `
+    <div class="lf-backdrop" aria-hidden="true"></div>
+    <div class="lf-modal" role="dialog" aria-modal="true" aria-labelledby="lf-title">
+      <h3 id="lf-title">${title}</h3>
+      <p>${text}</p>
+      <div class="lf-actions">
+        <a href="${backUrl}">Zurück zu „Meine Sessions“</a>
+        <button id="lf-close">Fenster schließen</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  document.body.classList.add('modal-open');
+
+  // Schließen (versucht, den Wrapper-Tab zu schließen; ansonsten nur Overlay weg)
+  const closeAll = () => {
+    try {
+      const sid = new URLSearchParams(location.search).get('id') || null;
+      if (window.top && window.top !== window) {
+        window.top.postMessage({ type:'END_SESSION', sessionId: sid }, '*');
+      }
+      window.close();
+    } catch {}
+    try {
+      wrap.remove();
+      document.body.classList.remove('modal-open');
+    } catch {}
+  };
+
+  document.getElementById('lf-close')?.addEventListener('click', closeAll);
+  wrap.querySelector('.lf-backdrop')?.addEventListener('click', () => {
+    // nur Overlay schließen (Soft-Close bei Klick neben das Modal)
+    try { wrap.remove(); document.body.classList.remove('modal-open'); } catch {}
+  });
+};
+/* ======================================================================== */
+
 
 window.dumpNote = function(id){
   const el = document.getElementById(id);
