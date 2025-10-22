@@ -84,18 +84,15 @@ function fitBoardToViewport() {
   if (!area) return;
 
   const { width: worldW, height: worldH } = getWorldSize();
-
-  // WP-Adminbar berücksichtigen (wie im Builder)
   const adminBarH = document.getElementById('wpadminbar')?.offsetHeight || 0;
-
   const vw = window.innerWidth  || document.documentElement.clientWidth;
   const vh = (window.innerHeight || document.documentElement.clientHeight) - adminBarH;
 
-  // Skalierung weiter "contain" (keine Verzerrung, keine Scrolls)
   const scale = Math.min(vw / worldW, vh / worldH);
 
-  // NEU: Links anpinnen, vertikal (unter Adminbar) optional leicht mittig
-  const offX = 0; // ← wichtig: kein horizontaler Rand mehr links
+  // NEU: rechts anpinnen
+  const canvasW = worldW * scale;
+  const offX = Math.max(0, vw - canvasW);
   const offY = adminBarH + Math.max(0, Math.floor((vh - worldH * scale) / 2));
 
   area.style.transformOrigin = 'top left';
