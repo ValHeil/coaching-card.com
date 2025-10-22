@@ -1971,6 +1971,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     })());
 
     fitBoardToViewport();
+    ensureEndSessionButton();
   };
 
   //Erzeugt generisch wichtigste Widgets aus WP-Template
@@ -2593,11 +2594,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
       // Den End-Session Button zum Footer hinzufügen (falls nicht bereits vorhanden)
       ensureEndSessionButton();
-      
-      // Direkt nach dem Hinzufügen den Event-Listener setzen:
-      newEndSessionBtn.addEventListener('click', () => {
-        createEndSessionDialog();
-      });
     
 
     } else {
