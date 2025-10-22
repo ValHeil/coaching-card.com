@@ -83,22 +83,23 @@ function fitBoardToViewport() {
   const area = document.querySelector('.board-area');
   if (!area) return;
 
+  // Feste Board-Welt (kommt aus data-world-w/h)
   const { width: worldW, height: worldH } = getWorldSize();
 
-  // WP-Adminbar berücksichtigen (wie im Builder)
+  // WP-Adminbar berücksichtigen
   const adminBarH = document.getElementById('wpadminbar')?.offsetHeight || 0;
 
+  // Viewport
   const vw = window.innerWidth  || document.documentElement.clientWidth;
-  const vh = (window.innerHeight || document.documentElement.clientHeight) - adminBarH;
+  const vhTotal = window.innerHeight || document.documentElement.clientHeight;
+  const vh = vhTotal - adminBarH;
 
-  // "contain" skaliert die Welt vollständig in den Viewport
-  const scale = Math.min(vw / worldW, vh / worldH);
+  // --- Fit to width: keine horizontalen Ränder ---
+  const scale = vw / worldW;
+  const offX  = 0;                 // bündig links
+  const offY  = adminBarH;         // unter die Adminbar (oben bündig)
 
-  // WIE IM BUILDER: rechts anpinnen, vertikal mittig (unter Adminbar)
-  const canvasW = worldW * scale;
-  const offX = Math.max(0, vw - canvasW);
-  const offY = adminBarH + Math.max(0, Math.floor((vh - worldH * scale) / 2));
-
+  // Canvas/Welt auf fixe Pixel setzen und transformieren
   area.style.transformOrigin = 'top left';
   area.style.width  = worldW + 'px';
   area.style.height = worldH + 'px';
@@ -109,10 +110,8 @@ function fitBoardToViewport() {
   area.style.padding = '0';
   area.style.transform = `translate(${offX}px, ${offY}px) scale(${scale})`;
 
-  // für andere Berechnungen verfügbar machen
-  area.dataset.scale   = String(scale);
-  area.dataset.scaleX  = String(scale);
-  area.dataset.scaleY  = String(scale);
+  // für Eingabemapping: aktuelle Scale/Offsets ablegen
+  area.dataset.scaleX = area.dataset.scaleY = area.dataset.scale = String(scale);
   area.dataset.offsetX = String(offX);
   area.dataset.offsetY = String(offY);
 }
