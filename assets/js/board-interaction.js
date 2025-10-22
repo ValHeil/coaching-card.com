@@ -91,12 +91,12 @@ function fitBoardToViewport() {
   const vw = window.innerWidth  || document.documentElement.clientWidth;
   const vh = (window.innerHeight || document.documentElement.clientHeight) - adminBarH;
 
-  // contain statt cover
+  // Skalierung weiter "contain" (keine Verzerrung, keine Scrolls)
   const scale = Math.min(vw / worldW, vh / worldH);
 
-  // horizontal zentrieren; vertikal unter die Adminbar setzen (optional: + mittig)
-  const offX = Math.floor((vw - worldW * scale) / 2);
-  const offY = adminBarH; // oder: adminBarH + Math.floor((vh - worldH*scale)/2)
+  // NEU: Links anpinnen, vertikal (unter Adminbar) optional leicht mittig
+  const offX = 0; // ← wichtig: kein horizontaler Rand mehr links
+  const offY = adminBarH + Math.max(0, Math.floor((vh - worldH * scale) / 2));
 
   area.style.transformOrigin = 'top left';
   area.style.width  = worldW + 'px';
@@ -112,6 +112,7 @@ function fitBoardToViewport() {
   area.dataset.offsetX = String(offX);
   area.dataset.offsetY = String(offY);
 }
+
 
 // holt Props aus w.props ODER (legacy) top-level w.foo
 function gprop(w, key, def) {
@@ -1562,6 +1563,34 @@ document.addEventListener('DOMContentLoaded', async function() {
   const { board } = resolveBoardAndDeck();
   window.boardType = board;
 
+  (function ensureOverlayStyles(){
+    if (document.getElementById('cc-overlay-style')) return;
+    const st = document.createElement('style');
+    st.id = 'cc-overlay-style';
+    st.textContent = `
+      .trash-container{
+        position:fixed; left:20px; bottom:20px;
+        width:72px; height:72px; border-radius:50%;
+        display:flex; align-items:center; justify-content:center;
+        background: rgba(15,23,42,.85);
+        color:#fff; font-weight:700; z-index:2147483600;
+        box-shadow:0 8px 24px rgba(0,0,0,.25);
+        cursor:grab;
+      }
+      .trash-container.drag-over{ background: rgba(185,28,28,.95); }
+      .end-session-btn{
+        position:fixed; right:20px; bottom:20px;
+        padding:10px 14px; border-radius:9999px; border:0;
+        background:#1f2937; color:#fff; font-weight:700;
+        box-shadow:0 8px 24px rgba(0,0,0,.25);
+        z-index:2147483600; cursor:pointer;
+      }
+      .end-session-btn:hover{ filter:brightness(1.06); }
+    `;
+    document.head.appendChild(st);
+  })();
+
+
   // sorgt dafür, dass das Standard-Beige aus CSS greift
   document.body.classList.add('board-container');
   // Elemente auswählen
@@ -1882,10 +1911,23 @@ document.addEventListener('DOMContentLoaded', async function() {
         console.warn('[TPL] Laden fehlgeschlagen:', err);
       })
       .finally(() => {
-        // vorhandene Initialisierung beibehalten
         try { initializeParticipants && initializeParticipants(); } catch(e){}
         try { addTrashContainer && addTrashContainer(); } catch(e){}
         try { initFocusNoteLive && initFocusNoteLive(); } catch(e){}
+
+        // ▼ NEU: Button "Sitzung beenden" sicherstellen
+        try {
+          if (!document.querySelector('.end-session-btn')) {
+            const b = document.createElement('button');
+            b.className = 'end-session-btn';
+            b.type = 'button';
+            b.textContent = 'Sitzung beenden';
+            document.body.appendChild(b);
+            b.addEventListener('click', createEndSessionDialog);
+          }
+        } catch(e){}
+
+        // (Rest unverändert)
         try {
           if (typeof waitForCards === 'function' && typeof loadSavedBoardState === 'function') {
             waitForCards().then(() => { try { loadSavedBoardState(); } catch(e) { console.warn(e); } });
