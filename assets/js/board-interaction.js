@@ -2592,12 +2592,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       boardArea.appendChild(mainArea);
     
       // Den End-Session Button zum Footer hinzufügen (falls nicht bereits vorhanden)
-      const endSessionBtn = document.querySelector('.end-session-btn');
-      const newEndSessionBtn = document.createElement('button');
-      newEndSessionBtn.className = 'end-session-btn';
-      newEndSessionBtn.textContent = 'Sitzung beenden';
-      
-      document.body.appendChild(newEndSessionBtn);
+      ensureEndSessionButton();
       
       // Direkt nach dem Hinzufügen den Event-Listener setzen:
       newEndSessionBtn.addEventListener('click', () => {
@@ -5397,7 +5392,48 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
 
+  function ensureEndSessionButton() {
+    // Styles nur einmal injizieren
+    if (!document.getElementById('end-session-btn-styles')) {
+      const style = document.createElement('style');
+      style.id = 'end-session-btn-styles';
+      style.textContent = `
+        .end-session-btn{
+          position: fixed;
+          right: max(16px, env(safe-area-inset-right));
+          bottom: max(16px, env(safe-area-inset-bottom));
+          z-index: 10050;
+          padding: 10px 14px;
+          background: #ff6666;
+          color: #fff;
+          border: none;
+          border-radius: 10px;
+          font-weight: 600;
+          box-shadow: 0 4px 10px rgba(0,0,0,.15);
+          cursor: pointer;
+          transition: transform .2s ease, filter .2s ease;
+        }
+        .end-session-btn:hover{ transform: translateY(-1px); filter: brightness(.97); }
+        .end-session-btn:active{ transform: translateY(0); }
+      `;
+      document.head.appendChild(style);
+    }
 
+    // Button nur einmal sicherstellen
+    let btn = document.querySelector('.end-session-btn');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.className = 'end-session-btn';
+      btn.type = 'button';
+      btn.textContent = 'Sitzung beenden';
+      document.body.appendChild(btn);
+    }
+
+    // Click-Handler (frisch binden)
+    const fresh = btn.cloneNode(true);
+    btn.parentNode.replaceChild(fresh, btn);
+    fresh.addEventListener('click', createEndSessionDialog);
+  }
 
   // Benachrichtigung anzeigen
   function showSaveNotification(message = "Sitzung wurde gespeichert") {
