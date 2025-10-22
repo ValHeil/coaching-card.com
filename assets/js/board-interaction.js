@@ -84,13 +84,17 @@ function fitBoardToViewport() {
   if (!area) return;
 
   const { width: worldW, height: worldH } = getWorldSize();
+
+  // WP-Adminbar berücksichtigen (wie im Builder)
   const adminBarH = document.getElementById('wpadminbar')?.offsetHeight || 0;
+
   const vw = window.innerWidth  || document.documentElement.clientWidth;
   const vh = (window.innerHeight || document.documentElement.clientHeight) - adminBarH;
 
+  // "contain" skaliert die Welt vollständig in den Viewport
   const scale = Math.min(vw / worldW, vh / worldH);
 
-  // NEU: rechts anpinnen
+  // WIE IM BUILDER: rechts anpinnen, vertikal mittig (unter Adminbar)
   const canvasW = worldW * scale;
   const offX = Math.max(0, vw - canvasW);
   const offY = adminBarH + Math.max(0, Math.floor((vh - worldH * scale) / 2));
@@ -105,7 +109,10 @@ function fitBoardToViewport() {
   area.style.padding = '0';
   area.style.transform = `translate(${offX}px, ${offY}px) scale(${scale})`;
 
-  area.dataset.scaleX = area.dataset.scaleY = area.dataset.scale = String(scale);
+  // für andere Berechnungen verfügbar machen
+  area.dataset.scale   = String(scale);
+  area.dataset.scaleX  = String(scale);
+  area.dataset.scaleY  = String(scale);
   area.dataset.offsetX = String(offX);
   area.dataset.offsetY = String(offY);
 }
@@ -1560,34 +1567,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   const { board } = resolveBoardAndDeck();
   window.boardType = board;
 
-  (function ensureOverlayStyles(){
-    if (document.getElementById('cc-overlay-style')) return;
-    const st = document.createElement('style');
-    st.id = 'cc-overlay-style';
-    st.textContent = `
-      .trash-container{
-        position:fixed; left:20px; bottom:20px;
-        width:72px; height:72px; border-radius:50%;
-        display:flex; align-items:center; justify-content:center;
-        background: rgba(15,23,42,.85);
-        color:#fff; font-weight:700; z-index:2147483600;
-        box-shadow:0 8px 24px rgba(0,0,0,.25);
-        cursor:grab;
-      }
-      .trash-container.drag-over{ background: rgba(185,28,28,.95); }
-      .end-session-btn{
-        position:fixed; right:20px; bottom:20px;
-        padding:10px 14px; border-radius:9999px; border:0;
-        background:#1f2937; color:#fff; font-weight:700;
-        box-shadow:0 8px 24px rgba(0,0,0,.25);
-        z-index:2147483600; cursor:pointer;
-      }
-      .end-session-btn:hover{ filter:brightness(1.06); }
-    `;
-    document.head.appendChild(st);
-  })();
-
-
   // sorgt dafür, dass das Standard-Beige aus CSS greift
   document.body.classList.add('board-container');
   // Elemente auswählen
@@ -1908,23 +1887,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         console.warn('[TPL] Laden fehlgeschlagen:', err);
       })
       .finally(() => {
+        // vorhandene Initialisierung beibehalten
         try { initializeParticipants && initializeParticipants(); } catch(e){}
         try { addTrashContainer && addTrashContainer(); } catch(e){}
         try { initFocusNoteLive && initFocusNoteLive(); } catch(e){}
-
-        // ▼ NEU: Button "Sitzung beenden" sicherstellen
-        try {
-          if (!document.querySelector('.end-session-btn')) {
-            const b = document.createElement('button');
-            b.className = 'end-session-btn';
-            b.type = 'button';
-            b.textContent = 'Sitzung beenden';
-            document.body.appendChild(b);
-            b.addEventListener('click', createEndSessionDialog);
-          }
-        } catch(e){}
-
-        // (Rest unverändert)
         try {
           if (typeof waitForCards === 'function' && typeof loadSavedBoardState === 'function') {
             waitForCards().then(() => { try { loadSavedBoardState(); } catch(e) { console.warn(e); } });
