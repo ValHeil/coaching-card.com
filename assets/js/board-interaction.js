@@ -224,7 +224,13 @@ function applySampleCardFromTemplate(tpl) {
   let box = linkId ? W.find(w => w.type === 'bgrect' && w.id === linkId) : null;
 
   // === Kartengröße bestimmen =========================================
-  const PAD = 20; // wie im Builder
+  const PAD = 20; // gleicher Abstand wie im Builder
+
+  // Ratio dynamisch: CSS-Variable, gesetzt von applyDeckFormatRatio()
+  const ratioVar = getComputedStyle(document.documentElement)
+                    .getPropertyValue('--card-ratio')
+                    .trim();
+  const RATIO = ratioVar ? parseFloat(ratioVar) : (window.RATIO || (260/295));
 
   // 1) Aktives Format bestimmen: bevorzugt aus Cardset (applyDeckFormatRatio), sonst aus sample.props.format
   const activeFmt = (window.CARDSET_FORMAT && String(window.CARDSET_FORMAT)) ||
@@ -2776,38 +2782,60 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Liest /app/assets/cards/<deck>/meta.json und setzt --card-ratio sowie ein Friendly-Format
   async function applyDeckFormatRatio(deckSlug){
     try{
-        const fmt = String(fmtRaw || '').trim().toLowerCase(); // z.B. "2:3"
-        let finalRatio = 260/295; // Default
-
-        if (fmt === '2:3' || fmt === 'skat')       finalRatio = 3/2;   // hoch (Skat)
-        else if (fmt === '3:2' || fmt === 'skat-l')finalRatio = 2/3;   // quer (gedrehte Skat)
-        else if (fmt === '1:2')                    finalRatio = 2/1;   // hoch schlank
-        else if (fmt === '2:1')                    finalRatio = 1/2;   // quer schlank
-
-        // CSS-Variable setzen, JS-Cache aktualisieren
-        document.documentElement.style.setProperty('--card-ratio', String(finalRatio));
-        window.RATIO = finalRatio;
+      // 1) meta.json laden
       const res = await fetch(`/app/assets/cards/${encodeURIComponent(deckSlug)}/meta.json?ts=${Date.now()}`, { cache:'no-store' });
-      if(!res.ok) return;
+      if(!res.ok) { console.debug('applyDeckFormatRatio: meta.json fehlt für', deckSlug); return; }
       const meta = await res.json();
-      const fmtRaw = (meta && (meta.format||meta.card_format||meta.ratio)) ? String(meta.format||meta.card_format||meta.ratio) : '';
 
-      // bekannte Namen oder "W:H" parse
-      const named = { 'skat': (2/3), 'square-rounded': 1, 'long-portrait': 2 /* historisch */ };
-      let ratio = named[fmtRaw] ?? null;
+      // 2) Format-String flexibel lesen: "format" | "card_format" | "ratio"
+      const fmtRaw = (meta && (meta.format || meta.card_format || meta.ratio))
+        ? String(meta.format || meta.card_format || meta.ratio).trim().toLowerCase()
+        : '';
 
-      if(!ratio && /^\s*\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?\s*$/.test(fmtRaw)){
-        const [wStr,hStr] = fmtRaw.split(':').map(s=>parseFloat(s));
-        if(isFinite(wStr)&&isFinite(hStr)&&wStr>0&&hStr>0) ratio = hStr / wStr; // CSS erwartet H/W
+      // 3) Namens- und W:H-Mapping → JS-Ratio = H/W
+      //    Gewünscht: 2:3 (Skat hoch), 3:2 (gedrehte Skat = quer), 1:2 (hoch schlank), 2:1 (quer schlank)
+      let ratio = null;
+      const named = {
+        'skat':    (3/2),   // 2:3 => H/W = 3/2
+        '2:3':     (3/2),
+        '3:2':     (2/3),
+        '1:2':     (2/1),
+        '2:1':     (1/2),
+        // ggf. historische/alias Namen:
+        'skat-l':  (2/3),
+        'square-rounded': 1,
+        'long-portrait':  (2/1)
+      };
+
+      ratio = named[fmtRaw] ?? null;
+
+      if (!ratio && /^\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?$/.test(fmtRaw)) {
+        const [wStr,hStr] = fmtRaw.split(':').map(s => parseFloat(s));
+        if (isFinite(wStr) && isFinite(hStr) && wStr > 0 && hStr > 0) {
+          ratio = hStr / wStr;
+        }
       }
-      if(!ratio) ratio = RATIO;
 
-      RATIO = ratio;
+      if (!ratio) {
+        // Fallback: nichts überschreiben, falls zuvor gesetzt
+        ratio = window.RATIO || (260/295);
+      }
+
+      // 4) Werte setzen
+      window.RATIO = ratio;
       document.documentElement.style.setProperty('--card-ratio', String(ratio));
-      // Merke das "freundliche" Format (z.B. "2:3")
-      window.CARDSET_FORMAT = fmtRaw || (ratio===1 ? '1:1' : (Math.abs(ratio-(3/2))<0.001?'3:2':'2:3'));
-    }catch(e){ console.debug('applyDeckFormatRatio failed', e); }
+
+      // freundlicher String (für applySampleCardFromTemplate)
+      window.CARDSET_FORMAT =
+        fmtRaw || (ratio === 1 ? '1:1' : (Math.abs(ratio-(3/2))<0.001 ? '2:3'
+                  : (Math.abs(ratio-(2/3))<0.001 ? '3:2'
+                  : (Math.abs(ratio-(2/1))<0.001 ? '1:2'
+                  : (Math.abs(ratio-(1/2))<0.001 ? '2:1' : '2:3')))));
+    }catch(e){
+      console.debug('applyDeckFormatRatio failed', e);
+    }
   }
+
 
   // Karten erstellen und als Stapel anordnen
   // Kartenstapel für board1/boardTest erzeugen (Decks robust auflösen)
