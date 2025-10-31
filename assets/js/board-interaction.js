@@ -220,10 +220,7 @@ function applySampleCardFromTemplate(tpl) {
   if (!sample) return;
 
   const W = Array.isArray(tpl.widgets) ? tpl.widgets : [];
-
-  // 1) bevorzugt verlinkte Box über id
   const linkId = gprop(sample, 'bgId', null);
-  let box = linkId ? W.find(w => w.type === 'bgrect' && w.id === linkId) : null;
 
   // 2) sonst die Box, die sample.x/y „enthält“
   if (!box) {
@@ -233,56 +230,88 @@ function applySampleCardFromTemplate(tpl) {
   }
 
   // === Kartengröße bestimmen =========================================
-  const RATIO = 260 / 295; // wie im Builder
-  const PAD   = 20;        // gleicher Abstand wie im Builder
+  const PAD = 20; // wie im Builder
 
-  // Primär: explicit props / legacy w/h
-  let cw = Number(gprop(sample, 'cardWidth',  0)) || 0;
-  let ch = Number(gprop(sample, 'cardHeight', 0)) || 0;
-  if (!cw && sample.w) cw = Math.round(sample.w);
-  if (!ch && sample.h) ch = Math.round(sample.h);
+  // 1) Aktives Format bestimmen: bevorzugt aus Cardset (applyDeckFormatRatio), sonst aus sample.props.format
+  const activeFmt = (window.CARDSET_FORMAT && String(window.CARDSET_FORMAT)) ||
+                    String(gprop(sample, 'format', '') || '');
 
-  // Fallback: aus bgrect ableiten (mit demselben 20px Rand)
+  // 2) Formatspezifische Kartengröße (falls vorhanden)
+  const fmtSizes  = gprop(sample, 'formatSizes', null); // { '2:3':{w,h}, ... }
+  let cw = 0, ch = 0;
+
+  if (fmtSizes && activeFmt && fmtSizes[activeFmt]) {
+    cw = Number(fmtSizes[activeFmt].w) || 0;
+    ch = Number(fmtSizes[activeFmt].h) || 0;
+  }
+
+  // 3) Legacy/Explizite Maße am sample als Fallback
+  if (!cw || !ch) {
+    cw = Number(gprop(sample, 'cardWidth',  0)) || 0;
+    ch = Number(gprop(sample, 'cardHeight', 0)) || 0;
+    if (!cw && sample.w) cw = Math.round(sample.w);
+    if (!ch && sample.h) ch = Math.round(sample.h);
+  }
+
+  // 4) Noch kein valides Maß? – aus verlinkter/umgebender Box ableiten
+  let box = linkId ? W.find(w => w.type === 'bgrect' && w.id === linkId) : null;
+  if (!box) {
+    box = W.filter(w => w.type === 'bgrect')
+          .find(b => (sample.x >= b.x && sample.x <= b.x + b.w &&
+                      sample.y >= b.y && sample.y <= b.y + b.h));
+  }
+
   if ((!cw || !ch) && box && Number.isFinite(box.w) && Number.isFinite(box.h)) {
-    // optional Randstärke berücksichtigen
     const bw = Number(gprop(box, 'borderWidth', 0)) || 0;
     const availW = Math.max(40, (box.w - 2*PAD - 2*bw));
     const availH = Math.max(40, (box.h - 2*PAD - 2*bw));
-    const fitW   = Math.floor(Math.min(availW, Math.floor(availH / RATIO)));
 
-    cw = cw || fitW;
-    ch = ch || Math.round((cw || fitW) * RATIO);
+    // Ratio aus CSS-Var (applyDeckFormatRatio hat sie gesetzt)
+    const ratioVar = getComputedStyle(document.documentElement).getPropertyValue('--card-ratio').trim();
+    const ratio = ratioVar ? parseFloat(ratioVar) : (260/295);
+
+    // bestmöglich einpassen
+    const byW = { w: availW,          h: availW * ratio };
+    const byH = { w: availH / ratio,  h: availH         };
+    if (byW.h <= availH) { cw = Math.round(byW.w); ch = Math.round(byW.h); }
+    else                 { cw = Math.round(byH.w); ch = Math.round(byH.h); }
   }
 
-  // letzter Fallback (nur wenn gar keine Box existiert)
-  if (!cw) { cw = 120; ch = Math.round(cw * RATIO); }
-  if (!ch) { ch = Math.round(cw * RATIO); }
+  // 5) Falls immer noch nichts Sinnvolles: moderates Default
+  if (!cw || !ch) { cw = 260; ch = Math.round(cw * (260/295)); }
 
-  // CSS-Variablen für Kartenbreite/-höhe setzen
-  const area = document.querySelector('.board-area') || document.documentElement;
-  area.style.setProperty('--card-w', `${cw}px`);
-  area.style.setProperty('--card-h', `${ch}px`);  
+  // 6) Kartengröße ins Template und in CSS-Variablen spiegeln
+  sample.cardWidth  = cw; sample.cardHeight = ch;
+  sample.w = cw; sample.h = ch;
+  // Nur --card-w setzen; --card-h ergibt sich aus --card-ratio
+  document.documentElement.style.setProperty('--card-w', String(cw) + 'px');
 
-  // === Kartenstapel positionieren ====================================
-  // 3) fallback: sample.x/y
-  let left = (sample.x ?? 40);
-  let top  = (sample.y ?? 40);
+  // === Hintergrundbox ggf. format-spezifisch setzen ===================
+  if (box) {
+    const bw = Number(gprop(box, 'borderWidth', 0)) || 0;
 
-  // 4) zentrieren, wenn Box vorhanden
-  if (box && typeof box.x==='number' && typeof box.y==='number' &&
-      typeof box.w==='number' && typeof box.h==='number') {
-    left = Math.round(box.x + (box.w - cw) / 2);
-    top  = Math.round(box.y + (box.h - ch) / 2);
+    // a) format-spezifische Boxmaße bevorzugen, falls vorhanden
+    const boxSizes   = gprop(box, 'sizeByFormat', null) || gprop(box, 'formatSizes', null);
+    const boxManual  = gprop(box, 'manualSizeByFormat', null) || gprop(box, 'formatSizeManual', null);
+    let useW = 0, useH = 0;
+
+    if (boxSizes && activeFmt && boxSizes[activeFmt]) {
+      useW = Number(boxSizes[activeFmt].w) || 0;
+      useH = Number(boxSizes[activeFmt].h) || 0;
+    }
+
+    // b) Wenn keine expliziten Boxmaße: aus Kartengröße + Padding ableiten (nur wenn nicht "manuell" fixiert)
+    const isManual = !!(boxManual && activeFmt && boxManual[activeFmt]);
+    if ((!useW || !useH) && !isManual) {
+      useW = cw + 2*PAD + 2*bw;
+      useH = ch + 2*PAD + 2*bw;
+    }
+
+    if (useW && useH) {
+      box.w = Math.max(40, Math.round(useW));
+      box.h = Math.max(40, Math.round(useH));
+    }
   }
-
-  requestAnimationFrame(() => {
-    const stack = document.getElementById('card-stack') || document.querySelector('.cards-container');
-    if (!stack) return;
-    stack.style.position = 'absolute';
-    stack.style.left = `${left}px`;
-    stack.style.top  = `${top}px`;
-    stack.style.zIndex = '200';
-  });
 }
 
 
@@ -2751,39 +2780,34 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
 
+  // Liest /app/assets/cards/<deck>/meta.json und setzt --card-ratio sowie ein Friendly-Format
   async function applyDeckFormatRatio(deckSlug){
     try{
-      const url = `/app/assets/cards/${deckSlug}/meta.json`;
-      const res = await fetch(url, { cache:'no-store' });
-      if (!res.ok) throw 0;
+      const res = await fetch(`/app/assets/cards/${encodeURIComponent(deckSlug)}/meta.json?ts=${Date.now()}`, { cache:'no-store' });
+      if(!res.ok) return;
       const meta = await res.json();
-      const fmt  = meta?.format || 'skat';
+      const fmtRaw = (meta && (meta.format||meta.card_format||meta.ratio)) ? String(meta.format||meta.card_format||meta.ratio) : '';
 
-      // Mapping identisch zum Builder
-      const map = {
-        skat:            260/295,
-        'square-rounded':1,
-        'long-portrait': 3
-      };
-      // "w:h" erlauben (z.B. "1:3")
-      let ratio = map[fmt];
-      if (!ratio && /^\d+\s*:\s*\d+$/.test(fmt)){
-        const [w,h] = fmt.split(':').map(n=>parseFloat(n.trim()));
-        // ratio = Höhe/Breite -> h/w
-        if (w>0 && h>0) ratio = h / w;
+      // bekannte Namen oder "W:H" parse
+      const named = { 'skat': (2/3), 'square-rounded': 1, 'long-portrait': 2 /* historisch */ };
+      let ratio = named[fmtRaw] ?? null;
+
+      if(!ratio && /^\s*\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?\s*$/.test(fmtRaw)){
+        const [wStr,hStr] = fmtRaw.split(':').map(s=>parseFloat(s));
+        if(isFinite(wStr)&&isFinite(hStr)&&wStr>0&&hStr>0) ratio = hStr / wStr; // CSS erwartet H/W
       }
-      RATIO = Number.isFinite(ratio) ? ratio : RATIO;
+      if(!ratio) ratio = RATIO;
 
-      // Optional: CSS-Variable für Styles
-      document.documentElement.style.setProperty('--card-ratio', String(RATIO));
-    }catch(e){
-      // meta.json fehlt -> Default-RATIO bleibt
-    }
+      RATIO = ratio;
+      document.documentElement.style.setProperty('--card-ratio', String(ratio));
+      // Merke das "freundliche" Format (z.B. "2:3")
+      window.CARDSET_FORMAT = fmtRaw || (ratio===1 ? '1:1' : (Math.abs(ratio-(3/2))<0.001?'3:2':'2:3'));
+    }catch(e){ console.debug('applyDeckFormatRatio failed', e); }
   }
 
   // Karten erstellen und als Stapel anordnen
   // Kartenstapel für board1/boardTest erzeugen (Decks robust auflösen)
-  function createCards() {
+  async function createCards() {
 
     // Helfer lokal
     const canonDeckSlug = (s = '') => {
@@ -2819,6 +2843,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     window.cards = [];
     const deckSlug = resolveDeck();
     const deckPath = `/app/assets/cards/${deckSlug}`;
+    await applyDeckFormatRatio(deckSlug); // Ratio + CSS-Var setzen, auch window.CARDSET_FORMAT
 
     // Anzahl Karten feststellen und Stapel aufbauen
     if (typeof detectCardCount !== 'function') {
