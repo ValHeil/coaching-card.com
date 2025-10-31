@@ -221,13 +221,7 @@ function applySampleCardFromTemplate(tpl) {
 
   const W = Array.isArray(tpl.widgets) ? tpl.widgets : [];
   const linkId = gprop(sample, 'bgId', null);
-
-  // 2) sonst die Box, die sample.x/y „enthält“
-  if (!box) {
-    box = W.filter(w => w.type === 'bgrect')
-           .find(b => (sample.x >= b.x && sample.x <= b.x + b.w &&
-                       sample.y >= b.y && sample.y <= b.y + b.h));
-  }
+  let box = linkId ? W.find(w => w.type === 'bgrect' && w.id === linkId) : null;
 
   // === Kartengröße bestimmen =========================================
   const PAD = 20; // wie im Builder
@@ -254,7 +248,6 @@ function applySampleCardFromTemplate(tpl) {
   }
 
   // 4) Noch kein valides Maß? – aus verlinkter/umgebender Box ableiten
-  let box = linkId ? W.find(w => w.type === 'bgrect' && w.id === linkId) : null;
   if (!box) {
     box = W.filter(w => w.type === 'bgrect')
           .find(b => (sample.x >= b.x && sample.x <= b.x + b.w &&
