@@ -1508,6 +1508,8 @@ function resolveBoardAndDeck() {
 
 
 /* Kompat: wird vom Token/Join-Flow ggf. gesetzt */
+// Karten-Seitenverhältnis (Höhe/Breite); Default bleibt kompatibel
+let RATIO = 260 / 295;
 window.CC_BOOT = window.CC_BOOT || {};
 
 function handleSessionJoin() {
@@ -1563,7 +1565,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // --- Boot/Slug vor dem ersten Render sauber auflösen ---
   await waitForBootConfig(800);
-  const { board } = resolveBoardAndDeck();
+  const { board, deck } = resolveBoardAndDeck();
+  await applyDeckFormatRatio(deck);
   window.boardType = board;
 
   // sorgt dafür, dass das Standard-Beige aus CSS greift
@@ -2746,6 +2749,36 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     resolve(count);
     });
+  }
+
+  async function applyDeckFormatRatio(deckSlug){
+    try{
+      const url = `/app/assets/cards/${deckSlug}/meta.json`;
+      const res = await fetch(url, { cache:'no-store' });
+      if (!res.ok) throw 0;
+      const meta = await res.json();
+      const fmt  = meta?.format || 'skat';
+
+      // Mapping identisch zum Builder
+      const map = {
+        skat:            260/295,
+        'square-rounded':1,
+        'long-portrait': 3
+      };
+      // "w:h" erlauben (z.B. "1:3")
+      let ratio = map[fmt];
+      if (!ratio && /^\d+\s*:\s*\d+$/.test(fmt)){
+        const [w,h] = fmt.split(':').map(n=>parseFloat(n.trim()));
+        // ratio = Höhe/Breite -> h/w
+        if (w>0 && h>0) ratio = h / w;
+      }
+      RATIO = Number.isFinite(ratio) ? ratio : RATIO;
+
+      // Optional: CSS-Variable für Styles
+      document.documentElement.style.setProperty('--card-ratio', String(RATIO));
+    }catch(e){
+      // meta.json fehlt -> Default-RATIO bleibt
+    }
   }
 
   // Karten erstellen und als Stapel anordnen
