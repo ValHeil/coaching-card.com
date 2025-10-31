@@ -1,7 +1,8 @@
 /* Allgemeine Seiten-Struktur */
 :root {
   --card-w: clamp(180px, 20vw, 320px);
-  --card-h: calc(var(--card-w) * 260 / 295);
+  --card-ratio: 260/295; /* Default – wird zur Laufzeit via JS überschrieben */
+  --card-h: calc(var(--card-w) * var(--card-ratio, 260/295));
   --note-size: clamp(120px, 12vw, 200px);
 }
 body {
