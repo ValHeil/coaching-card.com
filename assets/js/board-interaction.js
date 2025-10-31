@@ -2776,6 +2776,17 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Liest /app/assets/cards/<deck>/meta.json und setzt --card-ratio sowie ein Friendly-Format
   async function applyDeckFormatRatio(deckSlug){
     try{
+        const fmt = String(fmtRaw || '').trim().toLowerCase(); // z.B. "2:3"
+        let finalRatio = 260/295; // Default
+
+        if (fmt === '2:3' || fmt === 'skat')       finalRatio = 3/2;   // hoch (Skat)
+        else if (fmt === '3:2' || fmt === 'skat-l')finalRatio = 2/3;   // quer (gedrehte Skat)
+        else if (fmt === '1:2')                    finalRatio = 2/1;   // hoch schlank
+        else if (fmt === '2:1')                    finalRatio = 1/2;   // quer schlank
+
+        // CSS-Variable setzen, JS-Cache aktualisieren
+        document.documentElement.style.setProperty('--card-ratio', String(finalRatio));
+        window.RATIO = finalRatio;
       const res = await fetch(`/app/assets/cards/${encodeURIComponent(deckSlug)}/meta.json?ts=${Date.now()}`, { cache:'no-store' });
       if(!res.ok) return;
       const meta = await res.json();
