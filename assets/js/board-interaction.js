@@ -2055,7 +2055,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (w.y != null) el.style.top    = px(w.y);
       if (w.w != null) el.style.width  = px(w.w);
       if (w.h != null) el.style.height = px(w.h);
-      if (w.z != null) el.style.zIndex = String(100 + (w.z|0));
+      if (w.z != null) el.style.zIndex = String(Math.max(0, (w.z|0)));
+      else el.style.zIndex = '0';
       area.appendChild(el);
     }
 
@@ -2959,7 +2960,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     stack.style.left      = '50%';
     stack.style.top       = '50%';
     stack.style.transform = 'translate(-50%, -50%)';
-    stack.style.zIndex    = '20';
+    stack.style.zIndex    = '120';
 
     host.appendChild(stack);
 
