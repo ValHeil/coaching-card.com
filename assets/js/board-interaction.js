@@ -2107,42 +2107,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
 
-    // --- bgrect zuerst (Z-Reihenfolge)
-    tpl.widgets.filter(w => w.type === 'bgrect').forEach(w => {
-      const el = document.createElement('div');
-      el.className   = 'board-bg-rect tpl-node';
-      el.dataset.id  = w.id || '';
-
-      // zuerst positionieren (left/top/w/h/z) – deine place(..) nutzt w.x,y,w,h,w.z
-      place(el, w);
-
-      // nicht klickfangend & weit hinten
-      el.style.pointerEvents = 'none';
-      if (!w.z) el.style.zIndex = '10';
-
-      // Optik aus props ODER legacy top-level
-      const radius = gprop(w,'radius',12);
-      el.style.borderRadius = `${Math.round(radius)}px`;
-
-      const fillCol = gprop(w,'color','#f3ead7');
-      const fillA   = gprop(w,'opacity',1);
-      el.style.backgroundColor = hexToRgba(fillCol, fillA);
-
-      const bw   = gprop(w,'borderWidth',0);
-      const bsty = gprop(w,'borderStyle','solid');
-      if (bw > 0 && bsty !== 'none') {
-        const bcol = gprop(w,'borderColor','#000000');
-        const ba   = gprop(w,'borderOpacity',1);
-        el.style.border = `${bw}px ${bsty} ${hexToRgba(bcol, ba)}`;
-      } else {
-        el.style.border = 'none';
-      }
-
-      // dezenter innerer Rahmen (falls kein expliziter Rand gesetzt ist)
-      if (bw === 0) el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
-    });
-
-
     // --- cardholder: Zonen inklusive Titel/Desc mit optionaler Bearbeitung ---
     tpl.widgets.filter(w => w.type === 'cardholder').forEach(w => {
       const p = prop(w); // merged props (inkl. title/body + ...UserEditable)
