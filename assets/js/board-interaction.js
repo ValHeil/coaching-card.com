@@ -1876,6 +1876,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     const bootTpl = normalizeTemplate(bootTplRaw);
 
+    // erst Karten erzeugen (Container existiert), dann Template anwenden
+    createCards();
+
 
     // 2) Template aus Boot oder via fetch laden und rendern
     const loadTpl = bootTpl ? Promise.resolve(bootTpl) : fetchBoardTemplate(window.boardType);
@@ -1941,8 +1944,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Add drop handling to allow repositioning cards and notes
     const boardArea = document.querySelector('.board-area');
 
-    // erst Karten erzeugen (Container existiert), dann Template anwenden
-    createCards();
 
     // Enable dropping on the board
     boardArea.addEventListener('dragover', function(e) {
