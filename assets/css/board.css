@@ -601,7 +601,6 @@ html, body {
   transition: none !important;
   animation: none !important;
   transform: none !important;
-  pointer-events: none !important;
 }
 
 /* Bewegte Spezialfälle DÜRFEN animieren */
