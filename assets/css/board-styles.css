@@ -1192,3 +1192,14 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 
 /* falls du den Stapel direkt in die Area/Box setzt: */
 #card-stack { z-index: 1200 !important; }
+
+/* Notes-Layer blockiert keine Klicks mehr */
+#notes-container,
+.notes-container {
+  pointer-events: none !important;
+}
+
+/* Einzelne Notizen bleiben normal bedienbar */
+.note, .notiz {
+  pointer-events: auto !important;
+}
