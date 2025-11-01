@@ -2936,34 +2936,42 @@ document.addEventListener('DOMContentLoaded', async function() {
     const bgBox = (() => {
       const bgId = window.__CARD_BG_ID__;
       if (!bgId) return null;
-      // großzügiger Selektor: funktioniert mit Live- und Builder-Markup
+      // funktioniert mit Live- und Builder-Markup
       return document.querySelector(`.bb-bgrect[data-id="${bgId}"], [data-id="${bgId}"].bb-bgrect, [data-id="${bgId}"]`);
     })();
 
-    // Host bestimmen (Fallbacks, falls keine bgBox gefunden wurde)
-    const host =
-      bgBox ||
-      document.getElementById('board-info-box') ||
-      document.querySelector('.board-area');
-
-    if (!host) {
-      console.warn('createCards(): kein Host gefunden – weder bgBox, #board-info-box noch .board-area');
-      return;
+    // WICHTIG: Stapel NICHT in die bgBox hängen → als Geschwister über der Box
+    const parent = document.querySelector('.board-area') || document.body;
+    if (getComputedStyle(parent).position === 'static') {
+      parent.style.position = 'relative';
     }
 
-    // Host relativ positionieren, falls noch nicht geschehen
-    if (!host.style.position) host.style.position = 'relative';
-
-    // Stapel mittig in der Box platzieren (ohne Messung)
+    // Stapel elementar stylen (Overlay)
     stack.style.position  = 'absolute';
     stack.style.width     = 'var(--card-w)';
     stack.style.height    = 'var(--card-h)';
-    stack.style.left      = '50%';
-    stack.style.top       = '50%';
-    stack.style.transform = 'translate(-50%, -50%)';
+    stack.style.transform = 'none';          // keine 50%/50%-Zentrierung mehr
     stack.style.zIndex    = '10000';
+    parent.appendChild(stack);
 
-    host.appendChild(stack);
+    // Zentrieren: exakt über bgBox (Fallback: in parent zentrieren)
+    function centerStackOverBg() {
+      const boardArea = document.querySelector('.board-area');
+      const s  = parseFloat(boardArea?.dataset.scale || '1') || 1;
+      const pr = parent.getBoundingClientRect();
+      const tr = (bgBox ? bgBox.getBoundingClientRect() : parent.getBoundingClientRect());
+
+      const sw = stack.offsetWidth,  sh = stack.offsetHeight;
+      const left = ((tr.left - pr.left) / s) + (tr.width  / s - sw) / 2;
+      const top  = ((tr.top  - pr.top ) / s) + (tr.height / s - sh) / 2;
+
+      stack.style.left = Math.round(left) + 'px';
+      stack.style.top  = Math.round(top)  + 'px';
+    }
+
+    // initial + bei Resize nachführen
+    requestAnimationFrame(centerStackOverBg);
+    window.addEventListener('resize', centerStackOverBg, { passive:true });
 
     // Optional: Nach Layout eine exakte Zentrierung mit Maßen (falls nötig)
     if (bgBox) {
