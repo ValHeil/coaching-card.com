@@ -668,10 +668,3 @@ html, body {
   transition: transform 0.5s !important;
 }
 
-.notes-container {
-  user-select: none;
-  cursor: default; /* oder: cursor: grab; wenn du die Geste betonen willst */
-}
-
-#notes-container, .notes-container { pointer-events: none !important; }
-.note, .notiz { pointer-events: auto !important; }
