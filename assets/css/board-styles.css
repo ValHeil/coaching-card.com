@@ -1093,7 +1093,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 
 /* Board nimmt die ganze Fläche ein – kein Scrollen, kein äußerer Rand */
 .board-area {
-  position: fixed;       /* klebt am Viewport */
+  position: relative;       /* klebt am Viewport */
   inset: 0 !important;              /* top:0;right:0;bottom:0;left:0 */
   margin: 0 !important;
   padding: 0;
@@ -1183,3 +1183,12 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
   background: transparent !important;
   box-shadow: none !important;
 }
+
+.board-area { position: relative; }
+.board-area .board-bg-rect { z-index: 0 !important; pointer-events: none; }
+
+#cards-container, .cards-container { position: absolute; inset: 0; z-index: 100 !important; }
+#notes-container, .notes-container { position: absolute; inset: 0; z-index: 200 !important; }
+
+/* falls du den Stapel direkt in die Area/Box setzt: */
+#card-stack { z-index: 1200 !important; }
