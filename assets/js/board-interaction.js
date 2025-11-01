@@ -2929,41 +2929,45 @@ document.addEventListener('DOMContentLoaded', async function() {
     const stack = document.createElement('div');
     stack.className = 'card-stack';
     stack.id = 'card-stack';
-    // Stapel bevorzugt in die ausgewählte Karten-Box hängen
-    const host = parent || document.getElementById('board-info-box') || document.querySelector('.board-area');
 
-    // sicherstellen, dass relativ positioniert wird
-    host.style.position = host.style.position || 'relative';
-
-    // Stapel zentriert in der Box platzieren (funktioniert ohne Messung)
-    stack.style.position  = 'absolute';
-    stack.style.width     = 'var(--card-w)';  // damit der Container eine Größe hat
-    stack.style.height    = 'var(--card-h)';  // (Kinder sind absolut positioniert)
-    stack.style.left      = '50%';
-    stack.style.top       = '50%';
-    stack.style.transform = 'translate(-50%, -50%)';
-    stack.style.zIndex    = '20';
-
-    // Host für den Kartenstapel: bevorzugt die aktive BG-Box
-    const parent = (() => {
+    // Bevorzugte Host-Box: aktive BG-Box aus dem Template
+    const bgBox = (() => {
       const bgId = window.__CARD_BG_ID__;
       if (!bgId) return null;
       // großzügiger Selektor: funktioniert mit Live- und Builder-Markup
       return document.querySelector(`.bb-bgrect[data-id="${bgId}"], [data-id="${bgId}"].bb-bgrect, [data-id="${bgId}"]`);
     })();
 
+    // Host bestimmen (Fallbacks, falls keine bgBox gefunden wurde)
+    const host =
+      bgBox ||
+      document.getElementById('board-info-box') ||
+      document.querySelector('.board-area');
 
-    // Sichtbar über der Box
-    stack.style.position = 'absolute';
-    stack.style.zIndex = 2;
+    if (!host) {
+      console.warn('createCards(): kein Host gefunden – weder bgBox, #board-info-box noch .board-area');
+      return;
+    }
 
-    (host || document.body).appendChild(stack);
+    // Host relativ positionieren, falls noch nicht geschehen
+    if (!host.style.position) host.style.position = 'relative';
 
-    // Wenn wir in einer BG-Box sind: mittig ausrichten
-    if (parent) {
+    // Stapel mittig in der Box platzieren (ohne Messung)
+    stack.style.position  = 'absolute';
+    stack.style.width     = 'var(--card-w)';
+    stack.style.height    = 'var(--card-h)';
+    stack.style.left      = '50%';
+    stack.style.top       = '50%';
+    stack.style.transform = 'translate(-50%, -50%)';
+    stack.style.zIndex    = '20';
+
+    host.appendChild(stack);
+
+    // Optional: Nach Layout eine exakte Zentrierung mit Maßen (falls nötig)
+    if (bgBox) {
       requestAnimationFrame(() => {
         const sw = stack.offsetWidth, sh = stack.offsetHeight;
-        const pw = parent.clientWidth, ph = parent.clientHeight;
+        const pw = bgBox.clientWidth, ph = bgBox.clientHeight;
         stack.style.left = Math.round((pw - sw) / 2) + 'px';
         stack.style.top  = Math.round((ph - sh) / 2) + 'px';
       });
