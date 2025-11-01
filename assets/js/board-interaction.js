@@ -2960,7 +2960,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     stack.style.left      = '50%';
     stack.style.top       = '50%';
     stack.style.transform = 'translate(-50%, -50%)';
-    stack.style.zIndex    = '120';
+    stack.style.zIndex    = '10000';
 
     host.appendChild(stack);
 
