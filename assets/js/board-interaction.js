@@ -213,39 +213,37 @@ async function fetchBoardTemplate(slug) {
   };
 }
 
-// Kartenslot aus sampleCard anwenden (Position & Cardmaß)
-// Kartenslot aus sampleCard anwenden (Position & Cardmaß)
+// applySampleCardFromTemplate(): bgMap unterstützen
 function applySampleCardFromTemplate(tpl) {
   const sample = tpl?.widgets?.find?.(w => w.type === 'sampleCard');
   if (!sample) return;
 
   const W = Array.isArray(tpl.widgets) ? tpl.widgets : [];
-  const linkId = gprop(sample, 'bgId', null);
-  let box = linkId ? W.find(w => w.type === 'bgrect' && w.id === linkId) : null;
 
-  // === Kartengröße bestimmen =========================================
-  const PAD = 20; // gleicher Abstand wie im Builder
-
-  // Ratio dynamisch: CSS-Variable, gesetzt von applyDeckFormatRatio()
-  const ratioVar = getComputedStyle(document.documentElement)
-                    .getPropertyValue('--card-ratio')
-                    .trim();
-  const RATIO = ratioVar ? parseFloat(ratioVar) : (window.RATIO || (260/295));
-
-  // 1) Aktives Format bestimmen: bevorzugt aus Cardset (applyDeckFormatRatio), sonst aus sample.props.format
+  // Aktives Format vorrangig aus Cardset (applyDeckFormatRatio)
   const activeFmt = (window.CARDSET_FORMAT && String(window.CARDSET_FORMAT)) ||
                     String(gprop(sample, 'format', '') || '');
 
-  // 2) Formatspezifische Kartengröße (falls vorhanden)
-  const fmtSizes  = gprop(sample, 'formatSizes', null); // { '2:3':{w,h}, ... }
-  let cw = 0, ch = 0;
+  // ► Neu: bgMap (format -> bgId) nutzen; Legacy: bgId als Fallback
+  const bgMap = gprop(sample, 'bgMap', null);
+  let linkId = (bgMap && activeFmt && bgMap[activeFmt]) || gprop(sample, 'bgId', null);
+  let box = linkId ? W.find(w => w.type === 'bgrect' && w.id === linkId) : null;
 
+  const PAD = 20;
+
+  // Ratio dynamisch (von applyDeckFormatRatio gesetzt)
+  const ratioVar = getComputedStyle(document.documentElement).getPropertyValue('--card-ratio').trim();
+  const RATIO = ratioVar ? parseFloat(ratioVar) : (window.RATIO || (260/295));
+
+  // Formatspezifische Kartengröße
+  const fmtSizes = gprop(sample, 'formatSizes', null); // { '2:3':{w,h}, ... }
+  let cw = 0, ch = 0;
   if (fmtSizes && activeFmt && fmtSizes[activeFmt]) {
     cw = Number(fmtSizes[activeFmt].w) || 0;
     ch = Number(fmtSizes[activeFmt].h) || 0;
   }
 
-  // 3) Legacy/Explizite Maße am sample als Fallback
+  // Legacy-Fallbacks (alte Boards)
   if (!cw || !ch) {
     cw = Number(gprop(sample, 'cardWidth',  0)) || 0;
     ch = Number(gprop(sample, 'cardHeight', 0)) || 0;
@@ -253,65 +251,50 @@ function applySampleCardFromTemplate(tpl) {
     if (!ch && sample.h) ch = Math.round(sample.h);
   }
 
-  // 4) Noch kein valides Maß? – aus verlinkter/umgebender Box ableiten
+  // Box über Geometrie ableiten, falls keine verlinkt
   if (!box) {
     box = W.filter(w => w.type === 'bgrect')
-          .find(b => (sample.x >= b.x && sample.x <= b.x + b.w &&
-                      sample.y >= b.y && sample.y <= b.y + b.h));
+           .find(b => (sample.x >= b.x && sample.x <= b.x + b.w &&
+                       sample.y >= b.y && sample.y <= b.y + b.h));
   }
 
+  // Wenn Kartengröße fehlt: best-fit in Box
   if ((!cw || !ch) && box && Number.isFinite(box.w) && Number.isFinite(box.h)) {
     const bw = Number(gprop(box, 'borderWidth', 0)) || 0;
     const availW = Math.max(40, (box.w - 2*PAD - 2*bw));
     const availH = Math.max(40, (box.h - 2*PAD - 2*bw));
-
-    // Ratio aus CSS-Var (applyDeckFormatRatio hat sie gesetzt)
-    const ratioVar = getComputedStyle(document.documentElement).getPropertyValue('--card-ratio').trim();
-    const ratio = ratioVar ? parseFloat(ratioVar) : (260/295);
-
-    // bestmöglich einpassen
-    const byW = { w: availW,          h: availW * ratio };
-    const byH = { w: availH / ratio,  h: availH         };
+    const byW = { w: availW,          h: availW * RATIO };
+    const byH = { w: availH / RATIO,  h: availH         };
     if (byW.h <= availH) { cw = Math.round(byW.w); ch = Math.round(byW.h); }
     else                 { cw = Math.round(byH.w); ch = Math.round(byH.h); }
   }
 
-  // 5) Falls immer noch nichts Sinnvolles: moderates Default
   if (!cw || !ch) { cw = 260; ch = Math.round(cw * (260/295)); }
 
-  // 6) Kartengröße ins Template und in CSS-Variablen spiegeln
-  sample.cardWidth  = cw; sample.cardHeight = ch;
+  // Maße spiegeln
+  sample.cardWidth = cw; sample.cardHeight = ch;
   sample.w = cw; sample.h = ch;
-  // Nur --card-w setzen; --card-h ergibt sich aus --card-ratio
   document.documentElement.style.setProperty('--card-w', String(cw) + 'px');
 
-  // === Hintergrundbox ggf. format-spezifisch setzen ===================
+  // ► Formatspezifische Boxmaße (sizeByFormat) respektieren, sonst ableiten
   if (box) {
     const bw = Number(gprop(box, 'borderWidth', 0)) || 0;
-
-    // a) format-spezifische Boxmaße bevorzugen, falls vorhanden
-    const boxSizes   = gprop(box, 'sizeByFormat', null) || gprop(box, 'formatSizes', null);
-    const boxManual  = gprop(box, 'manualSizeByFormat', null) || gprop(box, 'formatSizeManual', null);
+    const boxSizes  = gprop(box, 'sizeByFormat', null) || gprop(box, 'formatSizes', null);
+    const boxManual = gprop(box, 'manualSizeByFormat', null) || gprop(box, 'formatSizeManual', null);
     let useW = 0, useH = 0;
-
     if (boxSizes && activeFmt && boxSizes[activeFmt]) {
       useW = Number(boxSizes[activeFmt].w) || 0;
       useH = Number(boxSizes[activeFmt].h) || 0;
     }
-
-    // b) Wenn keine expliziten Boxmaße: aus Kartengröße + Padding ableiten (nur wenn nicht "manuell" fixiert)
     const isManual = !!(boxManual && activeFmt && boxManual[activeFmt]);
     if ((!useW || !useH) && !isManual) {
       useW = cw + 2*PAD + 2*bw;
       useH = ch + 2*PAD + 2*bw;
     }
-
-    if (useW && useH) {
-      box.w = Math.max(40, Math.round(useW));
-      box.h = Math.max(40, Math.round(useH));
-    }
+    if (useW && useH) { box.w = useW; box.h = useH; }
   }
 }
+
 
 
 
