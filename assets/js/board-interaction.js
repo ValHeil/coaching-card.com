@@ -2045,25 +2045,49 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     const W = Array.isArray(tpl.widgets) ? tpl.widgets : [];
 
-    const sample   = W.find(w => w.type === 'sampleCard');
-    const activeFmt = (window.CARDSET_FORMAT && String(window.CARDSET_FORMAT)) || String(prop(sample).format || '');
-    const bgMap    = prop(sample).bgMap || sample?.bgMap || null;
-    const activeBg = window.__CARD_BG_ID__ || (bgMap && activeFmt && bgMap[activeFmt]) || prop(sample).bgId || null;
+    const sample    = W.find(w => w.type === 'sampleCard');
+    const fmtFromDeck = String(window.CARDSET_FORMAT || prop(sample).format || '');
+    const bgMap     = (prop(sample).bgMap || sample?.bgMap || {});
+    const activeBgId = window.__CARD_BG_ID__ || (fmtFromDeck && bgMap[fmtFromDeck]) || prop(sample).bgId || null;
 
-    const bgList = W.filter(w => w.type === 'bgrect')
-                    .filter(w => !activeBg || String(w.id) === String(activeBg));
+    const bgList = W.filter(w => w.type === 'bgrect' && (!activeBgId || String(w.id || '') === String(activeBgId)));
 
     bgList.forEach(w => {
       const el = document.createElement('div');
       el.className  = 'board-bg-rect tpl-node';
       el.dataset.id = w.id || '';
 
-      // positionieren + style wie bisher
+      // Position & Größe laut Template
       place(el, w);
+
+      // hinten halten & nicht klickfangend
       el.style.pointerEvents = 'none';
-      el.style.borderRadius  = (prop(w).borderRadius != null ? prop(w).borderRadius : 24) + 'px';
-      el.style.border        = `${prop(w).borderWidth ?? 2}px solid ${prop(w).borderColor ?? 'rgba(0,0,0,0.06)'}`;
-      el.style.background    = prop(w).backgroundColor ?? '#f2f2f2';
+      // falls kein z im Widget gesetzt, einen sehr niedrigen setzen
+      if (!w.z) el.style.zIndex = '0';
+
+      // Optik aus props/legacy übernehmen
+      const radius = (prop(w).radius ?? 12);
+      el.style.borderRadius = `${Math.round(radius)}px`;
+
+      const fillCol = (prop(w).color ?? '#f3ead7');
+      const fillA   = (prop(w).opacity ?? 1);
+      el.style.backgroundColor = hexToRgba(fillCol, fillA);
+
+      const bw   = (prop(w).borderWidth ?? 0);
+      const bsty = (prop(w).borderStyle ?? 'solid');
+      if (bw > 0 && bsty !== 'none') {
+        const bcol = (prop(w).borderColor ?? '#000000');
+        const ba   = (prop(w).borderOpacity ?? 1);
+        el.style.border = `${bw}px ${bsty} ${hexToRgba(bcol, ba)}`;
+      } else {
+        el.style.border = 'none';
+      }
+      if (bw === 0) el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
+
+      // Merker für Fix B: die Box, in die der Stapel soll
+      if (activeBgId && String(w.id || '') === String(activeBgId)) {
+        window.CARD_BG_EL = el;
+      }
     });
 
     // --- bgrect zuerst (Z-Reihenfolge)
@@ -2889,7 +2913,22 @@ document.addEventListener('DOMContentLoaded', async function() {
     const stack = document.createElement('div');
     stack.className = 'card-stack';
     stack.id = 'card-stack';
-    infoBox.appendChild(stack);
+    // Stapel bevorzugt in die ausgewählte Karten-Box hängen
+    const host = (window.CARD_BG_EL || infoBox);
+
+    // sicherstellen, dass relativ positioniert wird
+    host.style.position = host.style.position || 'relative';
+
+    // Stapel zentriert in der Box platzieren (funktioniert ohne Messung)
+    stack.style.position  = 'absolute';
+    stack.style.width     = 'var(--card-w)';  // damit der Container eine Größe hat
+    stack.style.height    = 'var(--card-h)';  // (Kinder sind absolut positioniert)
+    stack.style.left      = '50%';
+    stack.style.top       = '50%';
+    stack.style.transform = 'translate(-50%, -50%)';
+    stack.style.zIndex    = '20';
+
+    host.appendChild(stack);
 
     // Globale Arrays initialisieren
     window.cards = [];
