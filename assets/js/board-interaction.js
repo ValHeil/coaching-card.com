@@ -1901,6 +1901,22 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         // normales Rendering
         applySampleCardFromTemplate(tpl);   // Stapel positionieren & Cardmaß
+        // Nur die zum aktuellen Kartenformat gehörende BG-Box behalten
+        try {
+          const sample = (tpl.widgets || []).find(w => w && w.type === 'sampleCard');
+          const map    = (sample?.props?.bgMap) || {};
+          const fmt    = String(window.CARDSET_FORMAT || '');
+          const activeBgId = map[fmt] || sample?.props?.bgId || null;
+
+          if (activeBgId) {
+            // für spätere Positionierung merken
+            window.__CARD_BG_ID__ = activeBgId;
+            // alle anderen bgrects ausfiltern
+            tpl.widgets = (tpl.widgets || []).filter(w => w.type !== 'bgrect' || w.id === activeBgId);
+          }
+        } catch (e) {
+          console.debug('[tpl] bg-filter skipped', e);
+        }
         buildBoardFromTemplate(tpl);        // Widgets/Hintergrund zeichnen
       })
       .catch((err) => {
@@ -2914,7 +2930,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     stack.className = 'card-stack';
     stack.id = 'card-stack';
     // Stapel bevorzugt in die ausgewählte Karten-Box hängen
-    const host = (window.CARD_BG_EL || infoBox);
+    const host = parent || document.getElementById('board-info-box') || document.querySelector('.board-area');
 
     // sicherstellen, dass relativ positioniert wird
     host.style.position = host.style.position || 'relative';
@@ -2928,7 +2944,30 @@ document.addEventListener('DOMContentLoaded', async function() {
     stack.style.transform = 'translate(-50%, -50%)';
     stack.style.zIndex    = '20';
 
-    host.appendChild(stack);
+    // Host für den Kartenstapel: bevorzugt die aktive BG-Box
+    const parent = (() => {
+      const bgId = window.__CARD_BG_ID__;
+      if (!bgId) return null;
+      // großzügiger Selektor: funktioniert mit Live- und Builder-Markup
+      return document.querySelector(`.bb-bgrect[data-id="${bgId}"], [data-id="${bgId}"].bb-bgrect, [data-id="${bgId}"]`);
+    })();
+
+
+    // Sichtbar über der Box
+    stack.style.position = 'absolute';
+    stack.style.zIndex = 2;
+
+    (host || document.body).appendChild(stack);
+
+    // Wenn wir in einer BG-Box sind: mittig ausrichten
+    if (parent) {
+      requestAnimationFrame(() => {
+        const sw = stack.offsetWidth, sh = stack.offsetHeight;
+        const pw = parent.clientWidth, ph = parent.clientHeight;
+        stack.style.left = Math.round((pw - sw) / 2) + 'px';
+        stack.style.top  = Math.round((ph - sh) / 2) + 'px';
+      });
+    }
 
     // Globale Arrays initialisieren
     window.cards = [];
