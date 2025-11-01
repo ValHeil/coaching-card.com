@@ -1847,6 +1847,13 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Board mit Karten und Notizen initialisieren
   const initializeBoard = () => {
+    debugger; // INIT: Läuft initializeBoard überhaupt?
+    const boardArea = document.querySelector('.board-area');
+    console.log('[INIT]', {
+      cards: document.querySelectorAll('.card').length,
+      pointerEventsBoard: boardArea ? getComputedStyle(boardArea).pointerEvents : 'n/a',
+      bodyModalOpen: document.body.classList.contains('modal-open')
+    });
     console.debug('[BOOT]', {
       fromUrl: new URLSearchParams(location.search).get('board'),
       fromBootBoard: window.CC_BOOT?.board,
@@ -1938,11 +1945,17 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
 
 
-    // Add drop handling to allow repositioning cards and notes
-    const boardArea = document.querySelector('.board-area');
-
+    
     // erst Karten erzeugen (Container existiert), dann Template anwenden
     createCards();
+
+    {
+      const ba = document.querySelector('.board-area');
+      console.log('[mask-check]', {
+        modalOpen: document.body.classList.contains('modal-open'),
+        peBoard: ba ? getComputedStyle(ba).pointerEvents : 'n/a'
+      });
+    }
 
     // Enable dropping on the board
     boardArea.addEventListener('dragover', function(e) {
@@ -2003,6 +2016,15 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Event-Listener für Aktionen einrichten
     setupEventListeners();
+
+    // TEMP: globaler Keydown-Capture-Logger
+    window.addEventListener('keydown', (e) => {
+      console.log('[KEYDOWN global]', e.key, {
+        target: e.target && (e.target.tagName + (e.target.isContentEditable ? '[ce]' : '')),
+        hoveringCard: window.isHoveringCard,
+        hoveringStack: window.isHoveringStack
+      });
+    }, true);
 
     // beim Start & bei Resize anwenden
     window.addEventListener('resize', (() => {
@@ -2928,6 +2950,14 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     host.appendChild(stack);
 
+    debugger;
+    console.log('[createCards] host/stapel', {
+      host, stack,
+      hostPos: host.style.position,
+      stackZ: stack.style.zIndex,
+      stackRect: stack.getBoundingClientRect()
+    });
+
     // Optional: Nach Layout eine exakte Zentrierung mit Maßen (falls nötig)
     if (bgBox) {
       requestAnimationFrame(() => {
@@ -2987,6 +3017,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Interaktionen
         if (typeof flipCard === 'function') card.addEventListener('dblclick', () => flipCard(card));
         if (typeof makeDraggable === 'function') makeDraggable(card);
+
+        debugger;
+        console.log('[createCards] card ready', {
+          id: card.id,
+          inDOM: !!card.parentElement,
+          pointerEvents: getComputedStyle(card).pointerEvents,
+          z: card.style.zIndex
+        });
 
         stack.appendChild(card);
         window.cards.push(card);
@@ -3253,6 +3291,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Tastaturverhalten überschreiben: nur bei Hover über Karte/Stapel aktiv
     document.addEventListener('keydown', (e) => {
+      debugger;
       const isInTextInput =
         (e.target && e.target.isContentEditable) ||
         (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'));
@@ -4740,6 +4779,7 @@ document.addEventListener('DOMContentLoaded', async function() {
  
   // Element draggable machen - angepasst für Karten
   function makeDraggable(element) {
+    debugger;
     if (element.id === 'notes-container' || element.classList.contains('notes-container')) {
       return; // Notizblock bleibt fixiert
     }
@@ -4760,6 +4800,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Für Karten, benutzerdefiniertes Drag-and-Drop implementieren
     // ---- Karten: benutzerdefiniertes Dragging mit Scale-Korrektur ----
     if (element.classList.contains('card')) {
+      debugger;
       element.removeAttribute('draggable');
 
       let isDragging = false;
@@ -4800,6 +4841,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       };
 
       element.addEventListener('mousedown', (e) => {
+        debugger; // Feuert mousedown?
+        console.log('[drag:start]', { target: e.target, btn: e.button, classes: element.className });
         if (e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
@@ -4852,6 +4895,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
 
       function onMouseMove(e){
+        debugger;
         if (!isDragging) return;
         e.preventDefault();
 
@@ -4891,6 +4935,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
       function onMouseUp(){
+        deubber;
         if (!isDragging) return;
         isDragging = false;
         element.classList.remove('being-dragged');
