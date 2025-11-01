@@ -168,50 +168,41 @@ function normalizeTemplate(raw) {
 async function fetchBoardTemplate(slug) {
   const safe = (slug || '').toString().trim().toLowerCase();
 
-  // Versuch 1: WP-REST (bevorzugt)
-  try {
-    const wpUrl = `/wp-json/cc/v1/boards/${encodeURIComponent(safe)}`;
-    const res2  = await fetch(wpUrl, { cache: 'no-store' });
-    if (res2.ok) {
-      const data = await res2.json();
-      const tpl  = data?.template || data?.board_template || data;
-      const norm = normalizeTemplate(tpl);
-      if (norm) return norm;
-    }
-  } catch (e) {
-    console.debug('[TPL] wp-rest fetch fail', e);
-  }
-
-  // Versuch 2: statisches Asset
+  // 1) Bevorzugt: statisches Asset / Node (gleiche Origin)
   try {
     const url = `/app/assets/boards/${safe}/board.json?ts=${Date.now()}`;
     const res = await fetch(url, { cache: 'no-store' });
     if (res.ok) {
       const json = await res.json();
-      // Schutz: offensichtliche "not found"-Stubs NICHT verwenden
       const asText = JSON.stringify(json||{});
-      if (/not\s*found|nicht\s*gefunden/i.test(asText) || json?.error || json?.status === 'not_found') {
-        // nichts zurückgeben → REST-Fallback greift
-      } else {
+      if (!/not\s*found|nicht\s*gefunden/i.test(asText) && !json?.error && json?.status !== 'not_found') {
         return normalizeTemplate(json);
       }
     } else if (res.status !== 404) {
       throw new Error(`HTTP ${res.status} beim Laden von ${url}`);
     }
   } catch (e) {
-    console.debug('[TPL] asset fetch fail', e);
+    console.debug('[TPL] asset/node fetch fail', e);
   }
 
-  // Versuch 3: Minimal-Template
+  // 2) Optionaler Fallback: WordPress-REST (wenn vorhanden)
+  try {
+    const wpUrl = `/wp-json/cc/v1/boards/${encodeURIComponent(safe)}`;
+    const r = await fetch(wpUrl, { cache: 'no-store' });
+    if (r.ok) {
+      const data = await r.json();
+      const tpl  = data?.template || data?.board_template || data;
+      const norm = normalizeTemplate(tpl);
+      if (norm) return norm;
+    }
+  } catch (e) {
+    console.debug('[TPL] wp-rest fetch fail (ok wenn WP-Route nicht existiert)', e);
+  }
+
   console.warn(`[TPL] kein Template gefunden für "${safe}" – nutze Basis-Template`);
-  return {
-    worldW: 2400,
-    worldH: 1350,
-    bgColor: '#f9ecd2',
-    bgImage: null,
-    widgets: []
-  };
+  return { worldW: 2400, worldH: 1350, bgColor: '#f9ecd2', bgImage: null, widgets: [] };
 }
+
 
 // applySampleCardFromTemplate(): bgMap unterstützen
 function applySampleCardFromTemplate(tpl) {
@@ -228,6 +219,7 @@ function applySampleCardFromTemplate(tpl) {
   const bgMap = gprop(sample, 'bgMap', null);
   let linkId = (bgMap && activeFmt && bgMap[activeFmt]) || gprop(sample, 'bgId', null);
   let box = linkId ? W.find(w => w.type === 'bgrect' && w.id === linkId) : null;
+  window.__CARD_BG_ID__ = (linkId || (box && box.id)) || null;
 
   const PAD = 20;
 
@@ -2051,6 +2043,29 @@ document.addEventListener('DOMContentLoaded', async function() {
       area.appendChild(el);
     }
 
+    const W = Array.isArray(tpl.widgets) ? tpl.widgets : [];
+
+    const sample   = W.find(w => w.type === 'sampleCard');
+    const activeFmt = (window.CARDSET_FORMAT && String(window.CARDSET_FORMAT)) || String(prop(sample).format || '');
+    const bgMap    = prop(sample).bgMap || sample?.bgMap || null;
+    const activeBg = window.__CARD_BG_ID__ || (bgMap && activeFmt && bgMap[activeFmt]) || prop(sample).bgId || null;
+
+    const bgList = W.filter(w => w.type === 'bgrect')
+                    .filter(w => !activeBg || String(w.id) === String(activeBg));
+
+    bgList.forEach(w => {
+      const el = document.createElement('div');
+      el.className  = 'board-bg-rect tpl-node';
+      el.dataset.id = w.id || '';
+
+      // positionieren + style wie bisher
+      place(el, w);
+      el.style.pointerEvents = 'none';
+      el.style.borderRadius  = (prop(w).borderRadius != null ? prop(w).borderRadius : 24) + 'px';
+      el.style.border        = `${prop(w).borderWidth ?? 2}px solid ${prop(w).borderColor ?? 'rgba(0,0,0,0.06)'}`;
+      el.style.background    = prop(w).backgroundColor ?? '#f2f2f2';
+    });
+
     // --- bgrect zuerst (Z-Reihenfolge)
     tpl.widgets.filter(w => w.type === 'bgrect').forEach(w => {
       const el = document.createElement('div');
@@ -2498,6 +2513,28 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Sicherheit: existierende Notizen in den Container umhängen
       document.querySelectorAll('.notiz').forEach(n => { if (!el.contains(n)) el.appendChild(n); });
       
+    try {
+      const activeId = window.__CARD_BG_ID__;
+      const box = activeId
+        ? area.querySelector(`.board-bg-rect[data-id="${CSS.escape(String(activeId))}"]`)
+        : null;
+      const stack = document.getElementById('card-stack');
+
+      if (box && stack) {
+        // Box muss Positionierungs-Kontext sein
+        const prevPos = getComputedStyle(box).position;
+        if (prevPos === 'static') box.style.position = 'relative';
+
+        // Stapel in die Box verschieben und zentrieren
+        box.appendChild(stack);
+        stack.style.position  = 'absolute';
+        stack.style.left      = '50%';
+        stack.style.top       = '50%';
+        stack.style.transform = 'translate(-50%, -50%)';
+      }
+    } catch (e) {
+      console.debug('mount stack into bgrect failed', e);
+    }
   }
 
   
