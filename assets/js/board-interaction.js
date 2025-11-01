@@ -1847,13 +1847,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Board mit Karten und Notizen initialisieren
   const initializeBoard = () => {
-    debugger; // INIT: Läuft initializeBoard überhaupt?
-    const boardArea = document.querySelector('.board-area');
-    console.log('[INIT]', {
-      cards: document.querySelectorAll('.card').length,
-      pointerEventsBoard: boardArea ? getComputedStyle(boardArea).pointerEvents : 'n/a',
-      bodyModalOpen: document.body.classList.contains('modal-open')
-    });
     console.debug('[BOOT]', {
       fromUrl: new URLSearchParams(location.search).get('board'),
       fromBootBoard: window.CC_BOOT?.board,
@@ -1945,38 +1938,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
 
 
-    
+    // Add drop handling to allow repositioning cards and notes
+    const boardArea = document.querySelector('.board-area');
+
     // erst Karten erzeugen (Container existiert), dann Template anwenden
     createCards();
-
-    setTimeout(() => {
-      const p = { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) };
-      const el = document.elementFromPoint(p.x, p.y);
-      const board = document.querySelector('.board-area');
-      const stack = document.getElementById('card-stack');
-      const topCard = stack ? stack.querySelector(':scope > .card:last-child') : null;
-
-      console.log('[A/HITTEST @5s]', {
-        point: p,
-        hitEl: el,
-        hitClass: el && el.className,
-        hitPE: el && getComputedStyle(el).pointerEvents,
-        overlayHit: el && el.closest('.bb-modal, .participant-name-prompt-overlay'),
-        boardPE: board ? getComputedStyle(board).pointerEvents : 'n/a',
-        stackPE: stack ? getComputedStyle(stack).pointerEvents : 'n/a',
-        topCardId: topCard && topCard.id,
-        topCardPE: topCard ? getComputedStyle(topCard).pointerEvents : 'n/a',
-        stackZ: stack && stack.style.zIndex
-      });
-    }, 5000);
-
-    {
-      const ba = document.querySelector('.board-area');
-      console.log('[mask-check]', {
-        modalOpen: document.body.classList.contains('modal-open'),
-        peBoard: ba ? getComputedStyle(ba).pointerEvents : 'n/a'
-      });
-    }
 
     // Enable dropping on the board
     boardArea.addEventListener('dragover', function(e) {
@@ -2037,15 +2003,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Event-Listener für Aktionen einrichten
     setupEventListeners();
-
-    // TEMP: globaler Keydown-Capture-Logger
-    window.addEventListener('keydown', (e) => {
-      console.log('[KEYDOWN global]', e.key, {
-        target: e.target && (e.target.tagName + (e.target.isContentEditable ? '[ce]' : '')),
-        hoveringCard: window.isHoveringCard,
-        hoveringStack: window.isHoveringStack
-      });
-    }, true);
 
     // beim Start & bei Resize anwenden
     window.addEventListener('resize', (() => {
@@ -2149,6 +2106,42 @@ document.addEventListener('DOMContentLoaded', async function() {
         window.CARD_BG_EL = el;
       }
     });
+
+    // --- bgrect zuerst (Z-Reihenfolge)
+    tpl.widgets.filter(w => w.type === 'bgrect').forEach(w => {
+      const el = document.createElement('div');
+      el.className   = 'board-bg-rect tpl-node';
+      el.dataset.id  = w.id || '';
+
+      // zuerst positionieren (left/top/w/h/z) – deine place(..) nutzt w.x,y,w,h,w.z
+      place(el, w);
+
+      // nicht klickfangend & weit hinten
+      el.style.pointerEvents = 'none';
+      if (!w.z) el.style.zIndex = '10';
+
+      // Optik aus props ODER legacy top-level
+      const radius = gprop(w,'radius',12);
+      el.style.borderRadius = `${Math.round(radius)}px`;
+
+      const fillCol = gprop(w,'color','#f3ead7');
+      const fillA   = gprop(w,'opacity',1);
+      el.style.backgroundColor = hexToRgba(fillCol, fillA);
+
+      const bw   = gprop(w,'borderWidth',0);
+      const bsty = gprop(w,'borderStyle','solid');
+      if (bw > 0 && bsty !== 'none') {
+        const bcol = gprop(w,'borderColor','#000000');
+        const ba   = gprop(w,'borderOpacity',1);
+        el.style.border = `${bw}px ${bsty} ${hexToRgba(bcol, ba)}`;
+      } else {
+        el.style.border = 'none';
+      }
+
+      // dezenter innerer Rahmen (falls kein expliziter Rand gesetzt ist)
+      if (bw === 0) el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
+    });
+
 
     // --- cardholder: Zonen inklusive Titel/Desc mit optionaler Bearbeitung ---
     tpl.widgets.filter(w => w.type === 'cardholder').forEach(w => {
@@ -2971,14 +2964,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     host.appendChild(stack);
 
-    debugger;
-    console.log('[createCards] host/stapel', {
-      host, stack,
-      hostPos: host.style.position,
-      stackZ: stack.style.zIndex,
-      stackRect: stack.getBoundingClientRect()
-    });
-
     // Optional: Nach Layout eine exakte Zentrierung mit Maßen (falls nötig)
     if (bgBox) {
       requestAnimationFrame(() => {
@@ -3038,14 +3023,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Interaktionen
         if (typeof flipCard === 'function') card.addEventListener('dblclick', () => flipCard(card));
         if (typeof makeDraggable === 'function') makeDraggable(card);
-
-        debugger;
-        console.log('[createCards] card ready', {
-          id: card.id,
-          inDOM: !!card.parentElement,
-          pointerEvents: getComputedStyle(card).pointerEvents,
-          z: card.style.zIndex
-        });
 
         stack.appendChild(card);
         window.cards.push(card);
@@ -3312,7 +3289,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Tastaturverhalten überschreiben: nur bei Hover über Karte/Stapel aktiv
     document.addEventListener('keydown', (e) => {
-      debugger;
       const isInTextInput =
         (e.target && e.target.isContentEditable) ||
         (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'));
@@ -4800,7 +4776,6 @@ document.addEventListener('DOMContentLoaded', async function() {
  
   // Element draggable machen - angepasst für Karten
   function makeDraggable(element) {
-    debugger;
     if (element.id === 'notes-container' || element.classList.contains('notes-container')) {
       return; // Notizblock bleibt fixiert
     }
@@ -4821,7 +4796,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Für Karten, benutzerdefiniertes Drag-and-Drop implementieren
     // ---- Karten: benutzerdefiniertes Dragging mit Scale-Korrektur ----
     if (element.classList.contains('card')) {
-      debugger;
       element.removeAttribute('draggable');
 
       let isDragging = false;
@@ -4862,8 +4836,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       };
 
       element.addEventListener('mousedown', (e) => {
-        debugger; // Feuert mousedown?
-        console.log('[drag:start]', { target: e.target, btn: e.button, classes: element.className });
         if (e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
@@ -4916,7 +4888,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
 
       function onMouseMove(e){
-        debugger;
         if (!isDragging) return;
         e.preventDefault();
 
@@ -4956,7 +4927,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
       function onMouseUp(){
-        deubber;
         if (!isDragging) return;
         isDragging = false;
         element.classList.remove('being-dragged');
