@@ -1949,6 +1949,27 @@ document.addEventListener('DOMContentLoaded', async function() {
     // erst Karten erzeugen (Container existiert), dann Template anwenden
     createCards();
 
+    setTimeout(() => {
+      const p = { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) };
+      const el = document.elementFromPoint(p.x, p.y);
+      const board = document.querySelector('.board-area');
+      const stack = document.getElementById('card-stack');
+      const topCard = stack ? stack.querySelector(':scope > .card:last-child') : null;
+
+      console.log('[A/HITTEST @5s]', {
+        point: p,
+        hitEl: el,
+        hitClass: el && el.className,
+        hitPE: el && getComputedStyle(el).pointerEvents,
+        overlayHit: el && el.closest('.bb-modal, .participant-name-prompt-overlay'),
+        boardPE: board ? getComputedStyle(board).pointerEvents : 'n/a',
+        stackPE: stack ? getComputedStyle(stack).pointerEvents : 'n/a',
+        topCardId: topCard && topCard.id,
+        topCardPE: topCard ? getComputedStyle(topCard).pointerEvents : 'n/a',
+        stackZ: stack && stack.style.zIndex
+      });
+    }, 5000);
+
     {
       const ba = document.querySelector('.board-area');
       console.log('[mask-check]', {
