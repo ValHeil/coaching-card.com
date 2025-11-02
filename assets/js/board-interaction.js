@@ -2192,8 +2192,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     try {
       const id = window.__CARD_BG_ID__;
       const el = id
-        ? document.querySelector(`.bb-bgrect[data-id="${id}"], [data-id="${id}"].bb-bgrect`)
-        : document.querySelector('.bb-bgrect');
+        ? (document.querySelector(`.board-bg-rect[data-id="${id}"], [data-id="${id}"].board-bg-rect`) ||
+          document.querySelector(`.bb-bgrect[data-id="${id}"], [data-id="${id}"].bb-bgrect`))
+        : (document.querySelector('.board-bg-rect') || document.querySelector('.bb-bgrect'));
+
       window.CARD_BG_EL = el || null;
       document.dispatchEvent(new CustomEvent('cc:bg-ready', { detail: { id, el } }));
     } catch {}
@@ -2877,17 +2879,15 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Liest /app/assets/cards/<deck>/meta.json und setzt --card-ratio sowie ein Friendly-Format
   async function applyDeckFormatRatio(deckSlug){
     try{
-      // 1) meta.json laden
       const res = await fetch(`/app/assets/cards/${encodeURIComponent(deckSlug)}/meta.json?ts=${Date.now()}`, { cache:'no-store' });
       if(!res.ok) { console.debug('applyDeckFormatRatio: meta.json fehlt für', deckSlug); return; }
       const meta = await res.json();
 
-      // 2) Format-String flexibel lesen: "format" | "card_format" | "ratio"
       const fmtRaw = (meta && (meta.format || meta.card_format || meta.ratio))
         ? String(meta.format || meta.card_format || meta.ratio).trim().toLowerCase()
         : '';
 
-      // ► Aliasse/Synonyme robust auflösen (Diakritika entfernen)
+      // Aliasse (Diakritika raus)
       const fmtNorm = fmtRaw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const alias = {
         'skat schrag': '3:2',
@@ -2900,34 +2900,38 @@ document.addEventListener('DOMContentLoaded', async function() {
       };
       const fmtKey = alias[fmtNorm] || fmtRaw;
 
-      const ratio = named[fmtKey] ?? null;
+      // Mapping: String -> Ratio (H/B)
+      const named = {
+        'skat':  (3/2),
+        '2:3':   (3/2),
+        '3:2':   (2/3),
+        '1:2':   (2/1),
+        '2:1':   (1/2),
+        'skat-l':  (2/3),
+        'square-rounded': 1,
+        'long-portrait':  (2/1)
+      };
 
+      let ratio = named[fmtKey] ?? null;
       if (!ratio && /^\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?$/.test(fmtRaw)) {
         const [wStr,hStr] = fmtRaw.split(':').map(s => parseFloat(s));
-        if (isFinite(wStr) && isFinite(hStr) && wStr > 0 && hStr > 0) {
-          ratio = hStr / wStr;
-        }
+        if (isFinite(wStr) && isFinite(hStr) && wStr > 0 && hStr > 0) ratio = hStr / wStr;
       }
+      if (!ratio) ratio = window.RATIO || (260/295);
 
-      if (!ratio) {
-        // Fallback: nichts überschreiben, falls zuvor gesetzt
-        ratio = window.RATIO || (260/295);
-      }
-
-      // 4) Werte setzen
+      // ► CSS-Variablen setzen
       window.RATIO = ratio;
       document.documentElement.style.setProperty('--card-ratio', String(ratio));
 
-      // freundlicher String (für applySampleCardFromTemplate)
+      // Freundlicher Format-String für die Widget-Logik
       window.CARDSET_FORMAT =
         fmtKey || (ratio === 1 ? '1:1' : (Math.abs(ratio-(3/2))<0.001 ? '2:3'
                   : (Math.abs(ratio-(2/3))<0.001 ? '3:2'
                   : (Math.abs(ratio-(2/1))<0.001 ? '1:2'
-                  : (Math.abs(ratio-(1/2))<0.001 ? '2:1' : '2:3')))));
-    }catch(e){
-      console.debug('applyDeckFormatRatio failed', e);
-    }
+                  : (Math.abs(ratio-(1/2))<0.001 ? '2:1' : '')))));
+    }catch(e){ console.warn(e); }
   }
+
 
 
   // Karten erstellen und als Stapel anordnen
@@ -2994,8 +2998,15 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Aktuelle BG-Box spät/lazy bestimmen
       const bgId = window.__CARD_BG_ID__ || null;
       const curBg =
+        // 1) explizit gesetztes Element verwenden, sofern noch im DOM
         (window.CARD_BG_EL && document.body.contains(window.CARD_BG_EL) ? window.CARD_BG_EL : null) ||
-        (bgId ? document.querySelector(`.bb-bgrect[data-id="${bgId}"], [data-id="${bgId}"].bb-bgrect`) : null) ||
+        // 2) Live-Board (board-bg-rect) zuerst versuchen, dann Builder (bb-bgrect)
+        (bgId
+          ? (document.querySelector(`.board-bg-rect[data-id="${bgId}"], [data-id="${bgId}"].board-bg-rect`) ||
+            document.querySelector(`.bb-bgrect[data-id="${bgId}"], [data-id="${bgId}"].bb-bgrect`))
+          : null) ||
+        // 3) Fallback: irgendeine BG-Box
+        document.querySelector('.board-bg-rect') ||
         document.querySelector('.bb-bgrect');
 
       const tr = (curBg ? curBg.getBoundingClientRect() : parent.getBoundingClientRect());
