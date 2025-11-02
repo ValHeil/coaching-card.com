@@ -2931,7 +2931,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         'landscape':   '3:2',
         'skat hoch':   '2:3',
         'hoch':        '2:3',
-        'portrait':    '2:3'
+        'portrait':    '2:3',
+        'beinah quadrat': '8:7'
       };
       const fmtKey = alias[fmtNorm] || fmtRaw;
 
@@ -2943,6 +2944,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         '1:2':   (2/1),
         '2:1':   (1/2),
         'skat-l':  (2/3),
+        'beinah quadrat': (8/7),
         'square-rounded': 1,
         'long-portrait':  (2/1)
       };
