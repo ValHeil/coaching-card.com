@@ -36,6 +36,7 @@ window.normalizeCardZIndex = window.normalizeCardZIndex || function(el){
   } catch {}
 };
 
+
 // Board-Rechteck holen
 function getStage() {
   return document.querySelector('.board-area') || document.body;
@@ -273,6 +274,40 @@ function applySampleCardFromTemplate(tpl) {
   const RATIO = ratioVar ? parseFloat(ratioVar) : (window.RATIO || (260/295));
 
   // Formatspezifische Kartengröße
+  // --- FIX: bgrect-Größe aus Kartengröße ableiten (sofern nicht manuell überschrieben) ---
+  (function fixBgSize() {
+    if (!box) return;
+
+    const sizes = gprop(sample, 'formatSizes', null) || {};
+    const s     = sizes[activeFmt] || null;
+    if (!s || !s.w || !s.h) return;
+
+    const PAD   = 20;
+    const bw    = Number(gprop(box, 'borderWidth', 0)) || 0;
+    const saved = (gprop(box, 'sizeByFormat', null) || {})[activeFmt] || null;
+    const manual = !!(gprop(box, 'manualSizeByFormat', false) || gprop(box, 'manualSize', false));
+
+    const expectedW = Math.round(Number(s.w) + 2 * PAD + 2 * bw);
+    const expectedH = Math.round(Number(s.h) + 2 * PAD + 2 * bw);
+
+    let useW = expectedW, useH = expectedH;
+
+    // Nur übernehmen, wenn gespeicherter Wert wirklich passt
+    if (saved && !manual) {
+      const sw = Number(saved.w || 0), sh = Number(saved.h || 0);
+      const off = Math.max(Math.abs(sw - expectedW), Math.abs(sh - expectedH));
+      if (off <= 2) { useW = sw; useH = sh; } // Toleranz
+    }
+
+    // Für das Rendern nutzen …
+    box.w = useW; 
+    box.h = useH;
+
+    // … und "sanft" in props spiegeln (nur in-memory für diese Session)
+    const all = gprop(box, 'sizeByFormat', {}) || {};
+    all[activeFmt] = { w: useW, h: useH };
+    box.props = Object.assign({}, box.props, { sizeByFormat: all });
+  })();
   const fmtSizes = gprop(sample, 'formatSizes', null); // { '2:3':{w,h}, ... }
   let cw = 0, ch = 0;
   if (fmtSizes && activeFmt && fmtSizes[activeFmt]) {
