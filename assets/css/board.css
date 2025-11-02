@@ -668,3 +668,8 @@ html, body {
   transition: transform 0.5s !important;
 }
 
+.board-bg-rect,
+.board .bgrect,
+.bb-bgrect {
+  box-sizing: border-box;
+}
