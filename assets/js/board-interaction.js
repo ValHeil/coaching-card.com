@@ -2555,28 +2555,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Sicherheit: existierende Notizen in den Container umhängen
       document.querySelectorAll('.notiz').forEach(n => { if (!el.contains(n)) el.appendChild(n); });
       
-    try {
-      const activeId = window.__CARD_BG_ID__;
-      const box = activeId
-        ? area.querySelector(`.board-bg-rect[data-id="${CSS.escape(String(activeId))}"]`)
-        : null;
-      const stack = document.getElementById('card-stack');
-
-      if (box && stack) {
-        // Box muss Positionierungs-Kontext sein
-        const prevPos = getComputedStyle(box).position;
-        if (prevPos === 'static') box.style.position = 'relative';
-
-        // Stapel in die Box verschieben und zentrieren
-        box.appendChild(stack);
-        stack.style.position  = 'absolute';
-        stack.style.left      = '50%';
-        stack.style.top       = '50%';
-        stack.style.transform = 'translate(-50%, -50%)';
-      }
-    } catch (e) {
-      console.debug('mount stack into bgrect failed', e);
-    }
   }
 
   
@@ -2854,22 +2832,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         ? String(meta.format || meta.card_format || meta.ratio).trim().toLowerCase()
         : '';
 
-      // 3) Namens- und W:H-Mapping → JS-Ratio = H/W
-      //    Gewünscht: 2:3 (Skat hoch), 3:2 (gedrehte Skat = quer), 1:2 (hoch schlank), 2:1 (quer schlank)
-      let ratio = null;
-      const named = {
-        'skat':    (3/2),   // 2:3 => H/W = 3/2
-        '2:3':     (3/2),
-        '3:2':     (2/3),
-        '1:2':     (2/1),
-        '2:1':     (1/2),
-        // ggf. historische/alias Namen:
-        'skat-l':  (2/3),
-        'square-rounded': 1,
-        'long-portrait':  (2/1)
+      // ► Aliasse/Synonyme robust auflösen (Diakritika entfernen)
+      const fmtNorm = fmtRaw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const alias = {
+        'skat schrag': '3:2',
+        'skat quer':   '3:2',
+        'quer':        '3:2',
+        'landscape':   '3:2',
+        'skat hoch':   '2:3',
+        'hoch':        '2:3',
+        'portrait':    '2:3'
       };
+      const fmtKey = alias[fmtNorm] || fmtRaw;
 
-      ratio = named[fmtRaw] ?? null;
+      const ratio = named[fmtKey] ?? null;
 
       if (!ratio && /^\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?$/.test(fmtRaw)) {
         const [wStr,hStr] = fmtRaw.split(':').map(s => parseFloat(s));
@@ -2889,7 +2865,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       // freundlicher String (für applySampleCardFromTemplate)
       window.CARDSET_FORMAT =
-        fmtRaw || (ratio === 1 ? '1:1' : (Math.abs(ratio-(3/2))<0.001 ? '2:3'
+        fmtKey || (ratio === 1 ? '1:1' : (Math.abs(ratio-(3/2))<0.001 ? '2:3'
                   : (Math.abs(ratio-(2/3))<0.001 ? '3:2'
                   : (Math.abs(ratio-(2/1))<0.001 ? '1:2'
                   : (Math.abs(ratio-(1/2))<0.001 ? '2:1' : '2:3')))));
@@ -2972,16 +2948,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     // initial + bei Resize nachführen
     requestAnimationFrame(centerStackOverBg);
     window.addEventListener('resize', centerStackOverBg, { passive:true });
-
-    // Optional: Nach Layout eine exakte Zentrierung mit Maßen (falls nötig)
-    if (bgBox) {
-      requestAnimationFrame(() => {
-        const sw = stack.offsetWidth, sh = stack.offsetHeight;
-        const pw = bgBox.clientWidth, ph = bgBox.clientHeight;
-        stack.style.left = Math.round((pw - sw) / 2) + 'px';
-        stack.style.top  = Math.round((ph - sh) / 2) + 'px';
-      });
-    }
 
     // Globale Arrays initialisieren
     window.cards = [];
