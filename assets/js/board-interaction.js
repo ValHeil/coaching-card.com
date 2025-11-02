@@ -213,7 +213,52 @@ function applySampleCardFromTemplate(tpl) {
 
   // Aktives Format vorrangig aus Cardset (applyDeckFormatRatio)
   const activeFmt = (window.CARDSET_FORMAT && String(window.CARDSET_FORMAT)) ||
-                    String(gprop(sample, 'format', '') || '');
+                      String(gprop(sample, 'format', '') || '');
+
+  // ▼ Ratio direkt aus Widget ableiten (falls vorhanden) und global setzen
+  (function(){
+    let ratio = null;
+
+    // 1) formatSizes: konkrete W/H -> Ratio h/w
+    const sizes = gprop(sample, 'formatSizes', null);
+    if (sizes && activeFmt && sizes[activeFmt] && sizes[activeFmt].w && sizes[activeFmt].h) {
+      const w = Number(sizes[activeFmt].w), h = Number(sizes[activeFmt].h);
+      if (w > 0 && h > 0) ratio = h / w;
+    }
+
+    // 2) Fallback: „W:H“ oder Aliase (z. B. „3:2“, „2:3“, „1:1“, „skat schräg“)
+    if (!ratio && activeFmt) {
+      const key = String(activeFmt).toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g,'')   // Umlaute entsorgen
+        .replace(/\s+/g,'-');                              // Leerzeichen -> Bindestrich
+
+      const named = {
+        '1:1': 1,
+        '2:3': (3/2),
+        '3:2': (2/3),
+        '1:2': (2/1),
+        '2:1': (1/2),
+        'skat-schraeg': (2/3),
+        'skat-schraeg-l': (2/3),
+        'skat-l': (2/3),
+        'skat': (3/2) // klassisch hochkant
+      };
+
+      if (/^\d+(\.\d+)?\s*:\s*\d+(\.\d+)?$/.test(key)) {
+        const [w,h] = key.split(':').map(parseFloat);
+        if (w > 0 && h > 0) ratio = h / w;
+      } else if (named[key] != null) {
+        ratio = named[key];
+      }
+    }
+
+    if (ratio) {
+      window.RATIO = ratio;
+      document.documentElement.style.setProperty('--card-ratio', String(ratio));
+      document.dispatchEvent(new CustomEvent('cc:format-changed', { detail: { ratio, fmt: activeFmt } }));
+    }
+  })();
+
 
   // ► Neu: bgMap (format -> bgId) nutzen; Legacy: bgId als Fallback
   const bgMap = gprop(sample, 'bgMap', null);
@@ -2143,6 +2188,16 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (bw === 0) el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
     });
 
+    // Nach dem Aufbau: aktive BG-Box merken und Event schicken
+    try {
+      const id = window.__CARD_BG_ID__;
+      const el = id
+        ? document.querySelector(`.bb-bgrect[data-id="${id}"], [data-id="${id}"].bb-bgrect`)
+        : document.querySelector('.bb-bgrect');
+      window.CARD_BG_EL = el || null;
+      document.dispatchEvent(new CustomEvent('cc:bg-ready', { detail: { id, el } }));
+    } catch {}
+
 
     // --- cardholder: Zonen inklusive Titel/Desc mit optionaler Bearbeitung ---
     tpl.widgets.filter(w => w.type === 'cardholder').forEach(w => {
@@ -2935,7 +2990,15 @@ document.addEventListener('DOMContentLoaded', async function() {
       const boardArea = document.querySelector('.board-area');
       const s  = parseFloat(boardArea?.dataset.scale || '1') || 1;
       const pr = parent.getBoundingClientRect();
-      const tr = (bgBox ? bgBox.getBoundingClientRect() : parent.getBoundingClientRect());
+
+      // Aktuelle BG-Box spät/lazy bestimmen
+      const bgId = window.__CARD_BG_ID__ || null;
+      const curBg =
+        (window.CARD_BG_EL && document.body.contains(window.CARD_BG_EL) ? window.CARD_BG_EL : null) ||
+        (bgId ? document.querySelector(`.bb-bgrect[data-id="${bgId}"], [data-id="${bgId}"].bb-bgrect`) : null) ||
+        document.querySelector('.bb-bgrect');
+
+      const tr = (curBg ? curBg.getBoundingClientRect() : parent.getBoundingClientRect());
 
       const sw = stack.offsetWidth,  sh = stack.offsetHeight;
       const left = ((tr.left - pr.left) / s) + (tr.width  / s - sw) / 2;
@@ -2948,6 +3011,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     // initial + bei Resize nachführen
     requestAnimationFrame(centerStackOverBg);
     window.addEventListener('resize', centerStackOverBg, { passive:true });
+
+    document.addEventListener('cc:bg-ready', centerStackOverBg);
+    document.addEventListener('cc:format-changed', centerStackOverBg);
 
     // Globale Arrays initialisieren
     window.cards = [];
