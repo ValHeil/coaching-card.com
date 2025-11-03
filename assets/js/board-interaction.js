@@ -5534,7 +5534,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     const cardStack = document.getElementById('card-stack');
     const stage     = document.getElementById('cards-container') || document.querySelector('.board-area') || document.body;
-    const total     = document.querySelectorAll('.card').length;
 
     const withoutAnimations = (el, fn) => {
       const prevT = el.style.transition, prevA = el.style.animation;
@@ -5567,74 +5566,89 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     };
 
+    const ensureInStack = (el) => {
+      if (cardStack && el.parentElement !== cardStack) {
+        try { cardStack.appendChild(el); } catch {}
+      }
+      // Karten im Stapel bekommen keine absolute px-Position
+      el.style.position = 'absolute';
+      el.style.left = '';
+      el.style.top  = '';
+    };
+
+    const ensureOnStage = (el) => {
+      if (el.parentElement && el.parentElement.id === 'card-stack') {
+        try { stage.appendChild(el); } catch {}
+      }
+      el.style.position = 'absolute';
+    };
+
     cardsState.forEach((cardData) => {
       // Karte finden (per id oder cardId)
       const rawId = cardData.id || cardData.cardId || '';
-      const el = document.getElementById(rawId) ||
-                document.getElementById('card-' + (cardData.cardId || '')) ||
-                document.querySelector(`.card[data-card-id="${cardData.cardId || ''}"]`);
+      const el =
+        document.getElementById(rawId) ||
+        document.getElementById('card-' + (cardData.cardId || '')) ||
+        document.querySelector(`.card[data-card-id="${cardData.cardId || ''}"]`);
       if (!el) { console.warn('Karte nicht gefunden:', rawId || cardData.cardId); return; }
 
       withoutAnimations(el, () => {
         // Animationsklassen sicher entfernen
         el.classList.remove('returning','flipping','shuffling','remote-dragging');
 
-        // Während lokaler oder eingehender Remote-Drags keinerlei Positions-/Stack-Änderungen aus Snapshots
-        const isActive = el.classList.contains('being-dragged') || el._remoteDragActive === true;
-        if (isActive) {
-          // Flip/Z-Index dürfen aktualisiert werden, aber keine Positions-/Parent-Änderungen
-          if (typeof cardData.isFlipped === 'boolean') {
-            el.classList.toggle('flipped', !!cardData.isFlipped);
-          }
-          if (cardData.zIndex !== undefined && cardData.zIndex !== '') {
-            el.style.zIndex = String(cardData.zIndex);
-          }
-          return; // restlichen Restore für diese Karte überspringen
-        }
-
-        // Flip-Zustand hart setzen (keine Flip-Animation)
+        // Flip-Status IMMER anwenden, wenn vorhanden (NICHT löschen!)
         if (typeof cardData.isFlipped === 'boolean') {
           el.classList.toggle('flipped', !!cardData.isFlipped);
         }
 
+        // Z-Index (falls gespeichert) anwenden
+        if (cardData.zIndex !== undefined && cardData.zIndex !== '') {
+          el.style.zIndex = String(cardData.zIndex);
+        }
+
+        // Während aktiver Drags keine Positions-/Parent-Änderungen
+        const isActive = el.classList.contains('being-dragged') || el._remoteDragActive === true;
+        if (isActive) {
+          return;
+        }
+
         if (cardData.inStack) {
-          // → In den Stapel (ohne Flug/Flip)
+          // Karten, die im Stapel sein sollen, in den Stapel hängen und px-Position entfernen
+          ensureInStack(el);
+          // Platzhalter-Markierung für Stapelkarten entfernen
           cleanPlaceholder(el);
-          if (cardStack && !cardStack.contains(el)) cardStack.appendChild(el);
-
-          // Z-Index respektieren
-          if (cardData.zIndex !== undefined && cardData.zIndex !== '') {
-            el.style.zIndex = String(parseInt(cardData.zIndex, 10));
-          }
-
-          // Leichter Versatz je Layer (wie beim Stapel)
-          const zi = parseInt(el.style.zIndex || '1', 10) || 1;
-          const offset = Math.max(0, (zi - 1) * 0.5);
-          el.style.position = 'absolute';
-          el.style.left = offset + 'px';
-          el.style.top  = offset + 'px';
-
         } else {
-          // → Auf der Bühne positionieren
-          if (stage && !stage.contains(el)) stage.appendChild(el);
-          el.style.position = 'absolute';
+          // Karte gehört auf die Bühne → sicherstellen & positionieren
+          ensureOnStage(el);
 
-          // Primär: normierte Koordinaten → unskalierte px
+          const boardArea  = document.querySelector('.board-area') || document.body;
+          const s          = parseFloat(boardArea?.dataset.scale || '1') || 1;
+          const stageRect  = getStageRect();
+          const parentRect = (el.parentElement || stage).getBoundingClientRect();
+
           if (typeof cardData.nx === 'number' && typeof cardData.ny === 'number') {
-            const pos = fromNormCard(cardData.nx, cardData.ny); // nutzt deine Helper
-            el.style.left = Math.round(pos.x) + 'px';
-            el.style.top  = Math.round(pos.y) + 'px';
+            // aus Normalform in Stage-Pixel und dann parent-lokal
+            const p = fromNormCard(cardData.nx, cardData.ny);
+            let leftPx = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
+            let topPx  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
+
+            // Heilung für alte Snapshots: wenn Legacy-Pixel stark abweichen, nimm diese
+            if (cardData.left && cardData.top) {
+              const legacyLeft = parseFloat(cardData.left) || 0;
+              const legacyTop  = parseFloat(cardData.top)  || 0;
+              const drift = Math.hypot(legacyLeft - leftPx, legacyTop - topPx);
+              if (drift > 30) { leftPx = legacyLeft; topPx = legacyTop; }
+            }
+
+            if (el.style.left !== leftPx + 'px') el.style.left = leftPx + 'px';
+            if (el.style.top  !== topPx  + 'px') el.style.top  = topPx  + 'px';
           } else {
-            // Fallback: alte px-Strings (Abwärtskompatibilität)
-            if (cardData.left  !== undefined && cardData.left  !== '') el.style.left = cardData.left;
-            if (cardData.top   !== undefined && cardData.top   !== '') el.style.top  = cardData.top;
+            // Fallback: px-Felder verwenden
+            if (cardData.left !== undefined && cardData.left !== '') el.style.left = cardData.left;
+            if (cardData.top  !== undefined && cardData.top  !== '') el.style.top  = cardData.top;
           }
 
-          if (cardData.zIndex !== undefined && cardData.zIndex !== '') {
-            el.style.zIndex = String(cardData.zIndex);
-          }
-
-          // Platzhalter-Status (falls genutzt)
+          // Platzhalter / Ablage markieren
           if (cardData.placedAt) {
             el.dataset.placedAt = cardData.placedAt;
             const ph = document.getElementById(cardData.placedAt);
@@ -5649,13 +5663,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Stapel im DOM nach z-index sortieren (unten→oben), ohne Animation
     if (cardStack) {
       Array.from(cardStack.querySelectorAll(':scope > .card'))
-        .sort((a, b) => (parseInt(a.style.zIndex || '0', 10)) - (parseInt(b.style.zIndex || '0', 10)))
+        .sort((a, b) =>
+          (parseInt(a.style.zIndex || '0', 10)) - (parseInt(b.style.zIndex || '0', 10)))
         .forEach(el => cardStack.appendChild(el));
     }
 
     document.dispatchEvent(new Event('boardStateUpdated'));
   }
   window.restoreCards = restoreCards;
+
 
 
 
