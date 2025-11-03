@@ -5311,15 +5311,15 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Funktionen zum Speichern und Laden des Board-Zustands
   // Holt den aktuellen Zustand des Boards
   function captureBoardState() {
-    // Board-State-Objekt erstellen
     const boardState = {
-      focusNote: captureFocusNote(),
-      notes: captureAllNotes(),
-      cards: captureAllCards(),
-      stack: captureStackPosition(),  
-      timestamp: new Date().toISOString()
+      focusNote:    captureFocusNote(),       // jetzt {title, body}
+      descriptions: captureAllDescriptions(), // NEU
+      cardholders:  captureAllCardholders(),  // NEU
+      notes:        captureAllNotes(),
+      cards:        captureAllCards(),
+      stack:        captureStackPosition(),
+      timestamp:    new Date().toISOString()
     };
-    
     console.log("Erfasster Board-Zustand:", boardState);
     return boardState;
   }
@@ -5327,11 +5327,54 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Erfasst den Inhalt der Focus Note
   function captureFocusNote() {
-    const focusNoteDisplay = document.getElementById('focus-note-display');
-    if (!focusNoteDisplay) return "";
-    
-    const content = focusNoteDisplay.textContent;
-    return content === 'Schreiben sie hier die Focus Note der Sitzung rein' ? "" : content;
+    const wrap = document.querySelector('.focus-note-area');
+    if (!wrap) return null;
+
+    // Title: versuche mehrere gängige Selektoren
+    const titleEl = wrap.querySelector('.focus-note-title, h2, .desc-title');
+    // Body: bevorzugt das editierbare Feld, sonst die Anzeige
+    const bodyEditable = document.getElementById('focus-note-editable');
+    const bodyDisplay  = document.getElementById('focus-note-display');
+
+    const title = (titleEl?.textContent || '').trim();
+    const bodyRaw = (bodyEditable?.textContent ?? bodyDisplay?.textContent ?? '').trim();
+
+    const placeholder = 'Schreiben sie hier die Focus Note der Sitzung rein';
+    const body = (bodyRaw === placeholder) ? '' : bodyRaw;
+
+    return { title, body };
+  }
+
+  function captureAllCardholders() {
+    const out = [];
+    document.querySelectorAll('.board-cardholder').forEach((el, idx) => {
+      // Header heißt beim Live-Render häufig auch .desc-title
+      const headerEl = el.querySelector('.desc-title, .bb-ch-header, .ch-header');
+      const bodyEl   = headerEl
+        ? headerEl.nextElementSibling
+        : (el.querySelector('.bb-ch-desc, .ch-desc, .desc-content') || el.children[1]);
+
+      out.push({
+        idx,
+        title: (headerEl?.textContent || '').trim(),
+        body:  (bodyEl?.textContent   || '').trim()
+      });
+    });
+    return out;
+  }
+
+  function restoreCardholders(items) {
+    if (!Array.isArray(items)) return;
+    const nodes = Array.from(document.querySelectorAll('.board-cardholder'));
+    items.forEach((d, i) => {
+      const el = nodes[i]; if (!el) return;
+      const headerEl = el.querySelector('.desc-title, .bb-ch-header, .ch-header');
+      const bodyEl   = headerEl
+        ? headerEl.nextElementSibling
+        : (el.querySelector('.bb-ch-desc, .ch-desc, .desc-content') || el.children[1]);
+      if (headerEl && typeof d.title === 'string') headerEl.textContent = d.title;
+      if (bodyEl   && typeof d.body  === 'string') bodyEl.textContent  = d.body;
+    });
   }
 
   // Erfasst alle Notizzettel und ihre Eigenschaften
@@ -5436,42 +5479,77 @@ document.addEventListener('DOMContentLoaded', async function() {
   function restoreBoardState(boardState, opts = {}) {
     if (!boardState) return false;
 
-    // Focus Note aktualisieren
     try { restoreFocusNote(boardState.focusNote); } catch(e){ console.warn('restoreFocusNote:', e); }
 
-    // Notizen NUR aktualisieren, wenn wir nicht lokal tippen (oder nicht angewiesen, sie zu überspringen)
+    try { restoreDescriptions(boardState.descriptions); } catch(e){ console.warn('restoreDescriptions:', e); } 
+
+    try { restoreCardholders(boardState.cardholders); }  catch(e){ console.warn('restoreCardholders:', e); }  
+
     try { restoreNotes(boardState.notes, opts); } catch(e){ console.warn('restoreNotes:', e); }
-
-    // Stapel-Position anwenden (falls vorhanden)
-    try {
-      if (boardState.stack) restoreStackPosition(boardState.stack);
-    } catch (e) { console.warn('restoreStackPosition:', e); }
-
-    // NEU: nur wenn nicht explizit übersprungen
+    
     if (!(opts && opts.skipCards)) {
       try { restoreCards(boardState.cards); } catch(e){}
     }
-
     return true;
   }
   window.restoreBoardState = restoreBoardState;
 
 
   // Stellt die Focus Note wieder her
-  function restoreFocusNote(focusNoteContent) {
-    if (!focusNoteContent) return;
-    
-    const focusNoteDisplay = document.getElementById('focus-note-display');
-    const focusNoteEditable = document.getElementById('focus-note-editable');
-    
-    if (focusNoteDisplay) {
-      focusNoteDisplay.textContent = focusNoteContent;
-      focusNoteDisplay.classList.add('has-content');
+  function restoreFocusNote(state) {
+    if (!state) return;
+
+    const wrap = document.querySelector('.focus-note-area');
+    const titleEl = wrap?.querySelector('.focus-note-title, h2, .desc-title');
+    const bodyEditable = document.getElementById('focus-note-editable');
+    const bodyDisplay  = document.getElementById('focus-note-display');
+
+    // Backwards-Compat: früher war state nur der Body als String
+    if (typeof state === 'string') {
+      if (bodyDisplay) {
+        bodyDisplay.textContent = state;
+        bodyDisplay.classList.toggle('has-content', !!state);
+      }
+      if (bodyEditable) bodyEditable.textContent = state;
+      return;
     }
-    
-    if (focusNoteEditable) {
-      focusNoteEditable.textContent = focusNoteContent;
+
+    const title = state.title ?? '';
+    const body  = state.body  ?? '';
+
+    if (titleEl)   titleEl.textContent = title;
+    if (bodyDisplay) {
+      bodyDisplay.textContent = body;
+      bodyDisplay.classList.toggle('has-content', !!body);
     }
+    if (bodyEditable) bodyEditable.textContent = body;
+  }
+
+  function captureAllDescriptions() {
+    const out = [];
+    document.querySelectorAll('.board-description-box').forEach((el, idx) => {
+      const titleEl = el.querySelector('.desc-title');
+      // Inhalt ist im Rendering das nächste Geschwister nach dem Titel
+      const bodyEl  = titleEl ? titleEl.nextElementSibling : el.children[1];
+      out.push({
+        idx,
+        title: (titleEl?.textContent || '').trim(),
+        body:  (bodyEl?.textContent  || '').trim()
+      });
+    });
+    return out;
+  }
+
+  function restoreDescriptions(descs) {
+    if (!Array.isArray(descs)) return;
+    const nodes = Array.from(document.querySelectorAll('.board-description-box'));
+    descs.forEach((d, i) => {
+      const el = nodes[i]; if (!el) return;
+      const titleEl = el.querySelector('.desc-title');
+      const bodyEl  = titleEl ? titleEl.nextElementSibling : el.children[1];
+      if (titleEl && typeof d.title === 'string') titleEl.textContent = d.title;
+      if (bodyEl  && typeof d.body  === 'string') bodyEl.textContent  = d.body;
+    });
   }
 
   // Stellt alle Notizzettel wieder her – respektiert laufende lokale Bearbeitung
