@@ -103,22 +103,35 @@
   <script>
     (function () {
       var src = '/app/assets/js/board-interaction.js';
-      // ETag/Last-Modified holen, um eine stabile Versionsnummer zu haben
       fetch(src, { method: 'HEAD', cache: 'no-store' })
         .then(function (r) {
-          var tag = r.headers.get('ETag') || r.headers.get('Last-Modified') || (Date.now() + '');
-          tag = String(tag).replace(/"/g, '');
+          var tag = r.headers.get('ETag') || r.headers.get('Last-Modified') || (Date.now()+'');
+          tag = String(tag).replace(/"/g,'');
           var s = document.createElement('script');
           s.src = src + '?v=' + encodeURIComponent(tag);
+
+          // --- NEU: nach dem Laden initialisieren ---
+          s.onload = function(){
+            // Falls wir Fix A eingebaut haben:
+            if (window.ccBootstrap) { window.ccBootstrap(); return; }
+
+            // Falls nicht: "DOMContentLoaded" künstlich feuern, damit
+            // der vorhandene Listener in board-interaction.js anspringt:
+            try { document.dispatchEvent(new Event('DOMContentLoaded')); } catch (e) {}
+          };
+
           document.head.appendChild(s);
         })
         .catch(function () {
-          // Fallback: hartes Cache-Busting für diesen Load
           var s = document.createElement('script');
           s.src = src + '?t=' + Date.now();
+          s.onload = function(){
+            if (window.ccBootstrap) { window.ccBootstrap(); return; }
+            try { document.dispatchEvent(new Event('DOMContentLoaded')); } catch (e) {}
+          };
           document.head.appendChild(s);
         });
     })();
-  </script>
+</script>
 </body>
 </html>
