@@ -5344,20 +5344,30 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Erfasst alle Karten und ihre Eigenschaften
   function captureAllCards(){
-    const cardsArray = [];
-    const cardElements = document.querySelectorAll('.card');
+    const world = getWorldSize();
+    const stageRect = getStageRect();
+    const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
 
-    cardElements.forEach(card => {
-      const rawId  = card.id || '';
+    const cardsArray = [];
+    document.querySelectorAll('.card').forEach(card => {
+      const rawId   = card.id || '';
       const cardNum = (rawId.match(/card-?(\d+)/)?.[1]) || card.dataset.cardId || '';
-      const px = parseFloat(card.style.left) || 0;
-      const py = parseFloat(card.style.top)  || 0;
-      const { nx, ny } = toNormCard(px, py);
+
+      // echte Bildschirmposition holen und in *Stage-Pixel* umrechnen
+      const rect = card.getBoundingClientRect();
+      const leftStage = (rect.left - stageRect.left) / s;
+      const topStage  = (rect.top  - stageRect.top ) / s;
+
+      const nx = world.width  ? (leftStage / world.width)  : 0;
+      const ny = world.height ? (topStage  / world.height) : 0;
 
       cardsArray.push({
         id: rawId,
         cardId: cardNum,
-        nx, ny,                   // ← statt left/top
+        nx, ny,
+        // Legacy-Pixel mitspeichern → hilft beim Reparieren alter Stände
+        left: Math.round(leftStage) + 'px',
+        top:  Math.round(topStage)  + 'px',
         zIndex: card.style.zIndex,
         isFlipped: card.classList.contains('flipped'),
         inStack: !!(card.parentElement && card.parentElement.id === 'card-stack'),
@@ -5367,6 +5377,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     return cardsArray;
   }
+
 
 
   // Stellt den Board-Zustand wieder her (mit optionalem Überspringen von Notizen)
@@ -5511,62 +5522,52 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Animationsklassen sicher entfernen
         el.classList.remove('returning','flipping','shuffling','remote-dragging');
 
-        // Während lokaler oder eingehender Remote-Drags keinerlei Positions-/Stack-Änderungen aus Snapshots
+        // Während aktiven Drags keine Positionsänderung
         const isActive = el.classList.contains('being-dragged') || el._remoteDragActive === true;
-        if (isActive) {
-          // Flip/Z-Index dürfen aktualisiert werden, aber keine Positions-/Parent-Änderungen
-          if (typeof cardData.isFlipped === 'boolean') {
-            el.classList.toggle('flipped', !!cardData.isFlipped);
-          }
-          if (cardData.zIndex !== undefined && cardData.zIndex !== '') {
-            el.style.zIndex = String(cardData.zIndex);
-          }
-          return; // restlichen Restore für diese Karte überspringen
-        }
-
-        // Flip-Zustand hart setzen (keine Flip-Animation)
-        if (typeof cardData.isFlipped === 'boolean') {
-          el.classList.toggle('flipped', !!cardData.isFlipped);
-        }
-
-        if (cardData.inStack) {
-          // → In den Stapel (ohne Flug/Flip)
-          cleanPlaceholder(el);
-          if (cardStack && !cardStack.contains(el)) cardStack.appendChild(el);
-
-          // Z-Index respektieren
-          if (cardData.zIndex !== undefined && cardData.zIndex !== '') {
-            el.style.zIndex = String(parseInt(cardData.zIndex, 10));
-          }
-
-          // Leichter Versatz je Layer (wie beim Stapel)
-          const zi = parseInt(el.style.zIndex || '1', 10) || 1;
-          const offset = Math.max(0, (zi - 1) * 0.5);
-          el.style.position = 'absolute';
-          el.style.left = offset + 'px';
-          el.style.top  = offset + 'px';
-
-        } else {
-          // → Auf der Bühne positionieren
-          if (stage && !stage.contains(el)) stage.appendChild(el);
-          el.style.position = 'absolute';
-
-          // Primär: normierte Koordinaten → unskalierte px
-          if (typeof cardData.nx === 'number' && typeof cardData.ny === 'number') {
-            const pos = fromNormCard(cardData.nx, cardData.ny); // nutzt deine Helper
-            el.style.left = Math.round(pos.x) + 'px';
-            el.style.top  = Math.round(pos.y) + 'px';
+        if (!isActive) {
+          // Sicherstellen: Karte hängt in der Bühne
+          if (cardData.inStack) {
+            // nichts; bleibt im Stack
           } else {
-            // Fallback: alte px-Strings (Abwärtskompatibilität)
-            if (cardData.left  !== undefined && cardData.left  !== '') el.style.left = cardData.left;
-            if (cardData.top   !== undefined && cardData.top   !== '') el.style.top  = cardData.top;
+            if (el.parentElement && el.parentElement.id === 'card-stack') {
+              const stage = document.getElementById('cards-container') || document.querySelector('.board-area') || document.body;
+              try { stage.appendChild(el); } catch {}
+              el.style.position = 'absolute';
+            }
+          }
+
+          const boardArea = document.querySelector('.board-area') || document.body;
+          const stage     = document.getElementById('cards-container') || boardArea;
+          const s         = parseFloat(boardArea?.dataset.scale || '1') || 1;
+          const stageRect  = getStageRect();
+          const parentRect = (el.parentElement || stage).getBoundingClientRect();
+
+          if (typeof cardData.nx === 'number' && typeof cardData.ny === 'number') {
+            // aus Normalform in Stage-Pixel und dann parent-lokal
+            const p = fromNormCard(cardData.nx, cardData.ny);
+            let leftPx = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
+            let topPx  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
+
+            // Heilung für alte Snapshots: wenn Legacy-Pixel stark abweichen, nimm diese
+            if (cardData.left && cardData.top) {
+              const legacyLeft = parseFloat(cardData.left) || 0;
+              const legacyTop  = parseFloat(cardData.top)  || 0;
+              const drift = Math.hypot(legacyLeft - leftPx, legacyTop - topPx);
+              if (drift > 30) { leftPx = legacyLeft; topPx = legacyTop; }
+            }
+
+            if (el.style.left !== leftPx + 'px') el.style.left = leftPx + 'px';
+            if (el.style.top  !== topPx  + 'px') el.style.top  = topPx  + 'px';
+          } else {
+            // Fallback: px-Felder verwenden
+            if (cardData.left !== undefined && cardData.left !== '') el.style.left = cardData.left;
+            if (cardData.top  !== undefined && cardData.top  !== '') el.style.top  = cardData.top;
           }
 
           if (cardData.zIndex !== undefined && cardData.zIndex !== '') {
             el.style.zIndex = String(cardData.zIndex);
           }
 
-          // Platzhalter-Status (falls genutzt)
           if (cardData.placedAt) {
             el.dataset.placedAt = cardData.placedAt;
             const ph = document.getElementById(cardData.placedAt);
@@ -5575,6 +5576,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             cleanPlaceholder(el);
           }
         }
+
       });
     });
 
