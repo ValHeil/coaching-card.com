@@ -5327,20 +5327,25 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Erfasst den Inhalt der Focus Note
   function captureFocusNote() {
-    const wrap = document.querySelector('.focus-note-area');
-    if (!wrap) return null;
-
-    // Title: versuche mehrere gängige Selektoren
-    const titleEl = wrap.querySelector('.focus-note-title, h2, .desc-title');
-    // Body: bevorzugt das editierbare Feld, sonst die Anzeige
+    // Erlaube sowohl Wrapper als auch nur die Einzel-IDs
     const bodyEditable = document.getElementById('focus-note-editable');
     const bodyDisplay  = document.getElementById('focus-note-display');
+    const wrap = document.querySelector('.focus-note-area') || null;
+
+    // Wenn weder Wrapper noch eins der Felder existiert -> kein FocusNote auf dem Board
+    if (!wrap && !bodyEditable && !bodyDisplay) return null;
+
+    // Titel aus mehreren möglichen Selektoren ziehen
+    const titleEl =
+      (wrap && (wrap.querySelector('.focus-note-title, .desc-title, h2'))) ||
+      document.querySelector('.focus-note-title, .desc-title, h2');
 
     const title = (titleEl?.textContent || '').trim();
-    const bodyRaw = (bodyEditable?.textContent ?? bodyDisplay?.textContent ?? '').trim();
 
+    // Body robust lesen (Editable hat Vorrang)
+    const rawBody = (bodyEditable?.textContent ?? bodyDisplay?.textContent ?? '').trim();
     const placeholder = 'Schreiben sie hier die Focus Note der Sitzung rein';
-    const body = (bodyRaw === placeholder) ? '' : bodyRaw;
+    const body = rawBody === placeholder ? '' : rawBody;
 
     return { title, body };
   }
@@ -5476,21 +5481,23 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 
   // Stellt den Board-Zustand wieder her (mit optionalem Überspringen von Notizen)
-  function restoreBoardState(boardState, opts = {}) {
-    if (!boardState) return false;
+  function restoreBoardState(state, opts = {}) {
+    if (!state || typeof state !== 'object') return;
+    const { skipCards = false } = opts;
 
-    try { restoreFocusNote(boardState.focusNote); } catch(e){ console.warn('restoreFocusNote:', e); }
+    try { restoreFocusNote(state.focusNote ?? null); } catch(e){ console.warn('restoreFocusNote:', e); }
+    try { restoreDescriptions(state.descriptions || []); } catch(e){ console.warn('restoreDescriptions:', e); }
+    try { restoreCardHolders(state.cardholders || []); } catch(e){ console.warn('restoreCardHolders:', e); }
+    try { restoreNotes(state.notes || []); } catch(e){ console.warn('restoreNotes:', e); }
 
-    try { restoreDescriptions(boardState.descriptions); } catch(e){ console.warn('restoreDescriptions:', e); } 
+    // <<< NEU: Stapel-Position wiederherstellen
+    try { restoreStackPosition(state.stack || null); } catch(e){ console.warn('restoreStackPosition:', e); }
 
-    try { restoreCardholders(boardState.cardholders); }  catch(e){ console.warn('restoreCardholders:', e); }  
-
-    try { restoreNotes(boardState.notes, opts); } catch(e){ console.warn('restoreNotes:', e); }
-    
-    if (!(opts && opts.skipCards)) {
-      try { restoreCards(boardState.cards); } catch(e){}
+    if (!skipCards) {
+      try { restoreCards(state.cards || []); } catch(e){ console.warn('restoreCards:', e); }
     }
-    return true;
+
+    document.dispatchEvent(new Event('boardStateApplied'));
   }
   window.restoreBoardState = restoreBoardState;
 

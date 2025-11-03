@@ -190,19 +190,18 @@ const SessionStorage = {
   // Speichert den Zustand eines Boards (Karten, Notizen, etc.)
   saveBoardState: function(sessionId, boardState) {
     const sessions = this.getAllSessions();
-    const updatedSessions = sessions.map(session => {
-      if (session.id === sessionId) {
+    const updated = sessions.map(session => {
+      if (String(session.id) === String(sessionId)) {
         return {
           ...session,
-          boardState: boardState,
+          boardState,
           lastEdited: new Date().toISOString()
         };
       }
       return session;
     });
-    
-    this.saveSessions(updatedSessions);
-    console.log("Boardzustand gespeichert für Sitzung:", sessionId);
+    this.saveSessions(updated);
+    console.log('Boardzustand gespeichert für Sitzung:', sessionId, boardState?.focusNote);
   },
   
   // Lädt den Zustand eines Boards
@@ -220,21 +219,19 @@ const SessionStorage = {
   addParticipant: function(sessionId, participantData) {
     const session = this.getSession(sessionId);
     if (!session) return false;
-    
-    // Prüfen, ob der Teilnehmer bereits existiert
-    const existingParticipant = session.participants.find(p => p.id === participantData.id);
-    if (existingParticipant) return true; // Teilnehmer existiert bereits
-    
-    // Neuen Teilnehmer hinzufügen
-    const participants = [...session.participants, {
+
+    const exists = (session.participants || []).find(p => p.id === participantData.id);
+    if (exists) return true;
+
+    const participants = [ ...(session.participants || []), {
       id: participantData.id,
       name: participantData.name,
-      role: participantData.role || "participant", // Standard-Rolle
+      role: participantData.role || 'participant',
       joined: new Date().toISOString()
     }];
-    
+
     this.updateSession(sessionId, { participants });
-    console.log("Teilnehmer hinzugefügt:", participantData.name);
+    console.log('Teilnehmer hinzugefügt:', participantData.name);
     return true;
   },
   
