@@ -36,6 +36,12 @@ window.normalizeCardZIndex = window.normalizeCardZIndex || function(el){
   } catch {}
 };
 
+// --- Helper: robuste Bool-Interpretation (true/false, "true"/"false", 1/"1") ---
+function asBool(v) {
+  return v === true || v === 'true' || v === 1 || v === '1';
+}
+
+
 
 // Board-Rechteck holen
 function getStage() {
@@ -515,7 +521,7 @@ function setNoteText(note, text) {
 }
 
 function placeCardInStackInstant(el, data) {
-  const stack = document.getElementById('cards-container') || document.querySelector('.cards-container');
+  const stack = document.getElementById('cards-stack') || document.querySelector('.cards-stack');
   if (!stack) return;
   // Transitions kurz aus
   const prev = el.style.transition;
@@ -3034,6 +3040,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Zentrieren: exakt über bgBox (Fallback: in parent zentrieren)
     function centerStackOverBg() {
+      //  nicht zentrieren, wenn durch Restore explizit gesetzt
+      if (stack?.dataset?.posLocked === '1') return;
       const boardArea = document.querySelector('.board-area');
       const s  = parseFloat(boardArea?.dataset.scale || '1') || 1;
       const pr = parent.getBoundingClientRect();
@@ -5280,6 +5288,26 @@ document.addEventListener('DOMContentLoaded', async function() {
     fresh.addEventListener('click', createEndSessionDialog);
   }
 
+  function captureStackPosition() {
+    const stack = document.getElementById('card-stack');
+    if (!stack) return null;
+
+    const stageRect = getStageRect();
+    const boardArea = document.querySelector('.board-area');
+    const s = parseFloat(boardArea?.dataset.scale || '1') || 1;
+
+    const rect = stack.getBoundingClientRect();
+    // linke/obere Ecke relativ zur Bühne (ent-skaliert)
+    const leftStage = (rect.left - stageRect.left) / s;
+    const topStage  = (rect.top  - stageRect.top ) / s;
+
+    const world = getWorldSize();
+    return {
+      nx: world.width  ? (leftStage / world.width)  : 0,
+      ny: world.height ? (topStage  / world.height) : 0
+    };
+  }
+
   // Funktionen zum Speichern und Laden des Board-Zustands
   // Holt den aktuellen Zustand des Boards
   function captureBoardState() {
@@ -5288,6 +5316,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       focusNote: captureFocusNote(),
       notes: captureAllNotes(),
       cards: captureAllCards(),
+      stack: captureStackPosition(),  
       timestamp: new Date().toISOString()
     };
     
@@ -5378,6 +5407,29 @@ document.addEventListener('DOMContentLoaded', async function() {
     return cardsArray;
   }
 
+  function restoreStackPosition(stackState) {
+    const stack = document.getElementById('card-stack');
+    if (!stack || !stackState) return;
+
+    const p = (typeof stackState.nx === 'number' && typeof stackState.ny === 'number')
+      ? fromNorm(stackState.nx, stackState.ny)
+      : null;
+    if (!p) return;
+
+    const boardArea = document.querySelector('.board-area');
+    const s = parseFloat(boardArea?.dataset.scale || '1') || 1;
+    const parent = stack.parentElement || document.querySelector('.board-area') || document.body;
+    const stageRect  = getStageRect();
+    const parentRect = parent.getBoundingClientRect();
+
+    stack.style.position = 'absolute';
+    stack.style.left = Math.round(p.x - ((parentRect.left - stageRect.left) / s)) + 'px';
+    stack.style.top  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s)) + 'px';
+
+    // verhindert späteres Re-Zentrieren
+    stack.dataset.posLocked = '1';
+  }
+
 
 
   // Stellt den Board-Zustand wieder her (mit optionalem Überspringen von Notizen)
@@ -5389,6 +5441,11 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Notizen NUR aktualisieren, wenn wir nicht lokal tippen (oder nicht angewiesen, sie zu überspringen)
     try { restoreNotes(boardState.notes, opts); } catch(e){ console.warn('restoreNotes:', e); }
+
+    // Stapel-Position anwenden (falls vorhanden)
+    try {
+      if (boardState.stack) restoreStackPosition(boardState.stack);
+    } catch (e) { console.warn('restoreStackPosition:', e); }
 
     // NEU: nur wenn nicht explizit übersprungen
     if (!(opts && opts.skipCards)) {
@@ -5522,52 +5579,62 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Animationsklassen sicher entfernen
         el.classList.remove('returning','flipping','shuffling','remote-dragging');
 
-        // Während aktiven Drags keine Positionsänderung
+        // Während lokaler oder eingehender Remote-Drags keinerlei Positions-/Stack-Änderungen aus Snapshots
         const isActive = el.classList.contains('being-dragged') || el._remoteDragActive === true;
-        if (!isActive) {
-          // Sicherstellen: Karte hängt in der Bühne
-          if (cardData.inStack) {
-            // nichts; bleibt im Stack
-          } else {
-            if (el.parentElement && el.parentElement.id === 'card-stack') {
-              const stage = document.getElementById('cards-container') || document.querySelector('.board-area') || document.body;
-              try { stage.appendChild(el); } catch {}
-              el.style.position = 'absolute';
-            }
+        if (isActive) {
+          // Flip/Z-Index dürfen aktualisiert werden, aber keine Positions-/Parent-Änderungen
+          if (typeof cardData.isFlipped === 'boolean') {
+            el.classList.toggle('flipped', !!cardData.isFlipped);
+          }
+          if (cardData.zIndex !== undefined && cardData.zIndex !== '') {
+            el.style.zIndex = String(cardData.zIndex);
+          }
+          return; // restlichen Restore für diese Karte überspringen
+        }
+
+        // Flip-Zustand hart setzen (keine Flip-Animation)
+        if (typeof cardData.isFlipped === 'boolean') {
+          el.classList.toggle('flipped', !!cardData.isFlipped);
+        }
+
+        if (cardData.inStack) {
+          // → In den Stapel (ohne Flug/Flip)
+          cleanPlaceholder(el);
+          if (cardStack && !cardStack.contains(el)) cardStack.appendChild(el);
+
+          // Z-Index respektieren
+          if (cardData.zIndex !== undefined && cardData.zIndex !== '') {
+            el.style.zIndex = String(parseInt(cardData.zIndex, 10));
           }
 
-          const boardArea = document.querySelector('.board-area') || document.body;
-          const stage     = document.getElementById('cards-container') || boardArea;
-          const s         = parseFloat(boardArea?.dataset.scale || '1') || 1;
-          const stageRect  = getStageRect();
-          const parentRect = (el.parentElement || stage).getBoundingClientRect();
+          // Leichter Versatz je Layer (wie beim Stapel)
+          const zi = parseInt(el.style.zIndex || '1', 10) || 1;
+          const offset = Math.max(0, (zi - 1) * 0.5);
+          el.style.position = 'absolute';
+          el.style.left = offset + 'px';
+          el.style.top  = offset + 'px';
 
+        } else {
+          // → Auf der Bühne positionieren
+          if (stage && !stage.contains(el)) stage.appendChild(el);
+          el.style.position = 'absolute';
+
+          // Primär: normierte Koordinaten → unskalierte px
           if (typeof cardData.nx === 'number' && typeof cardData.ny === 'number') {
-            // aus Normalform in Stage-Pixel und dann parent-lokal
-            const p = fromNormCard(cardData.nx, cardData.ny);
-            let leftPx = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
-            let topPx  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
-
-            // Heilung für alte Snapshots: wenn Legacy-Pixel stark abweichen, nimm diese
-            if (cardData.left && cardData.top) {
-              const legacyLeft = parseFloat(cardData.left) || 0;
-              const legacyTop  = parseFloat(cardData.top)  || 0;
-              const drift = Math.hypot(legacyLeft - leftPx, legacyTop - topPx);
-              if (drift > 30) { leftPx = legacyLeft; topPx = legacyTop; }
-            }
-
-            if (el.style.left !== leftPx + 'px') el.style.left = leftPx + 'px';
-            if (el.style.top  !== topPx  + 'px') el.style.top  = topPx  + 'px';
+            const pos = fromNormCard(cardData.nx, cardData.ny); // nutzt deine Helper
+            el.style.left = Math.round(pos.x) + 'px';
+            el.style.top  = Math.round(pos.y) + 'px';
           } else {
-            // Fallback: px-Felder verwenden
-            if (cardData.left !== undefined && cardData.left !== '') el.style.left = cardData.left;
-            if (cardData.top  !== undefined && cardData.top  !== '') el.style.top  = cardData.top;
+            // Fallback: alte px-Strings (Abwärtskompatibilität)
+            if (cardData.left  !== undefined && cardData.left  !== '') el.style.left = cardData.left;
+            if (cardData.top   !== undefined && cardData.top   !== '') el.style.top  = cardData.top;
           }
 
           if (cardData.zIndex !== undefined && cardData.zIndex !== '') {
             el.style.zIndex = String(cardData.zIndex);
           }
 
+          // Platzhalter-Status (falls genutzt)
           if (cardData.placedAt) {
             el.dataset.placedAt = cardData.placedAt;
             const ph = document.getElementById(cardData.placedAt);
@@ -5576,7 +5643,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             cleanPlaceholder(el);
           }
         }
-
       });
     });
 
@@ -5590,6 +5656,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     document.dispatchEvent(new Event('boardStateUpdated'));
   }
   window.restoreCards = restoreCards;
+
 
 
 
