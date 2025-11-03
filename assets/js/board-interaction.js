@@ -239,10 +239,12 @@ function applySampleCardFromTemplate(tpl) {
         '3:2': (2/3),
         '1:2': (2/1),
         '2:1': (1/2),
+        '8:7': (7/8),
+        'beinah-quadrat': (7/8),   // Alias
         'skat-schraeg': (2/3),
         'skat-schraeg-l': (2/3),
         'skat-l': (2/3),
-        'skat': (3/2) // klassisch hochkant
+        'skat': (3/2)
       };
 
       if (/^\d+(\.\d+)?\s*:\s*\d+(\.\d+)?$/.test(key)) {
@@ -2962,10 +2964,14 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       // Freundlicher Format-String für die Widget-Logik
       window.CARDSET_FORMAT =
-        fmtKey || (ratio === 1 ? '1:1' : (Math.abs(ratio-(3/2))<0.001 ? '2:3'
-                  : (Math.abs(ratio-(2/3))<0.001 ? '3:2'
-                  : (Math.abs(ratio-(2/1))<0.001 ? '1:2'
-                  : (Math.abs(ratio-(1/2))<0.001 ? '2:1' : '')))));
+        fmtKey || (
+          ratio === 1 ? '1:1'
+          : (Math.abs(ratio - (3/2)) < 0.001 ? '2:3'
+          : (Math.abs(ratio - (2/3)) < 0.001 ? '3:2'
+          : (Math.abs(ratio - (2/1)) < 0.001 ? '1:2'
+          : (Math.abs(ratio - (1/2)) < 0.001 ? '2:1'
+          : (Math.abs(ratio - (7/8)) < 0.001 ? '8:7' : '')))))
+        );
     }catch(e){ console.warn(e); }
   }
 
