@@ -2196,6 +2196,94 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
 
+    // --- focusNote: Titel + Text mit optionaler Bearbeitung + Autosave ---
+    tpl.widgets.filter(w => w.type === 'focusNote').forEach(w => {
+      const p = prop(w); // gemergte Props (z.B. title, body, titleUserEditable, bodyUserEditable)
+
+      // Container
+      const el = document.createElement('div');
+      el.className = 'focus-note-area tpl-node';
+      el.style.position = 'absolute';
+      el.dataset.widget = 'focusNote';
+
+      // Geometrie
+      el.style.left = ((w.x || 0)) + 'px';
+      el.style.top  = ((w.y || 0)) + 'px';
+      if (w.w) el.style.width  = w.w + 'px';
+      if (w.h) el.style.height = w.h + 'px';
+
+      // Titel
+      const title = document.createElement('div');
+      title.className = 'focus-note-title desc-title';
+      title.textContent = (p.title || '').trim();
+
+      // Body: Display + Editable (beide erzeugen; je nach Modus anzeigen)
+      const bodyDisplay  = document.createElement('div');
+      bodyDisplay.id = 'focus-note-display';
+      bodyDisplay.className = 'focus-note-display desc-content';
+
+      const bodyEditable = document.createElement('div');
+      bodyEditable.id = 'focus-note-editable';
+      bodyEditable.className = 'focus-note-editable desc-content';
+
+      const initialBody = (p.body || '').trim();
+      const placeholder = 'Schreiben sie hier die Focus Note der Sitzung rein';
+
+      bodyDisplay.textContent  = initialBody;
+      bodyEditable.textContent = initialBody || placeholder;
+
+      // Editierbarkeit robust interpretieren
+      const canEditTitle = (typeof asBool === 'function') ? asBool(p.titleUserEditable) : !!p.titleUserEditable;
+      const canEditBody  = (typeof asBool === 'function') ? asBool(p.bodyUserEditable)  : !!p.bodyUserEditable;
+
+      // Sichtbarkeit/Toggles
+      if (canEditBody) {
+        bodyEditable.setAttribute('contenteditable', 'true');
+        bodyEditable.setAttribute('spellcheck', 'true');
+        bodyEditable.style.display = '';
+        bodyDisplay.style.display  = 'none';
+      } else {
+        bodyEditable.removeAttribute('contenteditable');
+        bodyEditable.style.display = 'none';
+        bodyDisplay.style.display  = '';
+      }
+
+      if (canEditTitle) {
+        title.setAttribute('contenteditable', 'true');
+        title.setAttribute('spellcheck', 'true');
+      } else {
+        title.removeAttribute('contenteditable');
+      }
+
+      // One-time Placeholder Clear für das Editable
+      (function setupOneTimeClear(target, text) {
+        if (!target) return;
+        const clear = () => {
+          if (target.textContent === text) target.textContent = '';
+          target.removeEventListener('focus', clear);
+        };
+        target.addEventListener('focus', clear, { once: true });
+      })(bodyEditable, placeholder);
+
+      // === AUTOSAVE: FocusNote – Änderungen triggern Save ===
+      if (canEditTitle) {
+        title.addEventListener('input', () => saveCurrentBoardState('focusNote'));
+        title.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
+      }
+      if (canEditBody) {
+        bodyEditable.addEventListener('input', () => saveCurrentBoardState('focusNote'));
+        bodyEditable.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
+      }
+      // === /AUTOSAVE FocusNote ===
+
+      // In DOM einsetzen
+      el.appendChild(title);
+      el.appendChild(canEditBody ? bodyEditable : bodyDisplay);
+
+      const boardArea = document.querySelector('.board-area') || document.body;
+      boardArea.appendChild(el);
+    });
+
     // --- bgrect zuerst (Z-Reihenfolge)
     tpl.widgets.filter(w => w.type === 'bgrect').forEach(w => {
       const el = document.createElement('div');
@@ -2353,6 +2441,29 @@ document.addEventListener('DOMContentLoaded', async function() {
       el.appendChild(top);
       el.appendChild(sep);
       el.appendChild(space);
+
+      // === AUTOSAVE: Cardholder – Änderungen triggern Save ===
+      // Versuche zuerst die erwarteten Knoten per Klasse zu finden,
+      // fallweise fallback auf lokale Variablen (title/content), falls vorhanden:
+      const chTitle   = el.querySelector('.bb-ch-header') || (typeof title !== 'undefined' ? title : null);
+      const chContent = el.querySelector('.bb-ch-desc')   || (typeof content !== 'undefined' ? content : null);
+
+      // Flags robust auswerten (true/"true"/1):
+      const canEditTitle = typeof asBool === 'function' ? asBool(p.titleUserEditable) : !!p.titleUserEditable;
+      const canEditBody  = typeof asBool === 'function' ? asBool(p.bodyUserEditable)  : !!p.bodyUserEditable;
+
+      if (canEditTitle && chTitle) {
+        // sicherstellen, dass editierbar
+        chTitle.setAttribute('contenteditable', 'true');
+        chTitle.addEventListener('input', () => saveCurrentBoardState('input'));
+        chTitle.addEventListener('blur',  () => saveCurrentBoardState('blur'));
+      }
+      if (canEditBody && chContent) {
+        chContent.setAttribute('contenteditable', 'true');
+        chContent.addEventListener('input', () => saveCurrentBoardState('input'));
+        chContent.addEventListener('blur',  () => saveCurrentBoardState('blur'));
+      }
+      // === /AUTOSAVE Cardholder ===
 
       // In den DOM & Größe begrenzen: Der Body darf NICHT höher werden als der obere Bereich
       place(el, w); // deine bestehende Platzierungsfunktion
