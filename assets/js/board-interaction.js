@@ -5466,25 +5466,38 @@ document.addEventListener('DOMContentLoaded', async function() {
     return perms;
   }
 
-  // Erfasst den Inhalt der Focus Note
+  // Erfasst den Inhalt der Focus Note (unterstützt .focus-note und .focus-note-area)
   function captureFocusNote() {
-    const wrap = document.querySelector('.focus-note-area');
+    // 1) Wrapper flexibel finden (neue & alte Variante)
+    const wrap = document.querySelector('.focus-note, .focus-note-area');
     if (!wrap) return null;
 
-    const titleEl = wrap.querySelector('.focus-note-title, .desc-title, h2');
-    const bodyEl  = titleEl ? titleEl.nextElementSibling
-                            : (wrap.querySelector('.desc-content, #focus-note-editable, #focus-note-display'));
+    // 2) Titel-Knoten wie bei Description/Cardholder
+    const titleEl =
+      wrap.querySelector('.focus-note-title, .desc-title, h2') ||
+      document.getElementById('focus-note-title');
+
+    // 3) Body-Knoten: zuerst "echten" Editable/Display-Body, sonst generisches .desc-content
+    const editable = document.getElementById('focus-note-editable');
+    const display  = document.getElementById('focus-note-display');
+
+    let bodyEl =
+      (editable && (editable.isContentEditable || editable.style.display !== 'none')) ? editable :
+      (display  && display.style.display !== 'none') ? display :
+      (titleEl ? titleEl.nextElementSibling : wrap.querySelector('.desc-content, #focus-note-editable, #focus-note-display'));
 
     const title = (titleEl?.textContent || '').trim();
+    const raw   = (bodyEl?.textContent  || '').trim();
 
-    // Falls du den Platzhalter NICHT mitschreiben willst:
-    const raw   = (bodyEl?.textContent || '').trim();
-    const ph    = document.getElementById('focus-note-editable')?.dataset?.placeholder
-              || 'Schreiben sie hier die Focus Note der Sitzung rein';
-    const body  = (raw === ph ? '' : raw);
+    // Platzhalter nicht mitschreiben
+    const placeholder =
+      editable?.dataset?.placeholder ||
+      'Schreiben sie hier die Focus Note der Sitzung rein';
+    const body = (raw === placeholder ? '' : raw);
 
     return { title, body };
   }
+
 
   function captureAllCardholders() {
     const out = [];
