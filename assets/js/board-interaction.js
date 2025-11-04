@@ -2816,14 +2816,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       // 1.3 Focus Note Area - jetzt mit integriertem Text
       const focusNoteArea = document.createElement('div');
       focusNoteArea.className = 'focus-note-area';
-      focusNoteArea.innerHTML = `
-        <h2 class="area-main-title">Focus Note</h2>
-        <div class="focus-note-content">
-          <div id="focus-note-display" class="focus-note-display">Schreiben sie hier die Focus Note der Sitzung rein</div>
-          <div id="focus-note-editable" class="notiz-content" contenteditable="true" style="display: none;">Schreiben sie hier die Focus Note der Sitzung rein</div>
-        </div>
-      `;
-      focusNoteArea.id = 'focus-note-area';
     
       // 1.4 Notizzettel Box im Post-It Stil (abziehbar)
       const notizzettelBox = document.createElement('div');
