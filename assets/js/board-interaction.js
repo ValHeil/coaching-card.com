@@ -246,7 +246,7 @@ function applySampleCardFromTemplate(tpl) {
         '1:2': (2/1),
         '2:1': (1/2),
         '8:7': (7/8),
-        'beinah-quadrat': (7/8),   // Alias
+        'beinah-quadrat': (8/7),   // Alias
         'skat-schraeg': (2/3),
         'skat-schraeg-l': (2/3),
         'skat-l': (2/3),
@@ -603,6 +603,8 @@ function initFocusNoteLive() {
     display.textContent = trimmed || PH;
     display.classList.toggle('has-content', !!trimmed);
 
+    saveCurrentBoardState('focusNote');
+
     clearTimeout(deb);
     deb = setTimeout(() => {
       if (typeof sendRT === 'function') {
@@ -617,10 +619,10 @@ function initFocusNoteLive() {
     editable.addEventListener(evt, emit);
     // bei jeder Eingabe zusätzlich Autosave (debounced)
     editable.addEventListener('input', () => {
-      try {
-        if (typeof debouncedSave === 'function') debouncedSave();
-      } catch {}
+      clearTimeout(deb);
+      deb = setTimeout(emit, 120);
     });
+    editable.addEventListener('blur', emit);
   });
 }
 
@@ -2445,8 +2447,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       // === AUTOSAVE: Cardholder – Änderungen triggern Save ===
       // Versuche zuerst die erwarteten Knoten per Klasse zu finden,
       // fallweise fallback auf lokale Variablen (title/content), falls vorhanden:
-      const chTitle   = el.querySelector('.bb-ch-header') || (typeof title !== 'undefined' ? title : null);
-      const chContent = el.querySelector('.bb-ch-desc')   || (typeof content !== 'undefined' ? content : null);
+      const chTitle   = el.querySelector('.bb-ch-header, .desc-title, .ch-header') 
+                        || (typeof title !== 'undefined' ? title : null);
+      const chContent = el.querySelector('.bb-ch-desc, .ch-desc, .desc-content') 
+                        || (typeof desc !== 'undefined' ? desc : null);
 
       // Flags robust auswerten (true/"true"/1):
       const canEditTitle = typeof asBool === 'function' ? asBool(p.titleUserEditable) : !!p.titleUserEditable;
@@ -3087,7 +3091,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           : (Math.abs(ratio - (2/3)) < 0.001 ? '3:2'
           : (Math.abs(ratio - (2/1)) < 0.001 ? '1:2'
           : (Math.abs(ratio - (1/2)) < 0.001 ? '2:1'
-          : (Math.abs(ratio - (7/8)) < 0.001 ? '8:7' : '')))))
+          : (Math.abs(ratio - (8/7)) < 0.001 ? '8:7' : '')))))
         );
     }catch(e){ console.warn(e); }
   }
@@ -5471,25 +5475,25 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Erfasst den Inhalt der Focus Note
   function captureFocusNote() {
-    // Erlaube sowohl Wrapper als auch nur die Einzel-IDs
+    const wrap         = document.querySelector('.focus-note-area') || null;
+    const titleEl      = wrap?.querySelector('.focus-note-title, .desc-title, h2') 
+                        || document.getElementById('focus-note-title');
     const bodyEditable = document.getElementById('focus-note-editable');
     const bodyDisplay  = document.getElementById('focus-note-display');
-    const wrap = document.querySelector('.focus-note-area') || null;
 
-    // Wenn weder Wrapper noch eins der Felder existiert -> kein FocusNote auf dem Board
-    if (!wrap && !bodyEditable && !bodyDisplay) return null;
+    if (!wrap && !titleEl && !bodyEditable && !bodyDisplay) return null;
 
-    // Titel aus mehreren möglichen Selektoren ziehen
-    const titleEl =
-      (wrap && (wrap.querySelector('.focus-note-title, .desc-title, h2'))) ||
-      document.querySelector('.focus-note-title, .desc-title, h2');
+    const title = (titleEl?.textContent ?? '').trim();
 
-    const title = (titleEl?.textContent || '').trim();
+    // Priorität: wenn es ein editierbares Feld gibt, verwende dessen Inhalt – 
+    // sonst die Display-Variante. Platzhalter wird leer serialisiert.
+    const preferEditable = !!(bodyEditable && (bodyEditable.isContentEditable || bodyEditable.style.display !== 'none'));
+    const src = preferEditable ? bodyEditable : bodyDisplay;
+    const rawBody = (src?.textContent ?? '').trim();
 
-    // Body robust lesen (Editable hat Vorrang)
-    const rawBody = (bodyEditable?.textContent ?? bodyDisplay?.textContent ?? '').trim();
-    const placeholder = 'Schreiben sie hier die Focus Note der Sitzung rein';
-    const body = rawBody === placeholder ? '' : rawBody;
+    const placeholder = bodyEditable?.dataset?.placeholder 
+                        || 'Schreiben sie hier die Focus Note der Sitzung rein';
+    const body = (rawBody === placeholder ? '' : rawBody);
 
     return { title, body };
   }
@@ -5497,11 +5501,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   function captureAllCardholders() {
     const out = [];
     document.querySelectorAll('.board-cardholder').forEach((el, idx) => {
-      // Header heißt beim Live-Render häufig auch .desc-title
-      const headerEl = el.querySelector('.desc-title, .bb-ch-header, .ch-header');
-      const bodyEl   = headerEl
-        ? headerEl.nextElementSibling
-        : (el.querySelector('.bb-ch-desc, .ch-desc, .desc-content') || el.children[1]);
+      const headerEl = el.querySelector('.bb-ch-header, .desc-title, .ch-title, .ch-header');
+      const bodyEl   = el.querySelector('.bb-ch-desc, .ch-desc, .desc-content')
+                    || (headerEl ? headerEl.nextElementSibling : null);
 
       out.push({
         idx,
