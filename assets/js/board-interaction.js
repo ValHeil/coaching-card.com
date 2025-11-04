@@ -5423,18 +5423,51 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Holt den aktuellen Zustand des Boards
   function captureBoardState() {
     const boardState = {
-      focusNote:    captureFocusNote(),       // jetzt {title, body}
-      descriptions: captureAllDescriptions(), // NEU
-      cardholders:  captureAllCardholders(),  // NEU
+      focusNote:    captureFocusNote(),
+      descriptions: captureAllDescriptions(),
+      cardholders:  captureAllCardholders(),
       notes:        captureAllNotes(),
       cards:        captureAllCards(),
       stack:        captureStackPosition(),
+      // NEU: Perms mitschreiben – so wissen wir beim Restore exakt, was gesetzt werden darf
+      perms: {
+        focusNote: readFocusNotePermsFromDOM(),
+        cardholders: readCardholderPermsFromDOM()
+      },
       timestamp:    new Date().toISOString()
     };
     console.log("Erfasster Board-Zustand:", boardState);
     return boardState;
   }
   window.captureBoardState = captureBoardState;
+
+  // --- Helfer: Perms aus dem DOM ermitteln -------------------------------
+  function readFocusNotePermsFromDOM(){
+    const titleEl = document.querySelector('.focus-note-area .focus-note-title, .focus-note-area .desc-title, .focus-note-area h2');
+    const bodyEd  = document.getElementById('focus-note-editable');
+    return {
+      titleEditable: !!(titleEl && titleEl.isContentEditable),
+      bodyEditable:  !!(bodyEd  && bodyEd.isContentEditable)
+    };
+  }
+
+  function readCardholderPermsFromDOM(){
+    const perms = [];
+    const nodes = Array.from(document.querySelectorAll('.board-cardholder'));
+    nodes.forEach((el, idx) => {
+      const headerEl = el.querySelector('.desc-title, .bb-ch-header, .ch-header');
+      const bodyEl   = headerEl
+        ? headerEl.nextElementSibling
+        : (el.querySelector('.bb-ch-desc, .ch-desc, .desc-content') || el.children[1]);
+
+      perms.push({
+        idx,
+        titleEditable: !!(headerEl && headerEl.isContentEditable),
+        bodyEditable:  !!(bodyEl   && bodyEl.isContentEditable)
+      });
+    });
+    return perms;
+  }
 
   // Erfasst den Inhalt der Focus Note
   function captureFocusNote() {
@@ -5479,17 +5512,30 @@ document.addEventListener('DOMContentLoaded', async function() {
     return out;
   }
 
-  function restoreCardholders(items) {
+  function restoreCardholders(items, permsList = null) {
     if (!Array.isArray(items)) return;
     const nodes = Array.from(document.querySelectorAll('.board-cardholder'));
+
     items.forEach((d, i) => {
       const el = nodes[i]; if (!el) return;
+
       const headerEl = el.querySelector('.desc-title, .bb-ch-header, .ch-header');
       const bodyEl   = headerEl
         ? headerEl.nextElementSibling
         : (el.querySelector('.bb-ch-desc, .ch-desc, .desc-content') || el.children[1]);
-      if (headerEl && typeof d.title === 'string') headerEl.textContent = d.title;
-      if (bodyEl   && typeof d.body  === 'string') bodyEl.textContent  = d.body;
+
+      // Erlaubnisse: aus gespeicherten Perms falls da, sonst DOM
+      const p = Array.isArray(permsList) ? (permsList.find(x => x.idx === i) || null) : null;
+      const maySetTitle = (p && p.titleEditable !== undefined)
+        ? !!p.titleEditable
+        : !!(headerEl && headerEl.isContentEditable);
+
+      const maySetBody = (p && p.bodyEditable !== undefined)
+        ? !!p.bodyEditable
+        : !!(bodyEl && bodyEl.isContentEditable);
+
+      if (headerEl && maySetTitle && typeof d.title === 'string') headerEl.textContent = d.title;
+      if (bodyEl   && maySetBody  && typeof d.body  === 'string') bodyEl.textContent  = d.body;
     });
   }
 
@@ -5598,10 +5644,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     try { restoreFocusNote(state.focusNote ?? null); } catch(e){ console.warn('restoreFocusNote:', e); }
     try { restoreDescriptions(state.descriptions || []); } catch(e){ console.warn('restoreDescriptions:', e); }
-    try { restoreCardHolders(state.cardholders || []); } catch(e){ console.warn('restoreCardHolders:', e); }
+    try { restoreCardholders(state.cardholders || [], state.perms?.cardholders || null); } catch(e){ console.warn('restoreCardholders:', e); }
     try { restoreNotes(state.notes || []); } catch(e){ console.warn('restoreNotes:', e); }
 
-    // <<< NEU: Stapel-Position wiederherstellen
+    // Stapel-Position wiederherstellen
     try { restoreStackPosition(state.stack || null); } catch(e){ console.warn('restoreStackPosition:', e); }
 
     if (!skipCards) {
@@ -5618,12 +5664,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (!state) return;
 
     const wrap = document.querySelector('.focus-note-area');
-    const titleEl = wrap?.querySelector('.focus-note-title, h2, .desc-title');
+    const titleEl     = wrap?.querySelector('.focus-note-title, h2, .desc-title');
     const bodyEditable = document.getElementById('focus-note-editable');
     const bodyDisplay  = document.getElementById('focus-note-display');
 
     // Backwards-Compat: früher war state nur der Body als String
     if (typeof state === 'string') {
+      // Nur Body setzen – Anzeige/Editable spiegeln
       if (bodyDisplay) {
         bodyDisplay.textContent = state;
         bodyDisplay.classList.toggle('has-content', !!state);
@@ -5635,12 +5682,32 @@ document.addEventListener('DOMContentLoaded', async function() {
     const title = state.title ?? '';
     const body  = state.body  ?? '';
 
-    if (titleEl)   titleEl.textContent = title;
-    if (bodyDisplay) {
-      bodyDisplay.textContent = body;
-      bodyDisplay.classList.toggle('has-content', !!body);
+    // Perms: aus gespeicherten Permissions falls vorhanden, sonst DOM prüfen
+    const savedPerms = state?.perms?.focusNote || null;
+    const maySetTitle = (savedPerms && savedPerms.titleEditable !== undefined)
+      ? !!savedPerms.titleEditable
+      : !!(titleEl && titleEl.isContentEditable);
+
+    const maySetBody = (savedPerms && savedPerms.bodyEditable !== undefined)
+      ? !!savedPerms.bodyEditable
+      : !!(bodyEditable && bodyEditable.isContentEditable);
+
+    // Titel nur überschreiben, wenn er editierbar ist
+    if (titleEl && maySetTitle) {
+      titleEl.textContent = title;
     }
-    if (bodyEditable) bodyEditable.textContent = body;
+
+    // Body nur überschreiben, wenn er editierbar ist
+    if (maySetBody) {
+      if (bodyEditable) bodyEditable.textContent = body;
+      if (bodyDisplay) {
+        bodyDisplay.textContent = body;
+        bodyDisplay.classList.toggle('has-content', !!body);
+      }
+    } else {
+      // Nicht editierbar → Anzeige-Element ggf. nur Klassenzustand pflegen
+      if (bodyDisplay) bodyDisplay.classList.toggle('has-content', !!bodyDisplay.textContent.trim());
+    }
   }
 
   function captureAllDescriptions() {
