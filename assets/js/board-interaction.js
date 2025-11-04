@@ -2230,6 +2230,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       const initialBody = (p.body || '').trim();
       const placeholder = 'Schreiben sie hier die Focus Note der Sitzung rein';
+      bodyEditable.dataset.placeholder = placeholder;
 
       bodyDisplay.textContent  = initialBody;
       bodyEditable.textContent = initialBody || placeholder;
@@ -5528,8 +5529,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         ? !!p.bodyEditable
         : !!(bodyEl && bodyEl.isContentEditable);
 
-      if (headerEl && maySetTitle && typeof d.title === 'string') headerEl.textContent = d.title;
-      if (bodyEl   && maySetBody  && typeof d.body  === 'string') bodyEl.textContent  = d.body;
+      if (headerEl && typeof d.title === 'string') headerEl.textContent = d.title;
+      if (bodyEl   && typeof d.body  === 'string') bodyEl.textContent  = d.body;
     });
   }
 
@@ -5636,7 +5637,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (!state || typeof state !== 'object') return;
     const { skipCards = false } = opts;
 
-    try { restoreFocusNote(state.focusNote ?? null); } catch(e){ console.warn('restoreFocusNote:', e); }
+    try { restoreFocusNote(state.focusNote ?? null, state.perms?.focusNote || null); } catch(e){ console.warn('restoreFocusNote:', e); }
     try { restoreDescriptions(state.descriptions || []); } catch(e){ console.warn('restoreDescriptions:', e); }
     try { restoreCardholders(state.cardholders || [], state.perms?.cardholders || null); } catch(e){ console.warn('restoreCardholders:', e); }
     try { restoreNotes(state.notes || []); } catch(e){ console.warn('restoreNotes:', e); }
@@ -5654,7 +5655,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 
   // Stellt die Focus Note wieder her
-  function restoreFocusNote(state) {
+  function restoreFocusNote(state, savedPerms = null) {
     if (!state) return;
 
     const wrap = document.querySelector('.focus-note-area');
@@ -5676,32 +5677,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     const title = state.title ?? '';
     const body  = state.body  ?? '';
 
-    // Perms: aus gespeicherten Permissions falls vorhanden, sonst DOM prüfen
-    const savedPerms = state?.perms?.focusNote || null;
-    const maySetTitle = (savedPerms && savedPerms.titleEditable !== undefined)
-      ? !!savedPerms.titleEditable
-      : !!(titleEl && titleEl.isContentEditable);
-
-    const maySetBody = (savedPerms && savedPerms.bodyEditable !== undefined)
-      ? !!savedPerms.bodyEditable
-      : !!(bodyEditable && bodyEditable.isContentEditable);
-
-    // Titel nur überschreiben, wenn er editierbar ist
-    if (titleEl && maySetTitle) {
-      titleEl.textContent = title;
-    }
-
-    // Body nur überschreiben, wenn er editierbar ist
-    if (maySetBody) {
-      if (bodyEditable) bodyEditable.textContent = body;
-      if (bodyDisplay) {
-        bodyDisplay.textContent = body;
-        bodyDisplay.classList.toggle('has-content', !!body);
-      }
-    } else {
-      // Nicht editierbar → Anzeige-Element ggf. nur Klassenzustand pflegen
-      if (bodyDisplay) bodyDisplay.classList.toggle('has-content', !!bodyDisplay.textContent.trim());
-    }
+    // Beim Restore IMMER übernehmen (Restore ≠ Editieren-Gate)
+    if (titleEl) titleEl.textContent = title;
+    if (bodyEditable) bodyEditable.textContent = body;
+    if (bodyDisplay) { bodyDisplay.textContent = body; bodyDisplay.classList.toggle('has-content', !!body); }
   }
 
   function captureAllDescriptions() {
