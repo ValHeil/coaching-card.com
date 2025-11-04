@@ -2490,7 +2490,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const p = prop(focus); // merged props
       // Container erstellen
       const el = document.createElement('div');
-      el.className = 'focus-note tpl-node';
+      el.className = '.focus-note-area';
       el.style.position = 'absolute';
       el.style.boxShadow = 'none';                     // kein Notizzettel-Schatten
       el.style.display = 'flex';
@@ -5468,25 +5468,20 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Erfasst den Inhalt der Focus Note
   function captureFocusNote() {
-    const wrap         = document.querySelector('.focus-note-area') || null;
-    const titleEl      = wrap?.querySelector('.focus-note-title, .desc-title, h2') 
-                        || document.getElementById('focus-note-title');
-    const bodyEditable = document.getElementById('focus-note-editable');
-    const bodyDisplay  = document.getElementById('focus-note-display');
+    const wrap = document.querySelector('.focus-note-area');
+    if (!wrap) return null;
 
-    if (!wrap && !titleEl && !bodyEditable && !bodyDisplay) return null;
+    const titleEl = wrap.querySelector('.focus-note-title, .desc-title, h2');
+    const bodyEl  = titleEl ? titleEl.nextElementSibling
+                            : (wrap.querySelector('.desc-content, #focus-note-editable, #focus-note-display'));
 
-    const title = (titleEl?.textContent ?? '').trim();
+    const title = (titleEl?.textContent || '').trim();
 
-    // Priorität: wenn es ein editierbares Feld gibt, verwende dessen Inhalt – 
-    // sonst die Display-Variante. Platzhalter wird leer serialisiert.
-    const preferEditable = !!(bodyEditable && (bodyEditable.isContentEditable || bodyEditable.style.display !== 'none'));
-    const src = preferEditable ? bodyEditable : bodyDisplay;
-    const rawBody = (src?.textContent ?? '').trim();
-
-    const placeholder = bodyEditable?.dataset?.placeholder 
-                        || 'Schreiben sie hier die Focus Note der Sitzung rein';
-    const body = (rawBody === placeholder ? '' : rawBody);
+    // Falls du den Platzhalter NICHT mitschreiben willst:
+    const raw   = (bodyEl?.textContent || '').trim();
+    const ph    = document.getElementById('focus-note-editable')?.dataset?.placeholder
+              || 'Schreiben sie hier die Focus Note der Sitzung rein';
+    const body  = (raw === ph ? '' : raw);
 
     return { title, body };
   }
@@ -5507,27 +5502,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     return out;
   }
 
-  function restoreCardholders(items, permsList = null) {
+  function restoreCardholders(items) {
     if (!Array.isArray(items)) return;
     const nodes = Array.from(document.querySelectorAll('.board-cardholder'));
 
     items.forEach((d, i) => {
       const el = nodes[i]; if (!el) return;
 
-      const headerEl = el.querySelector('.desc-title, .bb-ch-header, .ch-header');
+      const headerEl = el.querySelector('.desc-title, .bb-ch-header, .ch-title, .ch-header');
       const bodyEl   = headerEl
         ? headerEl.nextElementSibling
         : (el.querySelector('.bb-ch-desc, .ch-desc, .desc-content') || el.children[1]);
-
-      // Erlaubnisse: aus gespeicherten Perms falls da, sonst DOM
-      const p = Array.isArray(permsList) ? (permsList.find(x => x.idx === i) || null) : null;
-      const maySetTitle = (p && p.titleEditable !== undefined)
-        ? !!p.titleEditable
-        : !!(headerEl && headerEl.isContentEditable);
-
-      const maySetBody = (p && p.bodyEditable !== undefined)
-        ? !!p.bodyEditable
-        : !!(bodyEl && bodyEl.isContentEditable);
 
       if (headerEl && typeof d.title === 'string') headerEl.textContent = d.title;
       if (bodyEl   && typeof d.body  === 'string') bodyEl.textContent  = d.body;
@@ -5655,21 +5640,17 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 
   // Stellt die Focus Note wieder her
-  function restoreFocusNote(state, savedPerms = null) {
+  function restoreFocusNote(state) {
     if (!state) return;
 
-    const wrap = document.querySelector('.focus-note-area');
-    const titleEl     = wrap?.querySelector('.focus-note-title, h2, .desc-title');
+    const wrap         = document.querySelector('.focus-note-area');
+    const titleEl      = wrap?.querySelector('.focus-note-title, .desc-title, h2');
     const bodyEditable = document.getElementById('focus-note-editable');
     const bodyDisplay  = document.getElementById('focus-note-display');
 
     // Backwards-Compat: früher war state nur der Body als String
     if (typeof state === 'string') {
-      // Nur Body setzen – Anzeige/Editable spiegeln
-      if (bodyDisplay) {
-        bodyDisplay.textContent = state;
-        bodyDisplay.classList.toggle('has-content', !!state);
-      }
+      if (bodyDisplay) { bodyDisplay.textContent = state; bodyDisplay.classList.toggle('has-content', !!state); }
       if (bodyEditable) bodyEditable.textContent = state;
       return;
     }
@@ -5677,8 +5658,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     const title = state.title ?? '';
     const body  = state.body  ?? '';
 
-    // Beim Restore IMMER übernehmen (Restore ≠ Editieren-Gate)
-    if (titleEl) titleEl.textContent = title;
+    // WIE BEI DESCRIPTION: immer in den DOM schreiben (Restore ≠ Editier-Gate)
+    if (titleEl)      titleEl.textContent = title;
     if (bodyEditable) bodyEditable.textContent = body;
     if (bodyDisplay) { bodyDisplay.textContent = body; bodyDisplay.classList.toggle('has-content', !!body); }
   }
