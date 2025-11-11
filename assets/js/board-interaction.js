@@ -87,6 +87,9 @@ function getWorldSize() {
 }
 
 function fitBoardToViewport() {
+  const raw = vw / worldW;
+  const scale = vw / worldW;
+  area.style.transform = `translate(${offX}px, ${offY}px) scale(${scale})`;
   const area = document.querySelector('.board-area');
   if (!area) return;
 
@@ -102,7 +105,6 @@ function fitBoardToViewport() {
   const vh = vhTotal - adminBarH;
 
   // --- Fit to width: keine horizontalen Ränder ---
-  const scale = vw / worldW;
   const offX  = 0;                 // bündig links
   const offY  = adminBarH;         // unter die Adminbar (oben bündig)
 
@@ -2758,14 +2760,16 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         // Touch-Support: erzeugt ein „Mausäquivalent“ mit button=0
         el.addEventListener('touchstart', (e) => {
-          try { e.preventDefault(); } catch {}
+          e.preventDefault();
           const t = e.touches && e.touches[0];
           if (!t) return;
           startDragNewNote({
             clientX: t.clientX,
             clientY: t.clientY,
             button: 0,
-            preventDefault: () => {}
+            preventDefault: () => {},
+            target: el,
+            currentTarget: el
           });
         }, { passive:false });
 
@@ -3700,6 +3704,27 @@ document.addEventListener('DOMContentLoaded', async function() {
     const notizId = 'note-' + Date.now();
     const note = document.createElement('div');
     note.className = 'notiz';
+    const src =
+      (e.target?.closest('.notizzettel-box, .notes-container')) ||
+      (e.currentTarget?.closest('.notizzettel-box, .notes-container')) ||
+      parent; // Fallback
+    const bg =
+      src.style.getPropertyValue('--note-bg') ||
+      getComputedStyle(src).getPropertyValue('--note-bg') ||
+      src.style.background || src.style.backgroundColor ||
+      getComputedStyle(src).backgroundColor || '#ffff99';
+
+    const bord =
+      src.style.getPropertyValue('--note-border') ||
+      getComputedStyle(src).getPropertyValue('--note-border') ||
+      getComputedStyle(src).borderColor || '#e6e673';
+
+    note.style.setProperty('--note-bg', bg);
+    note.style.setProperty('--note-border', bord);
+    note.style.background = bg;     // Fallback für bestehende CSS-Regeln
+    note.dataset.color = bg;        // damit Farbe auch in RT/State mitläuft        
+    // Wenn du Zustand synchronisierst, gib die Farbe mit:
+    payload.color = bg;
     note.id = notizId;
     note.innerHTML = `<div class="notiz-content" contenteditable="false"></div>`;
 
