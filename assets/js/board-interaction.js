@@ -1174,7 +1174,13 @@ async function initRealtime(config) {
       if (m.z !== undefined && m.z !== '') el.style.zIndex = m.z;
       if (m.w) el.style.width  = Math.round(m.w) + 'px';
       if (m.h) el.style.height = Math.round(m.h) + 'px';
-      if (m.color) { el.dataset.color = m.color; el.style.backgroundColor = m.color; }
+      if (m.color) {
+        el.dataset.color = m.color;
+        el.style.setProperty('--note-bg', m.color);
+        // Wenn kein fertiger Randton kommt, dunkel aus Farbe ableiten:
+        el.style.setProperty('--note-border', shadeHex(m.color, -18));
+        el.style.backgroundColor = m.color; // Fallback
+      }
       if (typeof m.content === 'string') setNoteText(el, m.content);
 
       if (isOwner && isOwner()) { saveCurrentBoardState?.('rt'); }
@@ -2735,6 +2741,9 @@ document.addEventListener('DOMContentLoaded', async function() {
           el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
         }
 
+        el.style.setProperty('--note-bg',     p.background || p.color   || '#ffff99');
+        el.style.setProperty('--note-border', p.borderColor             || '#e6e673');
+
         // Position/Größe laut Template (mit Fallback auf feste Notiz-Maße)
         w.w = (typeof w.w === 'number' && w.w > 0) ? w.w : 180;
         w.h = (typeof w.h === 'number' && w.h > 0) ? w.h : 180;
@@ -3693,17 +3702,25 @@ document.addEventListener('DOMContentLoaded', async function() {
     
   // Funktion zum Starten des Ziehens eines neuen Notizzettels
   function startDragNewNote(e) {
-    const btn = (typeof e.button === 'number') ? e.button : 0; // Touch hat kein button → als Links-Klick werten
+    const btn = (typeof e.button === 'number') ? e.button : 0;
     if (btn !== 0) return;
     e.preventDefault();
 
     const notizId = 'note-' + Date.now();
     const note = document.createElement('div');
     note.className = 'notiz';
+    note.id = notizId;
+    note.innerHTML = `<div class="notiz-content" contenteditable="false"></div>`;
+
+    // <<< NEU: zuerst den Parent ermitteln
+    const parent = ensureNotesContainer();
+
+    // Quelle/Farbe vom Block abgreifen
     const src =
       (e.target?.closest('.notizzettel-box, .notes-container')) ||
       (e.currentTarget?.closest('.notizzettel-box, .notes-container')) ||
-      parent; // Fallback
+      parent;
+
     const bg =
       src.style.getPropertyValue('--note-bg') ||
       getComputedStyle(src).getPropertyValue('--note-bg') ||
@@ -3715,18 +3732,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       getComputedStyle(src).getPropertyValue('--note-border') ||
       getComputedStyle(src).borderColor || '#e6e673';
 
+    // Farbwerte auf der neuen Notiz hinterlegen
     note.style.setProperty('--note-bg', bg);
     note.style.setProperty('--note-border', bord);
-    note.style.background = bg;     // Fallback für bestehende CSS-Regeln
-    note.dataset.color = bg;        // damit Farbe auch in RT/State mitläuft        
-    // Wenn du Zustand synchronisierst, gib die Farbe mit:
-    payload.color = bg;
-    note.id = notizId;
-    note.innerHTML = `<div class="notiz-content" contenteditable="false"></div>`;
+    note.style.backgroundColor = bg;     // Fallback
+    note.dataset.color = bg;             // läuft im RT/State mit
 
-    const parent = ensureNotesContainer();            // WICHTIG
-    parent.appendChild(note);                         // ← nicht body!
-
+    parent.appendChild(note);                       
     attachNoteResizeObserver(note);
     attachNoteAutoGrow(note);
     setupNoteEditingHandlers(note);
