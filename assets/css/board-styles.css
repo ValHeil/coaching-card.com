@@ -204,8 +204,8 @@ body {
 
 /* Notizzettel Box (Post-It Stil) */
 .notizzettel-box {
-  background-color: #ffff99;
-  border: 1px solid #e6e673;
+  background-color: var(--note-bg);
+  border: 1px solid var(--note-border);
   border-radius: 3px;
   /* Gleiche Grundgröße wie Karten */
   width: var(--note-w);
@@ -228,7 +228,7 @@ body {
   height: 0;
   border-style: solid;
   border-width: 0 0 20px 20px;
-  border-color: transparent transparent #e6e673 transparent;
+  border-color: 1px solid var(--note-border);
   transform: rotate(0deg);
   opacity: 0.6;
 }
@@ -238,8 +238,8 @@ body {
   position: absolute;
   width: 180px; /* Feste Breite */
   min-height: 180px; /* Mindesthöhe */
-  background-color: #ffff99;
-  border: 1px solid #e6e673;
+  background-color: var(--note-bg);
+  border: 1px solid var(--note-border);
   border-radius: 3px;
   padding: 15px;
   box-shadow: 2px 5px 10px rgba(0,0,0,0.1);
@@ -259,7 +259,7 @@ body {
   height: 0;
   border-style: solid;
   border-width: 0 0 20px 20px;
-  border-color: transparent transparent #e6e673 transparent;
+  border-color: 1px solid var(--note-border);
   opacity: 0.6;
 }
 
@@ -332,7 +332,7 @@ body {
 }
 
 .notiz.is-editing {
-  box-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+  box-shadow: 1px solid var(--note-border);
   /* Rotation/Scale aus, damit Schrift scharf bleibt */
   transform: none !important;
   z-index: 9999;
@@ -1212,14 +1212,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
   opacity:.6;
 }
 
-/* Notizblock (Quelle) */
-.notizzettel-box{
-  --note-bg:     #ffff99;      /* Fallback */
-  --note-border: #e6e673;      /* Fallback: dunklerer Ton */
-  background-color: var(--note-bg);
-  border: 1px solid var(--note-border);
-  /* ...restliche Eigenschaften... */
-}
+
 .notizzettel-box::after{
   content:"";
   position:absolute; bottom:0; right:0;
@@ -1230,18 +1223,21 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 }
 
 /* Einzelner abgezogener Zettel */
-.notiz{
+.notizzettel-box, .notiz {
   --note-bg:     #ffff99;
   --note-border: #e6e673;
   background-color: var(--note-bg);
   border: 1px solid var(--note-border);
-  /* ... */
 }
-.notiz::after{
-  content:"";
-  position:absolute; bottom:0; right:0;
-  width:0; height:0; border-style:solid;
-  border-width:0 0 16px 16px;
+
+/* Eselsohr nimmt IMMER --note-border */
+.notizzettel-box::after,
+.notiz::after {
+  content: "";
+  position: absolute; bottom: 0; right: 0;
+  width: 0; height: 0;
+  border-style: solid;
+  border-width: 0 0 20px 20px;
   border-color: transparent transparent var(--note-border) transparent;
-  opacity:.6;
+  opacity: .6;
 }
