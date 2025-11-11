@@ -277,6 +277,8 @@ body {
   padding: 8px; /* Mehr Padding für besseren Abstand zum Rand */
   color: #333; /* Dunkle Schriftfarbe für besseren Kontrast */
   letter-spacing: 0.5px; /* Leicht erhöhter Buchstabenabstand für bessere Lesbarkeit */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 /* Aufzählungspunkte etwas anpassen */
@@ -1193,3 +1195,19 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 /* falls du den Stapel direkt in die Area/Box setzt: */
 #card-stack { z-index: 1200 !important; }
 
+/* Defaults bleiben Gelb, können aber überschrieben werden */
+.notizzettel-box, .notiz {
+  --note-bg:     #ffff99;
+  --note-border: #e6e673;
+  background-color: var(--note-bg);
+  border: 1px solid var(--note-border);
+}
+.notizzettel-box::after,
+.notiz::after {
+  content:"";
+  position:absolute; bottom:0; right:0; width:0; height:0;
+  border-style:solid;
+  border-width:0 0 20px 20px;
+  border-color: transparent transparent var(--note-border) transparent;
+  opacity:.6;
+}
