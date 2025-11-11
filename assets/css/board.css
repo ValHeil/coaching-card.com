@@ -675,3 +675,37 @@ html, body {
 .bb-bgrect {
   box-sizing: border-box;
 }
+
+/* Notizblock (Quelle) */
+.notizzettel-box{
+  --note-bg:     #ffff99;      /* Fallback */
+  --note-border: #e6e673;      /* Fallback: dunklerer Ton */
+  background-color: var(--note-bg);
+  border: 1px solid var(--note-border);
+  /* ...restliche Eigenschaften... */
+}
+.notizzettel-box::after{
+  content:"";
+  position:absolute; bottom:0; right:0;
+  width:0; height:0; border-style:solid;
+  border-width:0 0 20px 20px;
+  border-color: transparent transparent var(--note-border) transparent;
+  opacity:.6;
+}
+
+/* Einzelner abgezogener Zettel */
+.notiz{
+  --note-bg:     #ffff99;
+  --note-border: #e6e673;
+  background-color: var(--note-bg);
+  border: 1px solid var(--note-border);
+  /* ... */
+}
+.notiz::after{
+  content:"";
+  position:absolute; bottom:0; right:0;
+  width:0; height:0; border-style:solid;
+  border-width:0 0 16px 16px;
+  border-color: transparent transparent var(--note-border) transparent;
+  opacity:.6;
+}
