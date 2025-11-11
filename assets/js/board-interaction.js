@@ -2721,6 +2721,9 @@ document.addEventListener('DOMContentLoaded', async function() {
           el = document.createElement('div');
           el.id = 'notes-container';
           el.className = 'notizzettel-box notes-container tpl-node';
+        } else {
+          // vorhandenen Container sicher als Notizzettel-Box markieren
+          el.classList.add('notizzettel-box', 'notes-container', 'tpl-node');
         }
 
         // Optik aus Template-Props
@@ -2734,8 +2737,10 @@ document.addEventListener('DOMContentLoaded', async function() {
           el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
         }
 
-        // Position/Größe laut Template
-        place(el, w); // nutzt die vorhandene place(..)-Hilfsfunktion
+        // Position/Größe laut Template (mit Fallback auf feste Notiz-Maße)
+        w.w = (typeof w.w === 'number' && w.w > 0) ? w.w : 180;
+        w.h = (typeof w.h === 'number' && w.h > 0) ? w.h : 180;
+        place(el, w);
 
         // Erst jetzt anhängen (falls neu)
         if (isNew) area.appendChild(el);
