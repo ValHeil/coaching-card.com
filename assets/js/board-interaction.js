@@ -87,9 +87,6 @@ function getWorldSize() {
 }
 
 function fitBoardToViewport() {
-  const raw = vw / worldW;
-  const scale = vw / worldW;
-  area.style.transform = `translate(${offX}px, ${offY}px) scale(${scale})`;
   const area = document.querySelector('.board-area');
   if (!area) return;
 
@@ -104,11 +101,11 @@ function fitBoardToViewport() {
   const vhTotal = window.innerHeight || document.documentElement.clientHeight;
   const vh = vhTotal - adminBarH;
 
-  // --- Fit to width: keine horizontalen Ränder ---
-  const offX  = 0;                 // bündig links
-  const offY  = adminBarH;         // unter die Adminbar (oben bündig)
+  // Fit-to-width
+  const scale = vw / worldW;
+  const offX  = 0;
+  const offY  = adminBarH;
 
-  // Canvas/Welt auf fixe Pixel setzen und transformieren
   area.style.transformOrigin = 'top left';
   area.style.width  = worldW + 'px';
   area.style.height = worldH + 'px';
@@ -119,7 +116,6 @@ function fitBoardToViewport() {
   area.style.padding = '0';
   area.style.transform = `translate(${offX}px, ${offY}px) scale(${scale})`;
 
-  // für Eingabemapping: aktuelle Scale/Offsets ablegen
   area.dataset.scaleX = area.dataset.scaleY = area.dataset.scale = String(scale);
   area.dataset.offsetX = String(offX);
   area.dataset.offsetY = String(offY);
