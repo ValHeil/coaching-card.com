@@ -461,8 +461,8 @@
 /* === Sticky Notes: responsive + autosize + manual resize === */
 .note {
   box-sizing: border-box;
-  min-width: var(--card-w);
-  min-height: var(--card-h);
+  min-width: var(--note-w);
+  min-height: var(--note-h);
   width: max-content;
   height: max-content;
   display: inline-block;
@@ -553,6 +553,8 @@ html, body {
   width: 2400px;            /* <— deine Weltbreite */
   height: 1350px;           /* <— deine Welthöhe  */
   transform-origin: top left;
+  --note-w: 180px;
+  --note-h: 180px;
 }
 
 /* Interaktive Layer füllen die Bühne */

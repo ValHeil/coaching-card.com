@@ -208,8 +208,8 @@ body {
   border: 1px solid #e6e673;
   border-radius: 3px;
   /* Gleiche Grundgröße wie Karten */
-  width: var(--card-w);
-  height: var(--card-h);
+  width: var(--note-w);
+  height: var(--note-h);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -855,8 +855,8 @@ body {
 /* Notiz w�chst wie Karte und kann manuell skaliert werden */
 .notiz {
   box-sizing: border-box;
-  min-width: var(--card-w);
-  min-height: var(--card-h);
+  min-width: var(--note-w);
+  min-height: var(--note-h);
   width: max-content;
   height: max-content;
   display: inline-block;
