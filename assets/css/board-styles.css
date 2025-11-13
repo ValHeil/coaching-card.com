@@ -310,11 +310,6 @@ body {
   50% { caret-color: black }
 }
 
-.notiz-content[contenteditable="true"]:focus {
-  outline: none;
-  border: none;
-  box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0.5);
-}
 
 /* Verbesserte Stile für Notizzettel */
 .notiz-content.editing {
