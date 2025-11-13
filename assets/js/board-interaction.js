@@ -3725,135 +3725,115 @@ document.addEventListener('DOMContentLoaded', async function() {
     
   // Funktion zum Starten des Ziehens eines neuen Notizzettels
   function startDragNewNote(e) {
-    const btn = (typeof e.button === 'number') ? e.button : 0;
-    if (btn !== 0) return;
-    e.preventDefault();
+    try { e.preventDefault(); } catch (_) {}
 
-    const notizId = 'note-' + Date.now();
-    const note = document.createElement('div');
-    note.className = 'notiz';
-    note.id = notizId;
-    note.innerHTML = `<div class="notiz-content" contenteditable="false"></div>`;
+    // 1) Quelle (Notizblock) robust ermitteln
+    const src =
+      (e.currentTarget && e.currentTarget.closest && e.currentTarget.closest('.notizzettel-box')) ||
+      (e.target && e.target.closest && e.target.closest('.notizzettel-box')) ||
+      e.currentTarget || e.target;
 
-    // zuerst den Parent ermitteln
-    const parent = ensureNotesContainer();
+    if (!src) return;
 
-    // Quelle finden (der Block, auf dem mousedown war)
-    const src = (e?.currentTarget?.closest('.notizzettel-box')) || document.querySelector('.notizzettel-box');
+    // 2) Ziel-Container ermitteln (wo die Notizen leben)
+    const notesWrap =
+      document.getElementById('notes-container') ||
+      document.querySelector('.notes-container');
+    if (!notesWrap) return;
 
-    // Grundfarbe + Rand aus den Variablen lesen (oder fallback berechnen)
-    let bg = src ? getComputedStyle(src).getPropertyValue('--note-bg').trim() : '';
-    if (!bg) { bg = (src?.style?.backgroundColor) || '#ffff99'; }
-    let border = src ? getComputedStyle(src).getPropertyValue('--note-border').trim() : '';
-    if (!border) { border = darken(bg, 18); }
+    // 3) Farben aus dem Block holen (CSS Variablen -> Fallback auf computed background/border)
+    const cs = getComputedStyle(src);
+    const bgVar  = (cs.getPropertyValue('--note-bg')     || '').trim();
+    const brVar  = (cs.getPropertyValue('--note-border') || '').trim();
+    const bgBase = bgVar || (cs.backgroundColor || '#ffff99'); // Fallback (altes Gelb)
+    const brBase = brVar || (cs.borderColor    || '#e6e673');
 
-    // Neue Notiz einfärben
-    noteEl.classList.add('notiz');
-    noteEl.style.setProperty('--note-bg', bg);
-    noteEl.style.setProperty('--note-border', border);
+    // 4) Notiz-Element erzeugen
+    const noteEl = document.createElement('div');
+    noteEl.className = 'notiz';
+    // Variablen UND direkte Styles setzen (für alte CSS, die noch feste Farben nutzt)
+    noteEl.style.setProperty('--note-bg', bgBase);
+    noteEl.style.setProperty('--note-border', brBase);
+    noteEl.style.backgroundColor = bgBase;
+    noteEl.style.borderColor     = brBase;
 
-    // (Fallback, falls irgendwo noch alte CSS-Regeln greifen)
-    noteEl.style.backgroundColor = bg;
-    noteEl.style.borderColor = border;
-
-    // Farbwerte auf der neuen Notiz hinterlegen
-    note.style.setProperty('--note-bg', bg);
-    note.style.setProperty('--note-border', bord);
-    note.style.backgroundColor = bg;     // Fallback
-    note.dataset.color = bg;             // läuft im RT/State mit
-
-    parent.appendChild(note);                       
-    attachNoteResizeObserver(note);
-    attachNoteAutoGrow(note);
-    setupNoteEditingHandlers(note);
-    enhanceDraggableNote(note);
-    // Sofort als Drag kennzeichnen und Cursor setzen
-    note.classList.add('being-dragged');
-    document.body.classList.add('ccs-no-select');
-    document.onselectstart = () => false;
-    document.body.style.cursor = 'grabbing';
-
-    const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
-    const parentRect = parent.getBoundingClientRect();
-
-    // Beim ersten Frame Maße haben (für Zentrierung)
-    const halfW = (note.offsetWidth  || 180) / 2;
-    const halfH = (note.offsetHeight || 180) / 2;
-
-    const setPosFromClient = (cx, cy) => {
-      const xu = (cx - parentRect.left) / s;         // unskaliert, relativ zum Parent
-      const yu = (cy - parentRect.top)  / s;
-      note.style.left = (xu - halfW) + 'px';
-      note.style.top  = (yu - halfH) + 'px';
-      note.style.zIndex = Math.max(getHighestInteractiveZIndex() + 1, 1200);
-    };
-
-    // Position unter dem Cursor setzen & während Drag verfolgen
-    setPosFromClient(e.clientX, e.clientY);
-    // SOFORT an alle: neue Notiz an Startposition erzeugen/broadcasten
-    {
-      const stageRect = getStageRect();
-      const px = parseFloat(note.style.left) || 0;
-      const py = parseFloat(note.style.top)  || 0;
-      const pxStage = ((parentRect.left - stageRect.left) / s) + px;
-      const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
-      const { nx, ny } = toNorm(pxStage, pyStage);
-
-      const rect = note.getBoundingClientRect();
-      sendRT({
-        t: 'note_create',
-        id: note.id, nx, ny,
-        z: note.style.zIndex || '',
-        content: note.querySelector('.notiz-content')?.textContent || '',
-        color: note.style.backgroundColor || (note.dataset.color || ''),
-        w: Math.round(rect.width), h: Math.round(rect.height),
-        prio: RT_PRI(), ts: Date.now()
-      });
+    // Content: editierbarer Bereich
+    const content = document.createElement('div');
+    content.className = 'notiz-content';
+    content.setAttribute('contenteditable', 'true');
+    content.setAttribute('spellcheck', 'true');
+    // Optionaler Platzhaltertext:
+    if (!content.getAttribute('data-placeholder')) {
+      content.setAttribute('data-placeholder', 'Notiz …');
     }
-    let _rtTick = 0;
-    const move = (ev) => {
-      setPosFromClient(ev.clientX, ev.clientY);
+    noteEl.appendChild(content);
 
-      const now = performance.now();
-      if (now - _rtTick >= 33) {
-        _rtTick = now;
+    // 5) Erste Position beim Abziehen: Maus-/Touch-Position relativ zum Notes-Container
+    const isTouch = e.type.startsWith('touch');
+    const getPoint = (ev) => {
+      const t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]) || ev;
+      return { x: t.clientX, y: t.clientY };
+    };
+    const start = getPoint(e);
 
-        const stageRect = getStageRect();
-        const px = parseFloat(note.style.left) || 0;
-        const py = parseFloat(note.style.top)  || 0;
-        const pxStage = ((parentRect.left - stageRect.left) / s) + px;
-        const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
-        const { nx, ny } = toNorm(pxStage, pyStage);
+    // Note in den DOM hängen, damit Maße bekannt sind
+    notesWrap.appendChild(noteEl);
+    noteEl.style.position = 'absolute';
+    noteEl.style.zIndex = '100';
 
-        sendRT({ t:'note_move', id:note.id, nx, ny, prio:RT_PRI(), ts:Date.now() });
-      }
+    const wrapRect = notesWrap.getBoundingClientRect();
+    // Startposition leicht versetzt, damit man die „Abzieh“-Bewegung sieht
+    let left = start.x - wrapRect.left + notesWrap.scrollLeft - 20;
+    let top  = start.y - wrapRect.top  + notesWrap.scrollTop  - 20;
+
+    noteEl.style.left = left + 'px';
+    noteEl.style.top  = top  + 'px';
+
+    // 6) Drag-Logik
+    let last = { x: start.x, y: start.y };
+
+    const onMove = (ev) => {
+      const p = getPoint(ev);
+      const dx = p.x - last.x;
+      const dy = p.y - last.y;
+      left += dx;
+      top  += dy;
+      noteEl.style.left = left + 'px';
+      noteEl.style.top  = top  + 'px';
+      last = p;
+      try { ev.preventDefault(); } catch (_) {}
     };
 
-    const up = () => {
-      document.removeEventListener('mousemove', move);
-      document.removeEventListener('mouseup', up);
+    const onUp = (ev) => {
+      // Cleanup Listener
+      window.removeEventListener(isTouch ? 'touchmove' : 'pointermove', onMove, { capture: true });
+      window.removeEventListener(isTouch ? 'touchend'  : 'pointerup',   onUp,   { capture: true });
+      window.removeEventListener(isTouch ? 'touchcancel':'pointercancel', onUp, { capture: true });
 
-      // Cursor/Selection zurücksetzen
-      document.body.classList.remove('ccs-no-select');
-      document.onselectstart = null;
-      document.body.style.removeProperty('cursor');
-      note.classList.remove('being-dragged');
+      // Fokus aufs Tippen setzen (nice UX)
+      try { content.focus(); } catch {}
 
-      // Normierte Koordinaten wie beim späteren Drag ermitteln & senden
-      const stageRect = getStageRect();
-      const px = parseFloat(note.style.left) || 0;
-      const py = parseFloat(note.style.top)  || 0;
-      const pxStage = ((parentRect.left - stageRect.left) / s) + px;
-      const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
-      const { nx, ny } = toNorm(pxStage, pyStage);
-      sendRT({ t:'note_move', id:note.id, nx, ny, prio:RT_PRI(), ts:Date.now() });
+      // Optional: Autosave, falls vorhanden
+      try {
+        if (typeof scheduleAutosave === 'function') scheduleAutosave('note:add');
+        else if (typeof saveBoardStateDebounced === 'function') saveBoardStateDebounced();
+        else if (typeof saveBoardState === 'function') saveBoardState();
+      } catch {}
 
-      if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState();
+      try { ev.preventDefault(); } catch (_) {}
     };
 
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', up);
+    // Listener registrieren
+    window.addEventListener(isTouch ? 'touchmove' : 'pointermove', onMove, { capture: true, passive: false });
+    window.addEventListener(isTouch ? 'touchend'  : 'pointerup',   onUp,   { capture: true });
+    window.addEventListener(isTouch ? 'touchcancel':'pointercancel', onUp, { capture: true });
+
+    // Für Pointer-Events: Capture sicherstellen (optional)
+    if (noteEl.setPointerCapture && e.pointerId != null) {
+      try { noteEl.setPointerCapture(e.pointerId); } catch {}
+    }
   }
+
 
 
   // Hilfsfunktion, um den höchsten z-index zu finden
