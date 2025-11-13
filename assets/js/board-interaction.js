@@ -41,6 +41,23 @@ function asBool(v) {
   return v === true || v === 'true' || v === 1 || v === '1';
 }
 
+// --- Farb-Helper: aus beliebiger CSS-Farbe ~18% dunkler berechnen ---
+function getRGB(col){
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.fillStyle = '#000'; // reset
+  ctx.fillStyle = col || '#000'; // normalisiert z.B. "#ff0" -> "rgb(255,255,0)"
+  const m = ctx.fillStyle.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+  if (m) return { r:+m[1], g:+m[2], b:+m[3] };
+  // Fallback Hex
+  const h = (ctx.fillStyle.replace('#','')).padStart(6,'0');
+  return { r:parseInt(h.slice(0,2),16), g:parseInt(h.slice(2,4),16), b:parseInt(h.slice(4,6),16) };
+}
+function darken(col, pct = 18){
+  const {r,g,b} = getRGB(col);
+  const d = Math.round(2.55 * pct); // 18% ≈ 46
+  const rr = Math.max(0, r - d), gg = Math.max(0, g - d), bb = Math.max(0, b - d);
+  return `rgb(${rr}, ${gg}, ${bb})`;
+}
 
 
 // Board-Rechteck holen
@@ -2741,8 +2758,14 @@ document.addEventListener('DOMContentLoaded', async function() {
           el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
         }
 
-        el.style.setProperty('--note-bg',     p.background || p.color   || '#ffff99');
-        el.style.setProperty('--note-border', p.borderColor             || '#e6e673');
+        const bg = (w.props?.color) || (w.props?.background) || '#ffff99';
+        const border = darken(bg, 18);
+        el.style.setProperty('--note-bg', bg);
+        el.style.setProperty('--note-border', border);
+
+        // Fallback für Alt-CSS)
+        el.style.backgroundColor = bg;
+        el.style.borderColor = border;
 
         // Position/Größe laut Template (mit Fallback auf feste Notiz-Maße)
         w.w = (typeof w.w === 'number' && w.w > 0) ? w.w : 180;
@@ -3712,25 +3735,26 @@ document.addEventListener('DOMContentLoaded', async function() {
     note.id = notizId;
     note.innerHTML = `<div class="notiz-content" contenteditable="false"></div>`;
 
-    // <<< NEU: zuerst den Parent ermitteln
+    // zuerst den Parent ermitteln
     const parent = ensureNotesContainer();
 
-    // Quelle/Farbe vom Block abgreifen
-    const src =
-      (e.target?.closest('.notizzettel-box, .notes-container')) ||
-      (e.currentTarget?.closest('.notizzettel-box, .notes-container')) ||
-      parent;
+    // Quelle finden (der Block, auf dem mousedown war)
+    const src = (e?.currentTarget?.closest('.notizzettel-box')) || document.querySelector('.notizzettel-box');
 
-    const bg =
-      src.style.getPropertyValue('--note-bg') ||
-      getComputedStyle(src).getPropertyValue('--note-bg') ||
-      src.style.background || src.style.backgroundColor ||
-      getComputedStyle(src).backgroundColor || '#ffff99';
+    // Grundfarbe + Rand aus den Variablen lesen (oder fallback berechnen)
+    let bg = src ? getComputedStyle(src).getPropertyValue('--note-bg').trim() : '';
+    if (!bg) { bg = (src?.style?.backgroundColor) || '#ffff99'; }
+    let border = src ? getComputedStyle(src).getPropertyValue('--note-border').trim() : '';
+    if (!border) { border = darken(bg, 18); }
 
-    const bord =
-      src.style.getPropertyValue('--note-border') ||
-      getComputedStyle(src).getPropertyValue('--note-border') ||
-      getComputedStyle(src).borderColor || '#e6e673';
+    // Neue Notiz einfärben
+    noteEl.classList.add('notiz');
+    noteEl.style.setProperty('--note-bg', bg);
+    noteEl.style.setProperty('--note-border', border);
+
+    // (Fallback, falls irgendwo noch alte CSS-Regeln greifen)
+    noteEl.style.backgroundColor = bg;
+    noteEl.style.borderColor = border;
 
     // Farbwerte auf der neuen Notiz hinterlegen
     note.style.setProperty('--note-bg', bg);
