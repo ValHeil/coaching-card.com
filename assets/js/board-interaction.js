@@ -1746,9 +1746,21 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Maximal zulässige Notizgröße dynamisch relativ zum Viewport
   function getMaxNoteSize() {
+    // Board-Bühne bestimmen
+    const area =
+      document.querySelector('.board-area') ||
+      document.getElementById('session-board') ||
+      document.body;
+
+    const rect = area.getBoundingClientRect();
+    const s = parseFloat(area.dataset.scale || '1') || 1;
+    const w = rect.width / s;
+    const h = rect.height / s;
+
+    // „vernünftige“ Grenzen – kannst du bei Bedarf anpassen
     return {
-      width: Math.min(Math.floor(window.innerWidth * 0.80), 900),
-      height: Math.min(Math.floor(window.innerHeight * 0.70), 700)
+      width:  Math.max(220, Math.min(w * 0.9, 900)),
+      height: Math.max(150, Math.min(h * 0.9, 900))
     };
   }
 
@@ -1802,101 +1814,61 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Lässt eine Notiz ohne Scrollbalken mit dem Inhalt wachsen.
   // Breite wächst zuerst bis zur Maximalbreite; danach erhöht sich die Höhe.
   function attachNoteAutoGrow(noteEl) {
-    try {
-      if (!noteEl || noteEl._autoGrowAttached) return;
-      const content = noteEl.querySelector('.notiz-content, .note-content');
-      if (!content) return;
+    if (!noteEl || noteEl._autoGrowAttached) return;
+    noteEl._autoGrowAttached = true;
 
-      function px(n) { return isNaN(n) ? 0 : n; }
+    const content = noteEl.querySelector('.notiz-content') || noteEl.querySelector('.note-content');
+    if (!content) return;
 
-      function recalc() {
-        const max = getMaxNoteSize();
-        const cs = getComputedStyle(noteEl);
-        const padX = px(parseFloat(cs.paddingLeft)) + px(parseFloat(cs.paddingRight))
-                   + px(parseFloat(cs.borderLeftWidth)) + px(parseFloat(cs.borderRightWidth));
-        const padY = px(parseFloat(cs.paddingTop)) + px(parseFloat(cs.paddingBottom))
-                   + px(parseFloat(cs.borderTopWidth)) + px(parseFloat(cs.borderBottomWidth));
+    const save =
+      (typeof saveCurrentBoardState === 'function')
+        ? () => saveCurrentBoardState()
+        : () => {};
 
-        // Min-Größen aus CSS berücksichtigen
-        const minW = Math.max(0, px(parseFloat(cs.minWidth)) || 0);
-        const minH = Math.max(0, px(parseFloat(cs.minHeight)) || 0);
+    const recalc = () => {
+      const max = getMaxNoteSize();
+      const cs  = getComputedStyle(noteEl);
+      const padTop    = parseFloat(cs.paddingTop)    || 0;
+      const padBottom = parseFloat(cs.paddingBottom) || 0;
+      const padY = padTop + padBottom;
 
-        noteEl._autoGrowInProgress = true;
+      const area = document.querySelector('.board-area');
+      const s = parseFloat(area?.dataset.scale || '1') || 1;
 
-        // Zuerst horizontale Wunschbreite ermitteln (ohne Umbruch)
-        const prevWhiteSpace = content.style.whiteSpace;
-        const prevWidthStyle = content.style.width;
-        content.style.whiteSpace = 'nowrap';
-        content.style.width = 'max-content';
+      const rect = noteEl.getBoundingClientRect();
+      const currentH = rect.height / s;
 
-        // temporär auf auto setzen, um natürliche Größe zu ermitteln
-        noteEl.style.width = 'auto';
-        noteEl.style.height = 'auto';
+      noteEl._autoGrowInProgress = true;
 
-        // Zielbreite: Inhalt + Rahmen, zwischen min und max
-        let targetW = Math.ceil(content.scrollWidth + padX);
-        targetW = Math.max(targetW, minW);
-        if (targetW > max.width) {
-          targetW = max.width;
-          content.style.whiteSpace = 'normal'; // danach in die Höhe wachsen
-          content.style.wordBreak = 'break-word';
-          content.style.overflowWrap = 'anywhere';
-        }
+      // Höhe freigeben → gewünschte Höhe messen
+      noteEl.style.height = 'auto';
+      const needed = content.scrollHeight + padY;
+      const targetH = Math.min(max.height, needed);
 
-        // Setzen, nur wenn wirklich geändert (verhindert ResizeObserver-Jitter)
-        const sX = (parseFloat(document.querySelector('.board-area')?.dataset.scaleX || '1') || 1);
-        const sY = (parseFloat(document.querySelector('.board-area')?.dataset.scaleY || '1') || 1);
-        const currentW = Math.ceil(noteEl.getBoundingClientRect().width  / sX);
-        const currentH = Math.ceil(noteEl.getBoundingClientRect().height / sY);
-
-        if (Math.abs(currentW - targetW) > 1) {
-          noteEl.style.width = targetW + 'px';
-        }
-
-        // Höhe: Inhaltshöhe bei gesetzter Breite
-        let targetH = Math.ceil(content.scrollHeight + padY);
-        targetH = Math.max(targetH, minH);
-        if (targetH > max.height) targetH = max.height;
-        if (Math.abs(currentH - targetH) > 1) {
-          noteEl.style.height = targetH + 'px';
-        }
-
-        // Wenn Max-Höhe erreicht, vertikales Scrollen erlauben, sonst sichtbar lassen
-        if (targetH >= max.height - 1) {
-          noteEl.style.overflowY = 'auto';
-        } else {
-          noteEl.style.overflowY = 'visible';
-        }
-
-        // Nach der Messung immer umbruchfähig rendern
-        content.style.width = '100%';
-        content.style.whiteSpace = 'normal';
-        content.style.wordBreak = 'break-word';
-        content.style.overflowWrap = 'anywhere';
-        noteEl._autoGrowInProgress = false;
-        // Beim Ziehen KEIN Autosave (vermeidet Snapshot-Jitter)
-        if (!noteEl.classList.contains('being-dragged')) {
-          debouncedSave();
-        }
-
-        debouncedSave();
+      if (Math.abs(currentH - targetH) > 1) {
+        noteEl.style.height = targetH + 'px';
       }
 
-      // Speichern, um extern aufrufen zu können (z. B. bei window.resize)
-      noteEl._autoGrowRecalc = recalc;
+      // Scrollbar nur, wenn wir am Limit sind
+      if (needed > max.height - 1) {
+        noteEl.style.overflowY = 'auto';
+      } else {
+        noteEl.style.overflowY = 'visible';
+      }
 
-      // Initial berechnen
-      requestAnimationFrame(recalc);
+      noteEl._autoGrowInProgress = false;
 
-      // Auf Eingaben reagieren
-      ['input', 'keyup', 'change'].forEach(ev => content.addEventListener(ev, recalc));
-      const mo = new MutationObserver(recalc);
-      mo.observe(content, { childList: true, characterData: true, subtree: true });
+      try { save(); } catch {}
+    };
 
-      noteEl._autoGrowAttached = true;
-    } catch (e) {
-      console.warn('AutoGrow-Setup fehlgeschlagen:', e);
-    }
+    // FÜR andere Stellen verfügbar machen (z.B. resize Handler)
+    noteEl._autoGrowRecalc = recalc;
+
+    // Inhalt hat sich geändert → neu messen
+    content.addEventListener('input', recalc);
+
+    // Erste Berechnung leicht verzögert
+    setTimeout(recalc, 0);
   }
   
   // Focus Note Texte nach Board-Typ
@@ -3945,7 +3917,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       L('EDIT_START_SEND_LOCK', { id: notiz.id, by: RT.uid });
     });
     
-    //Hilfsfunktionen für KeyDown
+      //Hilfsfunktionen für KeyDown
     function insertTextAtCursor(el, text) {
       el.focus();
       const sel = window.getSelection();
