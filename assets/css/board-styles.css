@@ -204,8 +204,8 @@ body {
 
 /* Notizzettel Box (Post-It Stil) */
 .notizzettel-box {
-  background-color: var(--note-bg);
-  border: 1px solid var(--note-border);
+  background: var(--note-bg, #ffff99);
+  border: 1px solid var(--note-border, #e6e673);
   border-radius: 3px;
   /* Gleiche Grundgröße wie Karten */
   width: var(--note-w);
@@ -228,7 +228,7 @@ body {
   height: 0;
   border-style: solid;
   border-width: 0 0 20px 20px;
-  border-color: transparent transparent var(--note-border) transparent;
+  border-color: transparent transparent var(--note-border, #e6e673) transparent;
   transform: rotate(0deg);
   opacity: 0.6;
 }
@@ -238,8 +238,8 @@ body {
   position: absolute;
   width: 180px; /* Feste Breite */
   min-height: 180px; /* Mindesthöhe */
-  background-color: var(--note-bg);
-  border: 1px solid var(--note-border);
+  background: var(--note-bg, #ffff99);
+  border: 1px solid var(--note-border, #e6e673);
   border-radius: 3px;
   padding: 15px;
   box-shadow: 2px 5px 10px rgba(0,0,0,0.1);
@@ -259,7 +259,7 @@ body {
   height: 0;
   border-style: solid;
   border-width: 0 0 20px 20px;
-  border-color: transparent transparent var(--note-border) transparent;
+  border-color: transparent transparent var(--note-border, #e6e673) transparent;
   opacity: 0.6;
 }
 
@@ -1208,7 +1208,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
   position:absolute; bottom:0; right:0; width:0; height:0;
   border-style:solid;
   border-width:0 0 20px 20px;
-  border-color: transparent transparent var(--note-border) transparent;
+  border-color: transparent transparent var(--note-border, #e6e673) transparent;
   opacity:.6;
 }
 
@@ -1218,7 +1218,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
   position:absolute; bottom:0; right:0;
   width:0; height:0; border-style:solid;
   border-width:0 0 20px 20px;
-  border-color: transparent transparent var(--note-border) transparent;
+  border-color: transparent transparent var(--note-border, #e6e673) transparent;
   opacity:.6;
 }
 
@@ -1226,8 +1226,8 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 .notizzettel-box, .notiz {
   --note-bg:     #ffff99;
   --note-border: #e6e673;
-  background-color: var(--note-bg);
-  border: 1px solid var(--note-border);
+  background: var(--note-bg, #ffff99);
+  border: 1px solid var(--note-border, #e6e673);
 }
 
 /* Eselsohr nimmt IMMER --note-border */
@@ -1238,6 +1238,6 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
   width: 0; height: 0;
   border-style: solid;
   border-width: 0 0 20px 20px;
-  border-color: transparent transparent var(--note-border) transparent;
+  border-color: transparent transparent var(--note-border, #e6e673) transparent;
   opacity: .6;
 }
