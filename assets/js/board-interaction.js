@@ -1912,39 +1912,32 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Erste Berechnung leicht verzögert
       setTimeout(recalc, 0);
 
-      // ------------------------------------------------------------
-      // 2) Breite VOR der Eingabe anpassen, damit der nächste
-      //    Buchstabe noch in die aktuelle Zeile passt.
-      //    → kein „Word wrap“ + zurückspringender Text.
-      // ------------------------------------------------------------
+      // ------------------------------------------------------------------
+      // VOR der Texteingabe die Breite nur dann vergrößern,
+      // wenn die LETZTE ZEILE sonst umbrechen würde.
+      // → der Zettel wächst in der Breite, bevor der Text in die nächste
+      //   Zeile rutscht, und zwar nur so viel wie nötig.
+      // ------------------------------------------------------------------
+      const ensureLineMeasureSpan = () => {
+        if (noteEl._lineMeasureSpan) return noteEl._lineMeasureSpan;
 
-      // Hilfsfunktion: Zeichenbreite effizient messen
-      const measureCharWidth = (ch) => {
-        if (!ch) return 0;
+        const span = document.createElement('span');
+        span.style.position   = 'absolute';
+        span.style.visibility = 'hidden';
+        span.style.whiteSpace = 'pre';
+        span.style.padding    = '0';
+        span.style.margin     = '0';
+        span.style.border     = '0';
 
-        // Ein verstecktes Span je Notizzettel wiederverwenden
-        if (!noteEl._charMeasureSpan) {
-          const span = document.createElement('span');
-          span.style.position   = 'absolute';
-          span.style.visibility = 'hidden';
-          span.style.whiteSpace = 'pre';
-          span.style.padding    = '0';
-          span.style.margin     = '0';
-          span.style.border     = '0';
+        const csContent = getComputedStyle(content);
+        span.style.fontFamily    = csContent.fontFamily;
+        span.style.fontSize      = csContent.fontSize;
+        span.style.fontWeight    = csContent.fontWeight;
+        span.style.letterSpacing = csContent.letterSpacing;
 
-          const csContent = getComputedStyle(content);
-          span.style.fontFamily    = csContent.fontFamily;
-          span.style.fontSize      = csContent.fontSize;
-          span.style.fontWeight    = csContent.fontWeight;
-          span.style.letterSpacing = csContent.letterSpacing;
-
-          noteEl._charMeasureSpan = span;
-          document.body.appendChild(span);
-        }
-
-        const span = noteEl._charMeasureSpan;
-        span.textContent = ch;
-        return span.getBoundingClientRect().width;
+        document.body.appendChild(span);
+        noteEl._lineMeasureSpan = span;
+        return span;
       };
 
       if ('onbeforeinput' in content) {
@@ -1954,7 +1947,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           // Nur „normale“ Texteingaben (kein Backspace, kein Enter etc.)
           if (e.inputType !== 'insertText' && e.inputType !== 'insertCompositionText') return;
           if (typeof e.data !== 'string' || !e.data) return;
-          if (e.data === '\n') return; // Enter → kein Breitenwachstum
+          if (e.data === '\n') return; // Enter → Breite nicht ändern
 
           const max  = getMaxNoteSize();
           const area = document.querySelector('.board-area');
@@ -1963,29 +1956,33 @@ document.addEventListener('DOMContentLoaded', async function() {
           const rect     = noteEl.getBoundingClientRect();
           const currentW = rect.width / s;
 
-          // Schon am maximalen Wert → nichts tun
+          // Schon an der Maximalbreite → nichts tun
           if (currentW >= max.width - 1) return;
 
-          // Innenbreite der Note (ohne Padding)
+          // Innenbreite (ohne Padding) bestimmen
           const csNote   = getComputedStyle(noteEl);
           const padLeft  = parseFloat(csNote.paddingLeft)  || 0;
           const padRight = parseFloat(csNote.paddingRight) || 0;
           const innerW   = currentW - (padLeft + padRight);
 
-          // Aktuelle Textbreite (ohne die neue Eingabe)
-          const textW = content.scrollWidth;
+          // Text der letzten Zeile bestimmen
+          const fullText = (content.innerText || '')
+            .replace(/\r\n/g, '\n')
+            .replace(/\u00A0/g, ' ');
+          const lines    = fullText.split('\n');
+          const lastLine = lines[lines.length - 1] || '';
 
-          // Breite des nächsten Zeichens
-          const charW = measureCharWidth(e.data);
-          if (!charW) return;
+          // Wie breit wäre die letzte Zeile inkl. des neuen Zeichens?
+          const span = ensureLineMeasureSpan();
+          span.textContent = lastLine + e.data;
+          const neededLineW = span.getBoundingClientRect().width;
 
-          // Passt der neue Buchstabe noch in die aktuelle Zeile?
-          if (textW + charW <= innerW + 0.5) return;
+          // Passt der neue Buchstabe noch in die aktuelle Breite?
+          if (neededLineW <= innerW + 0.5) return;
 
-          // Sonst Note VORHER so verbreitern, dass genau dieser Buchstabe
-          // noch in die Zeile passt.
-          const extra  = (textW + charW) - innerW;
-          let targetW  = currentW + extra;
+          // Sonst die Note genau so viel verbreitern,
+          // dass die Zeile inkl. Buchstabe hineinpasst
+          let targetW = currentW + (neededLineW - innerW);
           if (targetW > max.width) targetW = max.width;
 
           if (targetW > currentW + 0.5) {
@@ -1993,6 +1990,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         });
       }
+
     }
 
   
