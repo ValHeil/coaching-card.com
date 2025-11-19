@@ -1830,27 +1830,62 @@ document.addEventListener('DOMContentLoaded', async function() {
       const cs  = getComputedStyle(noteEl);
       const padTop    = parseFloat(cs.paddingTop)    || 0;
       const padBottom = parseFloat(cs.paddingBottom) || 0;
+      const padLeft   = parseFloat(cs.paddingLeft)   || 0;
+      const padRight  = parseFloat(cs.paddingRight)  || 0;
       const padY = padTop + padBottom;
+      const padX = padLeft + padRight;
 
       const area = document.querySelector('.board-area');
       const s = parseFloat(area?.dataset.scale || '1') || 1;
 
       const rect = noteEl.getBoundingClientRect();
+      const currentW = rect.width / s;
       const currentH = rect.height / s;
 
       noteEl._autoGrowInProgress = true;
 
-      // Höhe freigeben → gewünschte Höhe messen
-      noteEl.style.height = 'auto';
-      const needed = content.scrollHeight + padY;
-      const targetH = Math.min(max.height, needed);
+      // Platzhalter-Text erkennen (wie in setupNoteEditingHandlers)
+      const rawText = (content.textContent || '').replace(/\u200B/g, '').trim();
+      const PLACEHOLDER_TEXT     = 'Schreiben sie hier ihren Text...';
+      const PLACEHOLDER_TEXT_OLD = 'Schreiben sie hier ihren Text.';
+      const isPlaceholder =
+        rawText === PLACEHOLDER_TEXT ||
+        rawText === PLACEHOLDER_TEXT_OLD;
 
+      // Solange nur der Platzhalter steht und NICHT editiert wird:
+      // feste Grundgröße (200×200) beibehalten.
+      if (isPlaceholder && !noteEl.classList.contains('is-editing')) {
+        const minW = cs.minWidth;
+        const minH = cs.minHeight;
+        if (minW && minW !== '0px' && minW !== 'auto') noteEl.style.width  = minW;
+        if (minH && minH !== '0px' && minH !== 'auto') noteEl.style.height = minH;
+        noteEl.style.overflowY = 'visible';
+        noteEl._autoGrowInProgress = false;
+        return;
+      }
+
+      // Breite & Höhe freigeben → gewünschte Größe messen
+      noteEl.style.width  = 'auto';
+      noteEl.style.height = 'auto';
+
+      const neededH = content.scrollHeight + padY;
+      const neededW = content.scrollWidth  + padX;
+
+      const targetH = Math.min(max.height, neededH);
+      let   targetW = Math.min(max.width,  neededW);
+
+      const minWidthPx = parseFloat(cs.minWidth) || 0;
+      if (targetW < minWidthPx) targetW = minWidthPx;
+
+      if (Math.abs(currentW - targetW) > 1) {
+        noteEl.style.width = targetW + 'px';
+      }
       if (Math.abs(currentH - targetH) > 1) {
         noteEl.style.height = targetH + 'px';
       }
 
-      // Scrollbar nur, wenn wir am Limit sind
-      if (needed > max.height - 1) {
+      // Scrollbar nur, wenn wir am Höhen-Limit sind
+      if (neededH > max.height - 1) {
         noteEl.style.overflowY = 'auto';
       } else {
         noteEl.style.overflowY = 'visible';
@@ -1860,6 +1895,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       try { save(); } catch {}
     };
+
 
     // FÜR andere Stellen verfügbar machen (z.B. resize Handler)
     noteEl._autoGrowRecalc = recalc;
@@ -2740,9 +2776,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         el.style.borderColor = border;
 
         // Position/Größe laut Template (mit Fallback auf feste Notiz-Maße)
-        w.w = (typeof w.w === 'number' && w.w > 0) ? w.w : 180;
-        w.h = (typeof w.h === 'number' && w.h > 0) ? w.h : 180;
-        place(el, w);
+       w.w = (typeof w.w === 'number' && w.w > 0) ? w.w : 200;
+       w.h = (typeof w.h === 'number' && w.h > 0) ? w.h : 200;
+       place(el, w);
 
         // Erst jetzt anhängen (falls neu)
         if (isNew) area.appendChild(el);
