@@ -1845,33 +1845,42 @@ document.addEventListener('DOMContentLoaded', async function() {
       const rect = noteEl.getBoundingClientRect();
       const currentH = rect.height / s;
 
+      // Basis-Höhe einmalig merken (z.B. 200px aus dem CSS, skaliert)
+      if (typeof noteEl._baseHeight !== 'number') {
+        noteEl._baseHeight = currentH;
+      }
+      const baseH = noteEl._baseHeight;
+
       noteEl._autoGrowInProgress = true;
 
       // Platzhalter erkennen (gleiche Texte wie im Editing-Code)
       const rawText = (content.textContent || '').replace(/\u200B/g, '').trim();
-      const PLACEHOLDER_TEXT     = 'Schreiben sie hier ihren Text...';
+      const PLACEHOLDER_TEXT     = 'Schreiben sie hier ihren Text.';
       const PLACEHOLDER_TEXT_OLD = 'Schreiben sie hier ihren Text.';
       const isPlaceholder =
         rawText === PLACEHOLDER_TEXT ||
         rawText === PLACEHOLDER_TEXT_OLD;
 
       // Solange nur der Platzhalter steht und NICHT editiert wird:
-      // Grundgröße aus CSS beibehalten (z.B. 200×200).
+      // Grundgröße (Basis-Höhe) beibehalten.
       if (isPlaceholder && !noteEl.classList.contains('is-editing')) {
-        const minH = cs.minHeight;
-        if (minH && minH !== '0px' && minH !== 'auto') {
-          noteEl.style.height = minH;
-        }
+        noteEl.style.height   = baseH + 'px';
         noteEl.style.overflowY = 'visible';
         noteEl._autoGrowInProgress = false;
         return;
       }
 
-      // Höhe freigeben → gewünschte Höhe messen
-      noteEl.style.height = 'auto';
-
+      // Natürliche Inhaltshöhe ermitteln
       const neededH = content.scrollHeight + padY;
-      const targetH = Math.min(max.height, neededH);
+
+      let targetH;
+      if (neededH <= baseH + 1) {
+        // Text passt in die Grundhöhe → Note bleibt starr
+        targetH = baseH;
+      } else {
+        // Text würde überlaufen → Note wächst mit bis zum Maximalwert
+        targetH = Math.min(max.height, neededH);
+      }
 
       // Nur anpassen, wenn sich wirklich etwas ändert
       if (Math.abs(currentH - targetH) > 1) {
@@ -1932,6 +1941,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
     }
   }
+
 
   
   // Focus Note Texte nach Board-Typ
