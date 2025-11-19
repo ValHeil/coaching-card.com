@@ -1916,13 +1916,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     // VOR der Texteingabe die Breite nur dann vergrößern,
     // wenn die LETZTE ZEILE sonst umbrechen würde.
     //
-    // NEU:
+    // Verhalten:
     // - Wenn ein weiterer Buchstabe nicht mehr in die Zeile passt:
-    //   1) Ist die Maximalbreite noch nicht erreicht → Note um genau
-    //      die Breite eines Zeichens verbreitern.
-    //   2) Ist die Maximalbreite erreicht → das aktuelle Wort komplett
-    //      in die nächste Zeile verschieben und dort den Buchstaben
-    //      einfügen.
+    //   1) Ist die Maximalbreite noch nicht erreicht → Note wird
+    //      so weit verbreitert, dass die Zeile inkl. Buchstabe
+    //      hineinpasst, und DANN fügen wir den Buchstaben ein.
+    //   2) Ist die Maximalbreite erreicht → das aktuelle Wort
+    //      komplett in die nächste Zeile verschieben und dort
+    //      den Buchstaben einfügen.
+    //
+    // Wichtig: Wir verhindern in diesen Fällen das Default-Insert
+    // und fügen den Text selbst ein, damit der Buchstabe direkt
+    // an der „neuen“ Position erscheint.
     // ------------------------------------------------------------------
     const ensureLineMeasureSpan = () => {
       if (noteEl._lineMeasureSpan) return noteEl._lineMeasureSpan;
@@ -1944,6 +1949,31 @@ document.addEventListener('DOMContentLoaded', async function() {
       document.body.appendChild(span);
       noteEl._lineMeasureSpan = span;
       return span;
+    };
+
+    // Cursor ans Ende setzen + Höhe/Autosave triggern
+    const applyManualTextChange = (newText) => {
+      content.textContent = newText;
+
+      // Cursor ans Ende
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(content);
+        range.collapse(false);
+        const sel = window.getSelection && window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      } catch {}
+
+      // Höhe neu berechnen und RT/Autosave triggern
+      try { recalc(); } catch {}
+
+      try {
+        const evt = new Event('input', { bubbles: true });
+        content.dispatchEvent(evt);
+      } catch {}
     };
 
     // Hilfsfunktion: komplettes aktuelles Wort in die nächste Zeile schieben
@@ -1976,27 +2006,26 @@ document.addEventListener('DOMContentLoaded', async function() {
         newText = before + '\n' + wordAndRest + (newChar || '');
       }
 
-      content.textContent = newText;
+      applyManualTextChange(newText);
+    };
 
-      // Cursor ans Ende setzen
-      try {
-        const range = document.createRange();
-        range.selectNodeContents(content);
-        range.collapse(false);
-        const sel = window.getSelection && window.getSelection();
-        if (sel) {
-          sel.removeAllRanges();
-          sel.addRange(range);
-        }
-      } catch {}
+    // Prüft, ob der Caret am Ende des Inhalts steht
+    const isCaretAtEndOfContent = () => {
+      if (!window.getSelection) return true;
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return true;
 
-      // Höhe neu berechnen und RT/Autosave triggern
-      try { recalc(); } catch {}
+      const range = sel.getRangeAt(0);
+      if (!content.contains(range.startContainer) || !content.contains(range.endContainer)) {
+        return true; // Cursor außerhalb des Notiz-Inhalts → nicht eingreifen
+      }
 
-      try {
-        const evt = new Event('input', { bubbles: true });
-        content.dispatchEvent(evt);
-      } catch {}
+      if (!range.collapsed) return false; // Markierung → nicht eingreifen
+
+      const probe = range.cloneRange();
+      probe.setEndAfter(content.lastChild || content);
+      const rest = probe.toString();
+      return !rest; // nichts mehr nach dem Cursor
     };
 
     if ('onbeforeinput' in content) {
@@ -2005,8 +2034,12 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         // Nur „normale“ Texteingaben (kein Backspace, kein Enter etc.)
         if (e.inputType !== 'insertText' && e.inputType !== 'insertCompositionText') return;
+        if (e.isComposing) return;
         if (typeof e.data !== 'string' || !e.data) return;
         if (e.data === '\n') return; // Enter → Breite nicht ändern
+
+        // Nur behandeln, wenn der Cursor wirklich am Ende ist
+        if (!isCaretAtEndOfContent()) return;
 
         const max  = getMaxNoteSize();
         const area = document.querySelector('.board-area');
@@ -2021,7 +2054,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const padRight = parseFloat(csNote.paddingRight) || 0;
         const innerW   = currentW - (padLeft + padRight);
 
-        // Text der letzten Zeile bestimmen
+        // Text-Inhalt (ganzer Zettel, mit \n)
         const fullText = (content.innerText || '')
           .replace(/\r\n/g, '\n')
           .replace(/\u00A0/g, ' ');
@@ -2035,28 +2068,34 @@ document.addEventListener('DOMContentLoaded', async function() {
         const neededLineW = span.getBoundingClientRect().width;
 
         // Passt der neue Buchstabe noch in die aktuelle Breite?
-        if (neededLineW <= innerW + 0.5) return;
+        if (neededLineW <= innerW + 0.5) {
+          // Passt → Browser darf ganz normal einfügen
+          return;
+        }
 
-        // Wie breit ist der einzelne eingegebene Buchstabe?
-        span.textContent = e.data;
-        const charW = span.getBoundingClientRect().width || 0;
+        // Wieviel zusätzliche Inhalts-Breite brauchen wir?
+        const deltaContentW = neededLineW - innerW;
+        const maxW          = max.width;
+        let   targetW       = currentW + deltaContentW;
 
-        const maxW = max.width;
-
-        // 1) Maximalbreite erreicht → aktuelles Wort in nächste Zeile verschieben
-        if (!charW || currentW >= maxW - 0.5 || currentW + charW > maxW) {
+        // Wenn wir selbst bei Verbreiterung über Max kommen würden:
+        if (targetW > maxW) {
+          // → wir brechen an Wortgrenze in die nächste Zeile um
           e.preventDefault();
           wrapWordToNextLine(e.data);
           return;
         }
 
-        // 2) Sonst: Note genau um die Breite dieses Zeichens vergrößern
-        let targetW = currentW + charW;
-        if (targetW > maxW) targetW = maxW;
+        // Hier: Wir können den Zettel noch verbreitern,
+        // TUN das zuerst und fügen dann selbst den Buchstaben ein.
+        e.preventDefault();
 
         if (targetW > currentW + 0.5) {
           noteEl.style.width = targetW + 'px';
         }
+
+        const newText = fullText + e.data; // Cursor ist am Ende
+        applyManualTextChange(newText);
       });
     }
   }
