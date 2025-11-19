@@ -851,10 +851,10 @@ body {
 /* === Notizzettel: responsive + auto-sizing overrides === */
 .notiz {
   box-sizing: border-box;
-  width: var(--note-w);      /* gleiche Breite wie bisher, aber jetzt fix als Start */
-  height: var(--note-h);     /* gleiche Höhe → quadratisch */
   min-width: var(--note-w);
   min-height: var(--note-h);
+  width: max-content;
+  height: max-content;
   display: inline-block;
   resize: both;              /* manueller Resize bleibt möglich */
   overflow: visible;         /* keine Scrollbalken; Notiz wächst */
@@ -1170,7 +1170,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
   background: transparent;
 }
 
-:root { --note-w: 180px; --note-h: 180px; }
+:root { --note-w: 200px; --note-h: 200px; }
 
 /* Description: keine sichtbaren Ränder/Outlines beim Editieren */
 .board-description-box [contenteditable="true"] {
