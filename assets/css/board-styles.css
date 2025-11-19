@@ -853,12 +853,15 @@ body {
   box-sizing: border-box;
   min-width: var(--note-w);
   min-height: var(--note-h);
-  width: max-content;
-  height: max-content;
+
+  /* Start: exakt quadratisch 200×200 */
+  width: var(--note-w);
+  height: var(--note-h);
+
   display: inline-block;
-  resize: both;              /* manueller Resize bleibt möglich */
-  overflow: visible;         /* keine Scrollbalken; Notiz wächst */
-  max-width: 80vw;           /* Sicherheit, nicht aus dem Viewport */
+  resize: both;           /* manueller Resize bleibt möglich */
+  overflow: visible;      /* keine Scrollbalken; Notiz wächst */
+  max-width: 80vw;        /* Sicherheit, nicht aus dem Viewport */
   max-height: 70vh;
 }
 
