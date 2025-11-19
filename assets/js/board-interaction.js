@@ -1812,10 +1812,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   // Lässt eine Notiz ohne Scrollbalken mit dem Inhalt wachsen.
-  // - Höhe wächst automatisch nach unten.
-  // - Breite bleibt grundsätzlich konstant, wird aber VOR der Eingabe
-  //   stückweise vergrößert, damit der Text nicht erst umbrechen
-  //   und dann wieder „zurückspringen“ muss.
+  // - Zuerst wächst die Breite bis zur Maximalbreite.
+  // - Danach wächst die Höhe bis zur maximal erlaubten Höhe.
   function attachNoteAutoGrow(noteEl) {
     if (!noteEl || noteEl._autoGrowAttached) return;
     noteEl._autoGrowAttached = true;
@@ -1837,57 +1835,97 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       const padTop    = parseFloat(cs.paddingTop)    || 0;
       const padBottom = parseFloat(cs.paddingBottom) || 0;
+      const padLeft   = parseFloat(cs.paddingLeft)   || 0;
+      const padRight  = parseFloat(cs.paddingRight)  || 0;
       const padY      = padTop + padBottom;
+      const padX      = padLeft + padRight;
 
       const area = document.querySelector('.board-area');
-      const s = parseFloat(area?.dataset.scale || '1') || 1;
+      const s    = parseFloat(area?.dataset.scale || '1') || 1;
 
-      const rect = noteEl.getBoundingClientRect();
+      const rect    = noteEl.getBoundingClientRect();
+      const currentW = rect.width  / s;
       const currentH = rect.height / s;
 
-      // Basis-Höhe einmalig merken (z.B. 200px aus dem CSS, skaliert)
+      // Basis-Größe (ca. 200x200) einmalig merken
+      if (typeof noteEl._baseWidth !== 'number') {
+        noteEl._baseWidth = currentW;
+      }
       if (typeof noteEl._baseHeight !== 'number') {
         noteEl._baseHeight = currentH;
       }
+      const baseW = noteEl._baseWidth;
       const baseH = noteEl._baseHeight;
 
       noteEl._autoGrowInProgress = true;
 
-      // Platzhalter erkennen (gleiche Texte wie im Editing-Code)
+      // Platzhalter-Text erkennen (verschiedene Varianten absichern)
       const rawText = (content.textContent || '').replace(/\u200B/g, '').trim();
-      const PLACEHOLDER_TEXT     = 'Schreiben sie hier ihren Text.';
-      const PLACEHOLDER_TEXT_OLD = 'Schreiben sie hier ihren Text.';
+      const PLACEHOLDER_1 = 'Schreiben sie hier ihren Text...';
+      const PLACEHOLDER_2 = 'Schreiben sie hier ihren Text.';
+      const PLACEHOLDER_3 = 'Schreiben sie hier ihren Text';
       const isPlaceholder =
-        rawText === PLACEHOLDER_TEXT ||
-        rawText === PLACEHOLDER_TEXT_OLD;
+        rawText === PLACEHOLDER_1 ||
+        rawText === PLACEHOLDER_2 ||
+        rawText === PLACEHOLDER_3;
 
       // Solange nur der Platzhalter steht und NICHT editiert wird:
-      // Grundgröße (Basis-Höhe) beibehalten.
+      // Notizzettel bleibt auf der Grundgröße.
       if (isPlaceholder && !noteEl.classList.contains('is-editing')) {
-        noteEl.style.height   = baseH + 'px';
+        noteEl.style.width     = baseW + 'px';
+        noteEl.style.height    = baseH + 'px';
         noteEl.style.overflowY = 'visible';
         noteEl._autoGrowInProgress = false;
         return;
       }
 
-      // Natürliche Inhaltshöhe ermitteln
+      // ------------------------------------------------------------
+      // 1) Breite bestimmen → zuerst in die Breite wachsen
+      // ------------------------------------------------------------
+
+      // Für die Messung kurz auf "auto" stellen
+      noteEl.style.width  = 'auto';
+      noteEl.style.height = 'auto';
+
+      // Wie breit wäre der Inhalt ohne Begrenzung?
+      const neededW = content.scrollWidth + padX;
+
+      // Zielbreite:
+      // - nicht kleiner als die Basisbreite
+      // - nicht größer als max.width
+      let targetW = neededW;
+      if (targetW < baseW)         targetW = baseW;
+      if (targetW > max.width)     targetW = max.width;
+
+      if (Math.abs(currentW - targetW) > 1) {
+        noteEl.style.width = targetW + 'px';
+      } else {
+        // falls wir oben "auto" gesetzt haben, Breite stabil halten
+        noteEl.style.width = currentW + 'px';
+      }
+
+      // ------------------------------------------------------------
+      // 2) Höhe bestimmen → danach in die Höhe wachsen
+      //    (erst relevant, wenn mehrzeiliger Inhalt vorhanden ist)
+      // ------------------------------------------------------------
       const neededH = content.scrollHeight + padY;
 
       let targetH;
       if (neededH <= baseH + 1) {
-        // Text passt in die Grundhöhe → Note bleibt starr
+        // Inhalt passt noch in die Basis-Höhe → nicht wachsen
         targetH = baseH;
       } else {
-        // Text würde überlaufen → Note wächst mit bis zum Maximalwert
+        // Inhalt braucht mehr Platz → bis max.height wachsen
         targetH = Math.min(max.height, neededH);
       }
 
-      // Nur anpassen, wenn sich wirklich etwas ändert
       if (Math.abs(currentH - targetH) > 1) {
         noteEl.style.height = targetH + 'px';
+      } else {
+        noteEl.style.height = currentH + 'px';
       }
 
-      // Scrollbar nur, wenn wir am Höhen-Limit sind
+      // Scrollbar nur, wenn wir wirklich am Höhenlimit sind
       if (neededH > max.height - 1) {
         noteEl.style.overflowY = 'auto';
       } else {
@@ -1896,58 +1934,19 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       noteEl._autoGrowInProgress = false;
 
-      try { save(); } catch {}
+      try { save(); } catch (e) {}
     };
 
-    // Recalc-Callback auch für den ResizeObserver verfügbar machen
+    // Für andere Stellen verfügbar (ResizeObserver etc.)
     noteEl._autoGrowRecalc = recalc;
 
-    // Bei Texteingabe: Auto-Grow auslösen (Höhe)
+    // Bei Texteingabe: Auto-Grow auslösen
     content.addEventListener('input', recalc);
 
-    // Initial ein Mal nach dem Einfügen laufen lassen
+    // Initial einmal nach Einfügen laufen lassen
     setTimeout(recalc, 0);
-
-    // ------------------------------------------------------------------
-    // VOR der Texteingabe die Breite nur dann leicht vergrößern,
-    // wenn der Text wirklich am rechten Rand ankommt.
-    // ------------------------------------------------------------------
-    content.addEventListener('input', () => {
-      const max  = getMaxNoteSize();
-      const area = document.querySelector('.board-area');
-      const s    = parseFloat(area?.dataset.scale || '1') || 1;
-
-      const rect     = noteEl.getBoundingClientRect();
-      const currentW = rect.width / s;
-
-      // Schon an der maximal erlaubten Breite → nichts tun
-      if (currentW >= max.width - 1) return;
-
-      // Padding der Notiz berücksichtigen
-      const csNote   = getComputedStyle(noteEl);
-      const padLeft  = parseFloat(csNote.paddingLeft)  || 0;
-      const padRight = parseFloat(csNote.paddingRight) || 0;
-      const padX     = padLeft + padRight;
-
-      // Wie viel Breite braucht der Inhalt aktuell wirklich?
-      const neededW  = content.scrollWidth + padX;
-
-      // Solange der Text bequem in die aktuelle Breite passt, nichts tun
-      if (neededW <= currentW + 1) return;
-
-      // Zielbreite: so breit wie der Inhalt, aber nicht größer als max.width
-      let targetW = Math.min(max.width, neededW);
-
-      // Unter die Mindestbreite (z.B. 200px) soll er nicht schrumpfen
-      const minWidthPx = parseFloat(csNote.minWidth) || 0;
-      if (targetW < minWidthPx) targetW = minWidthPx;
-
-      // Nur anpassen, wenn sich die Breite wirklich merklich ändert
-      if (targetW > currentW + 0.5) {
-        noteEl.style.width = targetW + 'px';
-      }
-    });
   }
+
 
   
 
