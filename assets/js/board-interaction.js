@@ -1811,187 +1811,255 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
 
-    // Lässt eine Notiz ohne Scrollbalken mit dem Inhalt wachsen.
-    // - Höhe wächst automatisch nach unten (bis zu einem Maximalwert).
-    // - Breite wird VOR der Eingabe so vergrößert, dass der nächste Buchstabe
-    //   noch in die aktuelle Zeile passt → kein „umbricht-und-springt-zurück“.
-    function attachNoteAutoGrow(noteEl) {
-      if (!noteEl || noteEl._autoGrowAttached) return;
-      noteEl._autoGrowAttached = true;
+  // Lässt eine Notiz ohne Scrollbalken mit dem Inhalt wachsen.
+  // - Höhe wächst automatisch nach unten (bis zu einem Maximalwert).
+  // - Breite wird VOR der Eingabe so vergrößert, dass der nächste Buchstabe
+  //   noch in die aktuelle Zeile passt → kein „umbricht-und-springt-zurück“.
+  function attachNoteAutoGrow(noteEl) {
+    if (!noteEl || noteEl._autoGrowAttached) return;
+    noteEl._autoGrowAttached = true;
 
-      const content =
-        noteEl.querySelector('.notiz-content') ||
-        noteEl.querySelector('.note-content');
+    const content =
+      noteEl.querySelector('.notiz-content') ||
+      noteEl.querySelector('.note-content');
 
-      if (!content) return;
+    if (!content) return;
 
-      const save =
-        (typeof saveCurrentBoardState === 'function')
-          ? () => saveCurrentBoardState()
-          : () => {};
+    const save =
+      (typeof saveCurrentBoardState === 'function')
+        ? () => saveCurrentBoardState()
+        : () => {};
 
-      // ------------------------------------------------------------
-      // 1) Höhe automatisch mitwachsen lassen (bis max.height)
-      // ------------------------------------------------------------
-      const recalc = () => {
-        const max = getMaxNoteSize();
-        const cs  = getComputedStyle(noteEl);
+    // ------------------------------------------------------------
+    // 1) Höhe automatisch mitwachsen lassen (bis max.height)
+    // ------------------------------------------------------------
+    const recalc = () => {
+      const max = getMaxNoteSize();
+      const cs  = getComputedStyle(noteEl);
 
-        const padTop    = parseFloat(cs.paddingTop)    || 0;
-        const padBottom = parseFloat(cs.paddingBottom) || 0;
-        const padY      = padTop + padBottom;
+      const padTop    = parseFloat(cs.paddingTop)    || 0;
+      const padBottom = parseFloat(cs.paddingBottom) || 0;
+      const padY      = padTop + padBottom;
 
-        const area = document.querySelector('.board-area');
-        const s = parseFloat(area?.dataset.scale || '1') || 1;
+      const area = document.querySelector('.board-area');
+      const s = parseFloat(area?.dataset.scale || '1') || 1;
 
-        const rect = noteEl.getBoundingClientRect();
-        const currentH = rect.height / s;
+      const rect = noteEl.getBoundingClientRect();
+      const currentH = rect.height / s;
 
-        // Basis-Höhe einmalig merken (z.B. 200px aus dem CSS, skaliert)
-        if (typeof noteEl._baseHeight !== 'number') {
-          noteEl._baseHeight = currentH;
+      // Basis-Höhe einmalig merken (z.B. 200px aus dem CSS, skaliert)
+      if (typeof noteEl._baseHeight !== 'number') {
+        noteEl._baseHeight = currentH;
+      }
+      const baseH = noteEl._baseHeight;
+
+      noteEl._autoGrowInProgress = true;
+
+      // Platzhalter-Text erkennen (verschiedene Varianten absichern)
+      const rawText = (content.textContent || '').replace(/\u200B/g, '').trim();
+      const PLACEHOLDER_1 = 'Schreiben sie hier ihren Text...';
+      const PLACEHOLDER_2 = 'Schreiben sie hier ihren Text.';
+      const PLACEHOLDER_3 = 'Schreiben sie hier ihren Text';
+      const isPlaceholder =
+        rawText === PLACEHOLDER_1 ||
+        rawText === PLACEHOLDER_2 ||
+        rawText === PLACEHOLDER_3;
+
+      // Solange nur der Platzhalter steht und NICHT editiert wird:
+      // Grundgröße (Basis-Höhe) beibehalten.
+      if (isPlaceholder && !noteEl.classList.contains('is-editing')) {
+        noteEl.style.height    = baseH + 'px';
+        noteEl.style.overflowY = 'visible';
+        noteEl._autoGrowInProgress = false;
+        return;
+      }
+
+      // Natürliche Inhaltshöhe ermitteln
+      const neededH = content.scrollHeight + padY;
+
+      let targetH;
+      if (neededH <= baseH + 1) {
+        // Text passt in die Grundhöhe → Note bleibt starr
+        targetH = baseH;
+      } else {
+        // Text würde überlaufen → Note wächst mit bis zum Maximalwert
+        targetH = Math.min(max.height, neededH);
+      }
+
+      // Nur anpassen, wenn sich wirklich etwas ändert
+      if (Math.abs(currentH - targetH) > 1) {
+        noteEl.style.height = targetH + 'px';
+      }
+
+      // Scrollbar nur, wenn wir am Höhen-Limit sind
+      if (neededH > max.height - 1) {
+        noteEl.style.overflowY = 'auto';
+      } else {
+        noteEl.style.overflowY = 'visible';
+      }
+
+      noteEl._autoGrowInProgress = false;
+
+      try { save(); } catch {}
+    };
+
+    // Für den ResizeObserver von außen nutzbar machen
+    noteEl._autoGrowRecalc = recalc;
+
+    // Beim Tippen (nach der Eingabe) immer die Höhe neu berechnen
+    content.addEventListener('input', recalc);
+
+    // Erste Berechnung leicht verzögert
+    setTimeout(recalc, 0);
+
+    // ------------------------------------------------------------------
+    // VOR der Texteingabe die Breite nur dann vergrößern,
+    // wenn die LETZTE ZEILE sonst umbrechen würde.
+    //
+    // NEU:
+    // - Wenn ein weiterer Buchstabe nicht mehr in die Zeile passt:
+    //   1) Ist die Maximalbreite noch nicht erreicht → Note um genau
+    //      die Breite eines Zeichens verbreitern.
+    //   2) Ist die Maximalbreite erreicht → das aktuelle Wort komplett
+    //      in die nächste Zeile verschieben und dort den Buchstaben
+    //      einfügen.
+    // ------------------------------------------------------------------
+    const ensureLineMeasureSpan = () => {
+      if (noteEl._lineMeasureSpan) return noteEl._lineMeasureSpan;
+
+      const span = document.createElement('span');
+      span.style.position   = 'absolute';
+      span.style.visibility = 'hidden';
+      span.style.whiteSpace = 'pre';
+      span.style.padding    = '0';
+      span.style.margin     = '0';
+      span.style.border     = '0';
+
+      const csContent = getComputedStyle(content);
+      span.style.fontFamily    = csContent.fontFamily;
+      span.style.fontSize      = csContent.fontSize;
+      span.style.fontWeight    = csContent.fontWeight;
+      span.style.letterSpacing = csContent.letterSpacing;
+
+      document.body.appendChild(span);
+      noteEl._lineMeasureSpan = span;
+      return span;
+    };
+
+    // Hilfsfunktion: komplettes aktuelles Wort in die nächste Zeile schieben
+    // und dort das neue Zeichen anhängen.
+    const wrapWordToNextLine = (newChar) => {
+      const rawText = (content.innerText || content.textContent || '') + '';
+      const text    = rawText.replace(/\r\n/g, '\n');
+
+      // Letzte Zeile bestimmen
+      const lastNL    = text.lastIndexOf('\n');
+      const lineStart = lastNL >= 0 ? lastNL + 1 : 0;
+      const line      = text.slice(lineStart);
+
+      let newText;
+
+      // Gibt es ein Leerzeichen in der Zeile?
+      const lastSpace = line.lastIndexOf(' ');
+
+      if (lastSpace === -1) {
+        // Kein Leerzeichen: wir brechen einfach am Zeilenende um.
+        // → Erste Zeile bleibt wie sie ist, neue Zeile bekommt nur das neue Zeichen.
+        newText = text + '\n' + (newChar || '');
+      } else {
+        // Normale Variante: komplettes Wort nach dem letzten Space in neue Zeile
+        const wordStart = lineStart + lastSpace + 1;
+
+        const before      = text.slice(0, wordStart).replace(/[ \t]+$/, ''); // Spaces vor dem Umbruch weg
+        const wordAndRest = text.slice(wordStart);                           // aktuelles Wort + evtl. Rest
+
+        newText = before + '\n' + wordAndRest + (newChar || '');
+      }
+
+      content.textContent = newText;
+
+      // Cursor ans Ende setzen
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(content);
+        range.collapse(false);
+        const sel = window.getSelection && window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(range);
         }
-        const baseH = noteEl._baseHeight;
+      } catch {}
 
-        noteEl._autoGrowInProgress = true;
+      // Höhe neu berechnen und RT/Autosave triggern
+      try { recalc(); } catch {}
 
-        // Platzhalter-Text erkennen (verschiedene Varianten absichern)
-        const rawText = (content.textContent || '').replace(/\u200B/g, '').trim();
-        const PLACEHOLDER_1 = 'Schreiben sie hier ihren Text...';
-        const PLACEHOLDER_2 = 'Schreiben sie hier ihren Text.';
-        const PLACEHOLDER_3 = 'Schreiben sie hier ihren Text';
-        const isPlaceholder =
-          rawText === PLACEHOLDER_1 ||
-          rawText === PLACEHOLDER_2 ||
-          rawText === PLACEHOLDER_3;
+      try {
+        const evt = new Event('input', { bubbles: true });
+        content.dispatchEvent(evt);
+      } catch {}
+    };
 
-        // Solange nur der Platzhalter steht und NICHT editiert wird:
-        // Grundgröße (Basis-Höhe) beibehalten.
-        if (isPlaceholder && !noteEl.classList.contains('is-editing')) {
-          noteEl.style.height    = baseH + 'px';
-          noteEl.style.overflowY = 'visible';
-          noteEl._autoGrowInProgress = false;
+    if ('onbeforeinput' in content) {
+      content.addEventListener('beforeinput', (e) => {
+        if (!e || e.defaultPrevented) return;
+
+        // Nur „normale“ Texteingaben (kein Backspace, kein Enter etc.)
+        if (e.inputType !== 'insertText' && e.inputType !== 'insertCompositionText') return;
+        if (typeof e.data !== 'string' || !e.data) return;
+        if (e.data === '\n') return; // Enter → Breite nicht ändern
+
+        const max  = getMaxNoteSize();
+        const area = document.querySelector('.board-area');
+        const s    = parseFloat(area?.dataset.scale || '1') || 1;
+
+        const rect     = noteEl.getBoundingClientRect();
+        let currentW   = rect.width / s;
+
+        // Innenbreite (ohne Padding) bestimmen
+        const csNote   = getComputedStyle(noteEl);
+        const padLeft  = parseFloat(csNote.paddingLeft)  || 0;
+        const padRight = parseFloat(csNote.paddingRight) || 0;
+        const innerW   = currentW - (padLeft + padRight);
+
+        // Text der letzten Zeile bestimmen
+        const fullText = (content.innerText || '')
+          .replace(/\r\n/g, '\n')
+          .replace(/\u00A0/g, ' ');
+        const lines    = fullText.split('\n');
+        const lastLine = lines[lines.length - 1] || '';
+
+        const span = ensureLineMeasureSpan();
+
+        // Wie breit wäre die letzte Zeile inkl. des neuen Zeichens?
+        span.textContent = lastLine + e.data;
+        const neededLineW = span.getBoundingClientRect().width;
+
+        // Passt der neue Buchstabe noch in die aktuelle Breite?
+        if (neededLineW <= innerW + 0.5) return;
+
+        // Wie breit ist der einzelne eingegebene Buchstabe?
+        span.textContent = e.data;
+        const charW = span.getBoundingClientRect().width || 0;
+
+        const maxW = max.width;
+
+        // 1) Maximalbreite erreicht → aktuelles Wort in nächste Zeile verschieben
+        if (!charW || currentW >= maxW - 0.5 || currentW + charW > maxW) {
+          e.preventDefault();
+          wrapWordToNextLine(e.data);
           return;
         }
 
-        // Natürliche Inhaltshöhe ermitteln
-        const neededH = content.scrollHeight + padY;
+        // 2) Sonst: Note genau um die Breite dieses Zeichens vergrößern
+        let targetW = currentW + charW;
+        if (targetW > maxW) targetW = maxW;
 
-        let targetH;
-        if (neededH <= baseH + 1) {
-          // Text passt in die Grundhöhe → Note bleibt starr
-          targetH = baseH;
-        } else {
-          // Text würde überlaufen → Note wächst mit bis zum Maximalwert
-          targetH = Math.min(max.height, neededH);
+        if (targetW > currentW + 0.5) {
+          noteEl.style.width = targetW + 'px';
         }
-
-        // Nur anpassen, wenn sich wirklich etwas ändert
-        if (Math.abs(currentH - targetH) > 1) {
-          noteEl.style.height = targetH + 'px';
-        }
-
-        // Scrollbar nur, wenn wir am Höhen-Limit sind
-        if (neededH > max.height - 1) {
-          noteEl.style.overflowY = 'auto';
-        } else {
-          noteEl.style.overflowY = 'visible';
-        }
-
-        noteEl._autoGrowInProgress = false;
-
-        try { save(); } catch {}
-      };
-
-      // Für den ResizeObserver von außen nutzbar machen
-      noteEl._autoGrowRecalc = recalc;
-
-      // Beim Tippen (nach der Eingabe) immer die Höhe neu berechnen
-      content.addEventListener('input', recalc);
-
-      // Erste Berechnung leicht verzögert
-      setTimeout(recalc, 0);
-
-      // ------------------------------------------------------------------
-      // VOR der Texteingabe die Breite nur dann vergrößern,
-      // wenn die LETZTE ZEILE sonst umbrechen würde.
-      // → der Zettel wächst in der Breite, bevor der Text in die nächste
-      //   Zeile rutscht, und zwar nur so viel wie nötig.
-      // ------------------------------------------------------------------
-      const ensureLineMeasureSpan = () => {
-        if (noteEl._lineMeasureSpan) return noteEl._lineMeasureSpan;
-
-        const span = document.createElement('span');
-        span.style.position   = 'absolute';
-        span.style.visibility = 'hidden';
-        span.style.whiteSpace = 'pre';
-        span.style.padding    = '0';
-        span.style.margin     = '0';
-        span.style.border     = '0';
-
-        const csContent = getComputedStyle(content);
-        span.style.fontFamily    = csContent.fontFamily;
-        span.style.fontSize      = csContent.fontSize;
-        span.style.fontWeight    = csContent.fontWeight;
-        span.style.letterSpacing = csContent.letterSpacing;
-
-        document.body.appendChild(span);
-        noteEl._lineMeasureSpan = span;
-        return span;
-      };
-
-      if ('onbeforeinput' in content) {
-        content.addEventListener('beforeinput', (e) => {
-          if (!e || e.defaultPrevented) return;
-
-          // Nur „normale“ Texteingaben (kein Backspace, kein Enter etc.)
-          if (e.inputType !== 'insertText' && e.inputType !== 'insertCompositionText') return;
-          if (typeof e.data !== 'string' || !e.data) return;
-          if (e.data === '\n') return; // Enter → Breite nicht ändern
-
-          const max  = getMaxNoteSize();
-          const area = document.querySelector('.board-area');
-          const s    = parseFloat(area?.dataset.scale || '1') || 1;
-
-          const rect     = noteEl.getBoundingClientRect();
-          const currentW = rect.width / s;
-
-          // Schon an der Maximalbreite → nichts tun
-          if (currentW >= max.width - 1) return;
-
-          // Innenbreite (ohne Padding) bestimmen
-          const csNote   = getComputedStyle(noteEl);
-          const padLeft  = parseFloat(csNote.paddingLeft)  || 0;
-          const padRight = parseFloat(csNote.paddingRight) || 0;
-          const innerW   = currentW - (padLeft + padRight);
-
-          // Text der letzten Zeile bestimmen
-          const fullText = (content.innerText || '')
-            .replace(/\r\n/g, '\n')
-            .replace(/\u00A0/g, ' ');
-          const lines    = fullText.split('\n');
-          const lastLine = lines[lines.length - 1] || '';
-
-          // Wie breit wäre die letzte Zeile inkl. des neuen Zeichens?
-          const span = ensureLineMeasureSpan();
-          span.textContent = lastLine + e.data;
-          const neededLineW = span.getBoundingClientRect().width;
-
-          // Passt der neue Buchstabe noch in die aktuelle Breite?
-          if (neededLineW <= innerW + 0.5) return;
-
-          // Sonst die Note genau so viel verbreitern,
-          // dass die Zeile inkl. Buchstabe hineinpasst
-          let targetW = currentW + (neededLineW - innerW);
-          if (targetW > max.width) targetW = max.width;
-
-          if (targetW > currentW + 0.5) {
-            noteEl.style.width = targetW + 'px';
-          }
-        });
-      }
-
+      });
     }
+  }
 
   
   // Focus Note Texte nach Board-Typ
