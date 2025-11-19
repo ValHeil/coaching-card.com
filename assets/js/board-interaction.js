@@ -1900,11 +1900,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     content.addEventListener('input', recalc);
     setTimeout(recalc, 0);
 
-    // ------------------------------------------------------------
-    // NEU: Breite + Umbruch-Logik VOR der Texteingabe
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // NEU: VOR der Texteingabe prüfen wir anhand der WIRKLICHEN
+    // Caret-Position, ob der nächste Buchstabe noch in die Zeile passt.
+    //
+    // - Wir messen die Breite des aktuellen Zeilenrests über
+    //   getSelection().getRangeAt(0).getClientRects().
+    // - Wenn das neue Zeichen nicht mehr reinpasst:
+    //   * Note wird (falls möglich) breiter gemacht
+    //   * Standard-Eingabe wird verhindert
+    //   * Zeichen wird manuell ans Ende gesetzt
+    // ------------------------------------------------------------------
 
-    // Hidden-Span zum Messen von Textbreiten
     const ensureLineMeasureSpan = () => {
       if (noteEl._lineMeasureSpan) return noteEl._lineMeasureSpan;
 
@@ -1927,11 +1934,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       return span;
     };
 
-    // Text setzen, Cursor ans Ende, Höhe + Autosave triggern
+    // Hilfsfunktion: Text setzen, Cursor ans Ende, Höhe & Input-Listener triggern
     const applyManualTextChange = (newText) => {
       content.textContent = newText;
 
-      // Cursor ans Ende setzen
+      // Caret ans Ende
       try {
         const range = document.createRange();
         range.selectNodeContents(content);
@@ -1946,39 +1953,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Höhe neu berechnen
       try { recalc(); } catch {}
 
-      // Input-Event für deine bestehenden Listener triggern
+      // Input-Event für bestehende Listener simulieren (Autosave etc.)
       try {
         const evt = new Event('input', { bubbles: true });
         content.dispatchEvent(evt);
       } catch {}
-    };
-
-    // Aktuelles Wort komplett in die nächste Zeile schieben + neues Zeichen anhängen
-    const wrapWordToNextLine = (newChar) => {
-      const rawText = (content.innerText || content.textContent || '') + '';
-      const text    = rawText.replace(/\r\n/g, '\n');
-
-      const lastNL    = text.lastIndexOf('\n');
-      const lineStart = lastNL >= 0 ? lastNL + 1 : 0;
-      const line      = text.slice(lineStart);
-
-      let newText;
-
-      const lastSpace = line.lastIndexOf(' ');
-
-      if (lastSpace === -1) {
-        // kein Space in der Zeile → Zeilenumbruch am Ende
-        newText = text + '\n' + (newChar || '');
-      } else {
-        const wordStart = lineStart + lastSpace + 1;
-
-        const before      = text.slice(0, wordStart).replace(/[ \t]+$/, '');
-        const wordAndRest = text.slice(wordStart);
-
-        newText = before + '\n' + wordAndRest + (newChar || '');
-      }
-
-      applyManualTextChange(newText);
     };
 
     // Prüfen, ob der Caret wirklich am Ende des Inhalts steht
@@ -1989,97 +1968,83 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       const range = sel.getRangeAt(0);
       if (!content.contains(range.startContainer) || !content.contains(range.endContainer)) {
-        return true; // Cursor nicht in diesem Content → nicht eingreifen
+        return false;
       }
-
-      if (!range.collapsed) return false; // Markierung → lieber nichts machen
+      if (!range.collapsed) return false;
 
       const probe = range.cloneRange();
       probe.setEndAfter(content.lastChild || content);
       const rest = probe.toString();
-      return !rest; // es gibt keinen Text mehr nach dem Cursor
+      return !rest; // kein Text mehr nach dem Cursor
     };
 
-    // Kernlogik: Vor der Eingabe Breite/Umbruch steuern
     if ('onbeforeinput' in content) {
       content.addEventListener('beforeinput', (e) => {
         if (!e || e.defaultPrevented) return;
 
-        // nur normale Texteingaben
+        // Nur „normale“ Texteingaben (kein Backspace, kein Enter etc.)
         if (e.inputType !== 'insertText' && e.inputType !== 'insertCompositionText') return;
         if (e.isComposing) return;
         if (typeof e.data !== 'string' || !e.data) return;
-        if (e.data === '\n') return; // Enter lassen wir durch
-        if (!isCaretAtEndOfContent()) return; // wir kümmern uns nur um „am Ende tippen“
+        if (e.data === '\n') return; // Enter → lassen wir durch
+
+        // Wir kümmern uns nur um "am Ende weiter tippen"
+        if (!isCaretAtEndOfContent()) return;
 
         const max  = getMaxNoteSize();
         const area = document.querySelector('.board-area');
         const s    = parseFloat(area?.dataset.scale || '1') || 1;
 
-        const rect     = noteEl.getBoundingClientRect();
-        let currentW   = rect.width / s;
+        const noteRect = noteEl.getBoundingClientRect();
+        let currentW   = noteRect.width / s;
 
-        const csNote   = getComputedStyle(noteEl);
-        const padLeft  = parseFloat(csNote.paddingLeft)  || 0;
-        const padRight = parseFloat(csNote.paddingRight) || 0;
-        const innerW   = currentW - (padLeft + padRight);
+        if (currentW >= max.width - 1) {
+          // TODO: Hier könnte man später deine Wort-Umbruch-Logik einbauen
+          return;
+        }
 
-        // kompletter Text (inkl. \n) vor der Eingabe
-        const fullText = (content.innerText || '')
-          .replace(/\r\n/g, '\n')
-          .replace(/\u00A0/g, ' ');
-        const lines    = fullText.split('\n');
-        const lastLine = lines[lines.length - 1] || '';
+        const sel = window.getSelection && window.getSelection();
+        if (!sel || !sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+        if (!content.contains(range.startContainer)) return;
 
+        const contentRect = content.getBoundingClientRect();
+        const rects = range.getClientRects();
+        const caretRect = rects.length ? rects[rects.length - 1] : contentRect;
+
+        // Wie viel Breite ist in DER AKTUELLEN VISUELLEN ZEILE schon benutzt?
+        const usedInLine = caretRect.right - contentRect.left;
+        const available  = contentRect.width - usedInLine;
+
+        // Breite des neuen Zeichens messen (im selben Font)
         const span = ensureLineMeasureSpan();
-
-        // Wie breit wäre die letzte Zeile inkl. neuem Zeichen?
-        span.textContent = lastLine + e.data;
-        const neededLineW = span.getBoundingClientRect().width;
-
-        console.log('[NOTE BEFOREINPUT]',
-          'char=', JSON.stringify(e.data),
-          'currentW=', currentW.toFixed(1),
-          'innerW=', innerW.toFixed(1),
-          'neededLineW=', neededLineW.toFixed(1),
-          'maxW=', max.width.toFixed(1)
-        );
-
-        // passt noch ohne Änderung → Browser darf normal einfügen
-        if (neededLineW <= innerW + 0.5) {
-          return;
-        }
-
-        const maxW = max.width;
-
-        // Breite des einzelnen Zeichens
         span.textContent = e.data;
-        const charW = span.getBoundingClientRect().width || 0;
+        const charWScaled = span.getBoundingClientRect().width;
+        if (!charWScaled) return;
 
-        // Sicherheit: wenn wir keine sinnvolle Breite messen können
-        if (!charW) return;
+        // Wenn der Buchstabe in die aktuelle Zeile passt → normal tippen
+        if (charWScaled <= available + 0.5) return;
 
-        // Fall 1: Wir sind (fast) an der Maximalbreite → Wort in nächste Zeile
-        if (currentW >= maxW - 0.5 || currentW + charW > maxW) {
-          e.preventDefault();
-          wrapWordToNextLine(e.data);
+        // Sonst: Note verbreitern (falls möglich) und Zeichen selbst einfügen
+        const deltaScaled   = charWScaled - available;
+        const deltaUnscaled = deltaScaled / s;
+
+        let targetW = currentW + deltaUnscaled;
+        if (targetW > max.width) targetW = max.width;
+
+        if (targetW <= currentW + 0.1) {
+          // Verbreiterung bringt quasi nichts → später ggf. Wortumbruch ergänzen
           return;
-        }
-
-        // Fall 2: Noch Platz für Breiten-Zuwachs → Note um genau die
-        // Breite eines Zeichens vergrößern, DANN Buchstaben einfügen.
-        let targetW = currentW + charW;
-        if (targetW > maxW) targetW = maxW;
-
-        console.log('[NOTE RESIZE]', 'targetW=', targetW, 'maxW=', max.width);
-        if (targetW >= max.width - 1) debugger;
-
-        if (targetW > currentW + 0.5) {
-          noteEl.style.width = targetW + 'px';
         }
 
         e.preventDefault();
-        // Zeichen ans Ende anhängen (wir wissen: Caret ist am Ende)
+
+        noteEl.style.width = targetW + 'px';
+
+        // Text vor der Eingabe holen, Zeichen anhängen, setzen
+        const fullText = (content.innerText || '')
+          .replace(/\r\n/g, '\n')
+          .replace(/\u00A0/g, ' ');
         applyManualTextChange(fullText + e.data);
       });
     }
