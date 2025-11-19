@@ -1912,53 +1912,44 @@ document.addEventListener('DOMContentLoaded', async function() {
     // VOR der Texteingabe die Breite nur dann leicht vergrößern,
     // wenn der Text wirklich am rechten Rand ankommt.
     // ------------------------------------------------------------------
-    if ('onbeforeinput' in content) {
-      content.addEventListener('beforeinput', (e) => {
-        if (!e || e.defaultPrevented) return;
+    content.addEventListener('input', () => {
+      const max  = getMaxNoteSize();
+      const area = document.querySelector('.board-area');
+      const s    = parseFloat(area?.dataset.scale || '1') || 1;
 
-        // Nur „normale“ Texteingaben (kein Backspace, kein Enter etc.)
-        if (e.inputType !== 'insertText' && e.inputType !== 'insertCompositionText') return;
-        if (typeof e.data !== 'string' || !e.data) return;
-        if (e.data === '\n') return; // Enter → kein Breitenwachstum
+      const rect     = noteEl.getBoundingClientRect();
+      const currentW = rect.width / s;
 
-        const max  = getMaxNoteSize();
-        const area = document.querySelector('.board-area');
-        const s    = parseFloat(area?.dataset.scale || '1') || 1;
+      // Schon an der maximal erlaubten Breite → nichts tun
+      if (currentW >= max.width - 1) return;
 
-        const rect      = noteEl.getBoundingClientRect();
-        const currentW  = rect.width / s;
+      // Padding der Notiz berücksichtigen
+      const csNote   = getComputedStyle(noteEl);
+      const padLeft  = parseFloat(csNote.paddingLeft)  || 0;
+      const padRight = parseFloat(csNote.paddingRight) || 0;
+      const padX     = padLeft + padRight;
 
-        // Schon am maximalen Wert → nichts tun
-        if (currentW >= max.width - 1) return;
+      // Wie viel Breite braucht der Inhalt aktuell wirklich?
+      const neededW  = content.scrollWidth + padX;
 
-        // Padding der Notiz berücksichtigen
-        const csNote   = getComputedStyle(noteEl);
-        const padLeft  = parseFloat(csNote.paddingLeft)  || 0;
-        const padRight = parseFloat(csNote.paddingRight) || 0;
-        const padX     = padLeft + padRight;
+      // Solange der Text bequem in die aktuelle Breite passt, nichts tun
+      if (neededW <= currentW + 1) return;
 
-        // Wie viel Breite braucht der aktuelle Inhalt im Moment?
-        const neededWNow = content.scrollWidth + padX;
+      // Zielbreite: so breit wie der Inhalt, aber nicht größer als max.width
+      let targetW = Math.min(max.width, neededW);
 
-        // Noch genügend Luft nach rechts → Breite so lassen
-        // (erst wenn der Text „anliegt“, wird erweitert)
-        if (neededWNow < currentW - 2) return;
+      // Unter die Mindestbreite (z.B. 200px) soll er nicht schrumpfen
+      const minWidthPx = parseFloat(csNote.minWidth) || 0;
+      if (targetW < minWidthPx) targetW = minWidthPx;
 
-        // Schrittweite aus der Schriftgröße ableiten,
-        // damit es nicht so stark „springt“
-        const csContent = getComputedStyle(content);
-        const fontSize  = parseFloat(csContent.fontSize) || 16;
-        const STEP_PX   = Math.max(8, fontSize * 0.6);
-
-        const targetW = Math.min(max.width, currentW + STEP_PX);
-
-        if (targetW > currentW + 0.5) {
-          noteEl.style.width = targetW + 'px';
-        }
-      });
-    }
-
+      // Nur anpassen, wenn sich die Breite wirklich merklich ändert
+      if (targetW > currentW + 0.5) {
+        noteEl.style.width = targetW + 'px';
+      }
+    });
   }
+
+  
 
 
   
