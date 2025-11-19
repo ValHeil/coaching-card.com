@@ -3732,18 +3732,24 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Content: editierbarer Bereich
     const content = document.createElement('div');
     content.className = 'notiz-content';
-    content.setAttribute('contenteditable', 'true');
+
+    // WICHTIG: neuer Zettel startet NICHT im Edit-Modus
+    content.setAttribute('contenteditable', 'false');
     content.setAttribute('spellcheck', 'true');
 
-    // Platzhalter-Text für neue Notizen
+    // Sichtbarer Platzhalter-Text für neue Notizen
+    const PLACEHOLDER_TEXT = 'Schreiben sie hier ihren Text...';
+    content.textContent = PLACEHOLDER_TEXT;
+
+    // Optional: data-placeholder für CSS (falls du :empty:before o.ä. nutzt)
     if (!content.getAttribute('data-placeholder')) {
-      content.setAttribute('data-placeholder', 'Schreiben sie hier ihren Text...');
+      content.setAttribute('data-placeholder', PLACEHOLDER_TEXT);
     }
 
     noteEl.appendChild(content);
 
     // 5) Erste Position beim Abziehen: Maus-/Touch-Position relativ zum Notes-Container
-    const isTouch = e.type.startsWith('touch');
+    const isTouch = e.type && e.type.startsWith && e.type.startsWith('touch');
     const getPoint = (ev) => {
       const t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]) || ev;
       return { x: t.clientX, y: t.clientY };
@@ -3760,7 +3766,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     try { if (typeof attachNoteAutoGrow === 'function') attachNoteAutoGrow(noteEl); } catch {}
     try { if (typeof setupNoteEditingHandlers === 'function') setupNoteEditingHandlers(noteEl); } catch {}
     try { if (typeof enhanceDraggableNote === 'function') enhanceDraggableNote(noteEl); } catch {}
-
 
     const wrapRect = notesWrap.getBoundingClientRect();
     // Startposition leicht versetzt, damit man die „Abzieh“-Bewegung sieht
@@ -3791,8 +3796,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       window.removeEventListener(isTouch ? 'touchend'  : 'pointerup',   onUp,   { capture: true });
       window.removeEventListener(isTouch ? 'touchcancel':'pointercancel', onUp, { capture: true });
 
-      // Fokus aufs Tippen setzen (nice UX)
-      try { content.focus(); } catch {}
+      // KEIN automatischer Edit-Start mehr – Nutzer muss explizit doppelklicken
 
       // Optional: Autosave, falls vorhanden
       try {
@@ -3816,7 +3820,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
 
-
   // Hilfsfunktion, um den höchsten z-index zu finden
   function getHighestZIndex() {
     const elements = document.getElementsByClassName('notiz');
@@ -3837,10 +3840,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     const content = notiz.querySelector('.notiz-content') || notiz.querySelector('.note-content');
     if (!content) return;
 
-    //  Mehrfach-Bindungen verhindern (Enter wurde doppelt verarbeitet)
+    // Platzhalter-Text-Konstanten (für neue & alte Boards)
+    const PLACEHOLDER_TEXT      = 'Schreiben sie hier ihren Text...';
+    const PLACEHOLDER_TEXT_OLD  = 'Schreiben sie hier ihren Text.'; // falls schon so gespeichert
+
+    // Mehrfach-Bindungen verhindern (Enter wurde doppelt verarbeitet)
     if (content.dataset.editHandlersAttached === '1') return;
     content.dataset.editHandlersAttached = '1';
+
     let _rtNoteDeb = null;
+
+    // RT-Update beim Tippen (nur eigener Inhalt, nicht der Platzhalter)
     content.addEventListener('input', () => {
       clearTimeout(_rtNoteDeb);
       _rtNoteDeb = setTimeout(() => {
@@ -3853,33 +3863,52 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
       }, 120);
     });
-    
+
     // Doppelklick zum Bearbeiten
     notiz.addEventListener('dblclick', (e) => {
       const blocked = isLockActiveForMe(notiz);
       L('DBLCLICK', { id: notiz.id, blocked, beingDragged: notiz.classList.contains('being-dragged') });
+
       // Drag-Doppelklick ignorieren & Fremd-Lock respektieren
       if (notiz.classList.contains('being-dragged')) return;
       if (blocked) return;
       if (isLockActiveForMe(notiz)) return;
+
+      // Falls noch der Platzhalter-Text steht: beim ersten Edit-Versuch leeren
+      const rawText = (content.textContent || '').replace(/\u200B/g, '').trim();
+      const isPlaceholder =
+        rawText === PLACEHOLDER_TEXT ||
+        rawText === PLACEHOLDER_TEXT_OLD;
+
+      if (isPlaceholder) {
+        // Start mit einer Bullet-Zeile
+        content.textContent = '• ';
+
+        // Cursor ans Ende setzen
+        const range = document.createRange();
+        range.selectNodeContents(content);
+        range.collapse(false);
+        const sel = window.getSelection && window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
+
       // Content-Element auf editierbar setzen
       content.setAttribute('contenteditable', 'true');
 
       // Bearbeitungs-Flag setzen (global)
       window.__isEditingNote = true;
       window.__editingNoteId = notiz.id;
-      
+
       // Visuelle Rückmeldung hinzufügen
       content.classList.add('editing');
-      
-      // Optional: Cursor-Animation hinzufügen
       content.classList.add('blinking-cursor');
-      
-      // Kein DOM-Platzhalter mehr injizieren – Anzeige erfolgt per CSS (:empty:before)
-      
+
       // Dem Notizzettel eine Klasse hinzufügen, um zu zeigen, dass er bearbeitet wird
       notiz.classList.add('is-editing');
-      
+
       // Einen visuellen Indikator für den Bearbeitungsmodus hinzufügen
       if (!notiz.querySelector('.editing-indicator')) {
         const indicator = document.createElement('div');
@@ -3888,30 +3917,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         indicator.title = 'Bearbeitungsmodus - Klicken Sie außerhalb, um zu speichern';
         notiz.appendChild(indicator);
       }
-      
+
       // Fokus auf das Textfeld setzen
       content.focus();
 
-      // Wenn der Inhalt leer ist, direkt mit einem Aufzählungszeichen starten
-      const current = (content.textContent || '').replace(/\u200B/g, '').trim();
-      if (!current) {
-        content.textContent = '• ';
-
-        // Caret ans Ende setzen
-        try {
-          const range = document.createRange();
-          range.selectNodeContents(content);
-          range.collapse(false);
-          const sel = window.getSelection && window.getSelection();
-          if (sel) {
-            sel.removeAllRanges();
-            sel.addRange(range);
-          }
-        } catch (err) {
-          console.warn('Caret setzen für Notiz fehlgeschlagen:', err);
-        }
-      }
-
+      // Lock für RT setzen/erneuern
       const LEASE_MS = 8000; // 8s gelten die Locks, erneuern wir im Intervall
       notiz.dataset.locked = '1';
       notiz.dataset.lockedBy = (RT && RT.uid) ? RT.uid : '';
@@ -3919,112 +3929,24 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       sendRT({ t: 'note_lock', id: notiz.id, lease: LEASE_MS, by: notiz.dataset.lockedBy });
 
-      // alle 4s Lock erneuern, solange noch editiert wird
       clearInterval(notiz._lockRenew);
       notiz._lockRenew = setInterval(() => {
-        if (content.getAttribute('contenteditable') === 'true') {
-          notiz.dataset.locked = '1';
-          notiz.dataset.lockedUntil = String(Date.now() + LEASE_MS);
-          sendRT({ t: 'note_lock', id: notiz.id, lease: LEASE_MS, by: notiz.dataset.lockedBy });
-        } else {
-          clearInterval(notiz._lockRenew);
-          notiz._lockRenew = null;
-        }
-      }, 4000);
-      
-      // Wenn der Inhalt bereits Text enthält, den Cursor ans Ende setzen
-      if (content.textContent.trim() !== '') {
-        const range = document.createRange();
-        const selection = window.getSelection();
-        range.selectNodeContents(content);
-        range.collapse(false); // false = am Ende
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-      
-      e.stopPropagation(); // Verhindert das Bubbling zum Elternelement
-      L('EDIT_START_SEND_LOCK', { id: notiz.id, by: RT.uid });
+        notiz.dataset.locked = '1';
+        notiz.dataset.lockedBy = (RT && RT.uid) ? RT.uid : '';
+        notiz.dataset.lockedUntil = String(Date.now() + LEASE_MS);
+        sendRT({ t: 'note_lock', id: notiz.id, lease: LEASE_MS, by: notiz.dataset.lockedBy });
+      }, LEASE_MS * 0.6);
     });
-    
-      //Hilfsfunktionen für KeyDown
-    function insertTextAtCursor(el, text) {
-      el.focus();
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) {
-        el.appendChild(document.createTextNode(text));
-        placeCursorAtEnd(el);
-        return;
-      }
-      const range = sel.getRangeAt(0);
-      range.deleteContents();
-      const node = document.createTextNode(text);
-      range.insertNode(node);
-      // Caret hinter den eingefügten Text setzen
-      range.setStart(node, node.length);
-      range.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
 
-    function insertHtmlAtCursor(el, html) {
-      el.focus();
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) {
-        el.insertAdjacentHTML('beforeend', html);
-        placeCursorAtEnd(el);
-        return;
-      }
-      const range = sel.getRangeAt(0);
-      range.deleteContents();
-      const tmp = document.createElement('div');
-      tmp.innerHTML = html;
-      const frag = document.createDocumentFragment();
-      let last = null;
-      while (tmp.firstChild) { last = frag.appendChild(tmp.firstChild); }
-      range.insertNode(frag);
-      if (last) {
-        range.setStartAfter(last);
-        range.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
-    }
-
-    function placeCursorAtEnd(el) {
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      range.collapse(false);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-
-    // === Plaintext-Insert-Helfer (keine HTML-Brüche) ===
-    function insertTextAtCursor(el, text) {
-      const sel = window.getSelection();
-      if (!sel || !sel.rangeCount) {
-        el.appendChild(document.createTextNode(text));
-      } else {
-        const range = sel.getRangeAt(0);
-        range.deleteContents();
-        range.insertNode(document.createTextNode(text));
-        // Caret hinter den eingefügten Text setzen
-        range.setStart(range.endContainer, range.endOffset);
-        range.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
-      // wichtig: 'input' feuern, damit dein Debounce -> sendRT('note_update') läuft
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-
-    // Tastatur-Handling: Enter = neue Bullet-Zeile; erste Eingabe setzt • 
+    // Bullet-Logik:
+    // - Erste Eingabe in leerer Notiz setzt "• " + erstes Zeichen
+    // - Enter erzeugt neue Zeile mit "• "
     content.addEventListener('keydown', (e) => {
       const isEnter     = (e.key === 'Enter');
       const isPrintable = (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey);
       const textNow = (content.textContent || '').replace(/\u200B/g, '');
       const emptyNow = (textNow.trim() === '');
-      
+
       // Enter erzeugt neue Bullet-Zeile
       if (isEnter) {
         e.preventDefault();
@@ -4049,14 +3971,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
 
-    
     // Bearbeitung beenden, wenn außerhalb geklickt wird
     function endEditing() {
       if (content.getAttribute('contenteditable') !== 'true') return;
 
       // Edit-Modus aus
       content.setAttribute('contenteditable', 'false');
-      content.classList.remove('editing','blinking-cursor');
+      content.classList.remove('editing', 'blinking-cursor');
       notiz.classList.remove('is-editing');
       const indicator = notiz.querySelector('.editing-indicator');
       if (indicator) indicator.remove();
@@ -4097,6 +4018,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       // Leere Notizen entfernen, sonst Zustand speichern
       if ((finalText || '').trim() === '') {
+        // → Hier greift jetzt genau dein gewünschtes Verhalten:
+        //    - Solange der Platzhalter noch stand, kam endEditing gar nicht erst zum Zug
+        //    - Erst nach dem ersten Edit (Platzhalter weg, Bullet da) kann ein leerer Zettel gelöscht werden
         sendRT({ t: 'note_delete', id: notiz.id, prio: RT_PRI(), ts: Date.now() });
         notiz.remove();
         notes = (Array.isArray(notes) ? notes.filter(n => n !== notiz) : notes);
@@ -4128,8 +4052,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         sendRT({ t: 'note_unlock', id: notiz.id });
       }
     });
-    
   }
+
 
   function enhanceDraggableNote(note){
     if (!note) return;
