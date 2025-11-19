@@ -1909,29 +1909,46 @@ document.addEventListener('DOMContentLoaded', async function() {
     setTimeout(recalc, 0);
 
     // ------------------------------------------------------------------
-    // VOR der Texteingabe die Breite schrittweise vergrößern,
-    // damit der Text nicht erst in die nächste Zeile rutscht
-    // und danach wieder nach oben springt.
+    // VOR der Texteingabe die Breite nur dann leicht vergrößern,
+    // wenn der Text wirklich am rechten Rand ankommt.
     // ------------------------------------------------------------------
-    const STEP_PX = 20; // pro Zeichen etwa 20px mehr Breite
-
     if ('onbeforeinput' in content) {
       content.addEventListener('beforeinput', (e) => {
         if (!e || e.defaultPrevented) return;
 
-        // Nur „normale“ Texteingaben (kein Backspace, kein Enter)
+        // Nur „normale“ Texteingaben (kein Backspace, kein Enter etc.)
         if (e.inputType !== 'insertText' && e.inputType !== 'insertCompositionText') return;
         if (typeof e.data !== 'string' || !e.data) return;
-        if (e.data === '\n') return; // Enter machen wir nicht breiter
+        if (e.data === '\n') return; // Enter → kein Breitenwachstum
 
-        const max = getMaxNoteSize();
+        const max  = getMaxNoteSize();
         const area = document.querySelector('.board-area');
-        const s = parseFloat(area?.dataset.scale || '1') || 1;
-        const rect = noteEl.getBoundingClientRect();
-        const currentW = rect.width / s;
+        const s    = parseFloat(area?.dataset.scale || '1') || 1;
 
-        // Bereits am maximal erlaubten Wert → nichts tun
+        const rect      = noteEl.getBoundingClientRect();
+        const currentW  = rect.width / s;
+
+        // Schon am maximalen Wert → nichts tun
         if (currentW >= max.width - 1) return;
+
+        // Padding der Notiz berücksichtigen
+        const csNote   = getComputedStyle(noteEl);
+        const padLeft  = parseFloat(csNote.paddingLeft)  || 0;
+        const padRight = parseFloat(csNote.paddingRight) || 0;
+        const padX     = padLeft + padRight;
+
+        // Wie viel Breite braucht der aktuelle Inhalt im Moment?
+        const neededWNow = content.scrollWidth + padX;
+
+        // Noch genügend Luft nach rechts → Breite so lassen
+        // (erst wenn der Text „anliegt“, wird erweitert)
+        if (neededWNow < currentW - 2) return;
+
+        // Schrittweite aus der Schriftgröße ableiten,
+        // damit es nicht so stark „springt“
+        const csContent = getComputedStyle(content);
+        const fontSize  = parseFloat(csContent.fontSize) || 16;
+        const STEP_PX   = Math.max(8, fontSize * 0.6);
 
         const targetW = Math.min(max.width, currentW + STEP_PX);
 
@@ -1940,6 +1957,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       });
     }
+
   }
 
 
