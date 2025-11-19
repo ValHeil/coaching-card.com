@@ -1707,18 +1707,18 @@ document.addEventListener('DOMContentLoaded', async function() {
   window.cardFlipSound = cardFlipSound;
   window.shuffleSound  = shuffleSound;
   
-  // CSS für Notiz-Placeholder nur im Editiermodus (verhindert Verlust des ersten Zeichens)
+  // CSS für Notiz-Placeholder: immer, wenn der Inhalt leer ist
   if (!document.getElementById('note-placeholder-style')) {
     const style = document.createElement('style');
     style.id = 'note-placeholder-style';
     style.textContent = `
-      .notiz-content.editing:empty:before {
-        content: 'Hier tippen...';
-        color: #999;
-        font-style: italic;
-        pointer-events: none;
-      }
-    `;
+        .notiz-content:empty:before {
+          content: attr(data-placeholder);
+          color: #999;
+          font-style: italic;
+          pointer-events: none;
+        }
+      `;
     document.head.appendChild(style);
   }
   // Globale No-Select-Hilfe für Drag
@@ -3734,10 +3734,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     content.className = 'notiz-content';
     content.setAttribute('contenteditable', 'true');
     content.setAttribute('spellcheck', 'true');
-    // Optionaler Platzhaltertext:
+
+    // Platzhalter-Text für neue Notizen
     if (!content.getAttribute('data-placeholder')) {
-      content.setAttribute('data-placeholder', 'Notiz …');
+      content.setAttribute('data-placeholder', 'Schreiben sie hier ihren Text...');
     }
+
     noteEl.appendChild(content);
 
     // 5) Erste Position beim Abziehen: Maus-/Touch-Position relativ zum Notes-Container
@@ -3752,6 +3754,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     notesWrap.appendChild(noteEl);
     noteEl.style.position = 'absolute';
     noteEl.style.zIndex = '100';
+
+    // Direkt alle Handler/AutoGrow/etc. an die neue Notiz hängen
+    try { if (typeof attachNoteResizeObserver === 'function') attachNoteResizeObserver(noteEl); } catch {}
+    try { if (typeof attachNoteAutoGrow === 'function') attachNoteAutoGrow(noteEl); } catch {}
+    try { if (typeof setupNoteEditingHandlers === 'function') setupNoteEditingHandlers(noteEl); } catch {}
+    try { if (typeof enhanceDraggableNote === 'function') enhanceDraggableNote(noteEl); } catch {}
+
 
     const wrapRect = notesWrap.getBoundingClientRect();
     // Startposition leicht versetzt, damit man die „Abzieh“-Bewegung sieht
@@ -3883,6 +3892,26 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Fokus auf das Textfeld setzen
       content.focus();
 
+      // Wenn der Inhalt leer ist, direkt mit einem Aufzählungszeichen starten
+      const current = (content.textContent || '').replace(/\u200B/g, '').trim();
+      if (!current) {
+        content.textContent = '• ';
+
+        // Caret ans Ende setzen
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(content);
+          range.collapse(false);
+          const sel = window.getSelection && window.getSelection();
+          if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        } catch (err) {
+          console.warn('Caret setzen für Notiz fehlgeschlagen:', err);
+        }
+      }
+
       const LEASE_MS = 8000; // 8s gelten die Locks, erneuern wir im Intervall
       notiz.dataset.locked = '1';
       notiz.dataset.lockedBy = (RT && RT.uid) ? RT.uid : '';
@@ -3989,36 +4018,35 @@ document.addEventListener('DOMContentLoaded', async function() {
       el.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
-    // --- NEU: Keydown-Handler komplett austauschen ---
+    // Tastatur-Handling: Enter = neue Bullet-Zeile; erste Eingabe setzt • 
     content.addEventListener('keydown', (e) => {
-      // ESC lässt du woanders beenden; hier nicht blocken
-      if (e.key === 'Escape') return;
-
-      // Tab nicht als Zeichen in die Notiz schreiben
-      if (e.key === 'Tab') { e.preventDefault(); return; }
-
-      const txtNow = content.textContent || '';
-      const emptyNow = txtNow.trim() === '';
-
-      // 1) Erster *druckbarer* Tastendruck in leerer Notiz:
-      //    -> "• " + (erstes Zeichen) einfügen
-      const printable = (e.key.length === 1) && !e.ctrlKey && !e.metaKey && !e.altKey;
-      if (emptyNow && printable) {
+      const isEnter     = (e.key === 'Enter');
+      const isPrintable = (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey);
+      const textNow = (content.textContent || '').replace(/\u200B/g, '');
+      const emptyNow = (textNow.trim() === '');
+      
+      // Enter erzeugt neue Bullet-Zeile
+      if (isEnter) {
         e.preventDefault();
-        insertTextAtCursor(content, '• ' + e.key);
+        document.execCommand('insertHTML', false, '\n• ');
         return;
       }
 
-      // 2) Enter erzeugt immer newline + nächsten Aufzählungspunkt – als Plaintext
-      if (e.key === 'Enter') {
+      // Erste Eingabe in leerer Notiz: direkt "• " + erstes Zeichen
+      if (isPrintable && emptyNow) {
         e.preventDefault();
-        // Wenn noch leer: starte mit "• ", sonst Zeilenumbruch + "• "
-        const prefix = emptyNow ? '• ' : '\n• ';
-        insertTextAtCursor(content, prefix);
-        return;
-      }
+        const firstChar = e.key;
+        content.textContent = '• ' + firstChar;
 
-      // Sonst Standardverhalten (Browser tippt das Zeichen an Cursor-Position ein)
+        const range = document.createRange();
+        range.selectNodeContents(content);
+        range.collapse(false);
+        const sel = window.getSelection && window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
     });
 
     
@@ -4042,10 +4070,15 @@ document.addEventListener('DOMContentLoaded', async function() {
       delete notiz.dataset.lockedBy;
       delete notiz.dataset.lockedUntil;
 
-      // *** WICHTIG: finalText zuerst ermitteln ***
-      const finalText = (typeof getNoteText === 'function')
+      // finalText zuerst ermitteln 
+      let finalText = (typeof getNoteText === 'function')
         ? getNoteText(notiz)
         : (content.innerText || content.textContent || '');
+
+      // Nur Bullets/Leerzeichen als "leer" behandeln
+      if (finalText && finalText.replace(/[\s\n\r]/g, '').replace(/•/g, '') === '') {
+        finalText = '';
+      }
 
       // Debug
       L('EDIT_END', { id: notiz.id, finalTextLen: (finalText || '').length });
