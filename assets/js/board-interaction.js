@@ -1984,68 +1984,81 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         // Nur „normale“ Texteingaben (kein Backspace, kein Enter etc.)
         if (e.inputType !== 'insertText' && e.inputType !== 'insertCompositionText') return;
-        if (e.isComposing) return;
         if (typeof e.data !== 'string' || !e.data) return;
-        if (e.data === '\n') return; // Enter → lassen wir durch
-
-        // Wir kümmern uns nur um "am Ende weiter tippen"
-        if (!isCaretAtEndOfContent()) return;
+        if (e.data === '\n') return; // Enter → Breite nicht ändern
 
         const max  = getMaxNoteSize();
         const area = document.querySelector('.board-area');
         const s    = parseFloat(area?.dataset.scale || '1') || 1;
 
-        const noteRect = noteEl.getBoundingClientRect();
-        let currentW   = noteRect.width / s;
+        const rect     = noteEl.getBoundingClientRect();
+        let currentW   = rect.width / s;
 
-        if (currentW >= max.width - 1) {
-          // TODO: Hier könnte man später deine Wort-Umbruch-Logik einbauen
-          return;
-        }
+        // Innenbreite (ohne Padding) bestimmen
+        const csNote   = getComputedStyle(noteEl);
+        const padLeft  = parseFloat(csNote.paddingLeft)  || 0;
+        const padRight = parseFloat(csNote.paddingRight) || 0;
+        const innerW   = currentW - (padLeft + padRight);
 
-        const sel = window.getSelection && window.getSelection();
-        if (!sel || !sel.rangeCount) return;
-        const range = sel.getRangeAt(0);
-        if (!content.contains(range.startContainer)) return;
-
-        const contentRect = content.getBoundingClientRect();
-        const rects = range.getClientRects();
-        const caretRect = rects.length ? rects[rects.length - 1] : contentRect;
-
-        // Wie viel Breite ist in DER AKTUELLEN VISUELLEN ZEILE schon benutzt?
-        const usedInLine = caretRect.right - contentRect.left;
-        const available  = contentRect.width - usedInLine;
-
-        // Breite des neuen Zeichens messen (im selben Font)
-        const span = ensureLineMeasureSpan();
-        span.textContent = e.data;
-        const charWScaled = span.getBoundingClientRect().width;
-        if (!charWScaled) return;
-
-        // Wenn der Buchstabe in die aktuelle Zeile passt → normal tippen
-        if (charWScaled <= available + 0.5) return;
-
-        // Sonst: Note verbreitern (falls möglich) und Zeichen selbst einfügen
-        const deltaScaled   = charWScaled - available;
-        const deltaUnscaled = deltaScaled / s;
-
-        let targetW = currentW + deltaUnscaled;
-        if (targetW > max.width) targetW = max.width;
-
-        if (targetW <= currentW + 0.1) {
-          // Verbreiterung bringt quasi nichts → später ggf. Wortumbruch ergänzen
-          return;
-        }
-
-        e.preventDefault();
-
-        noteEl.style.width = targetW + 'px';
-
-        // Text vor der Eingabe holen, Zeichen anhängen, setzen
+        // Text der letzten Zeile (vor dem neuen Zeichen)
         const fullText = (content.innerText || '')
           .replace(/\r\n/g, '\n')
           .replace(/\u00A0/g, ' ');
-        applyManualTextChange(fullText + e.data);
+        const lines    = fullText.split('\n');
+        const lastLine = lines[lines.length - 1] || '';
+
+        const span = ensureLineMeasureSpan();
+
+        // Breite der aktuellen Zeile OHNE das neue Zeichen
+        span.textContent = lastLine;
+        const currentLineW = span.getBoundingClientRect().width || 0;
+
+        // NEU:
+        // Solange die Zeile noch deutlich Luft hat (z.B. < 75% der Innenbreite),
+        // fassen wir den Zettel GAR NICHT an.
+        // → Der Notizzettel wächst NICHT bei den ersten Buchstaben.
+        if (currentLineW < innerW * 0.75) {
+          return;
+        }
+
+        // Wie breit wäre die Zeile MIT dem neuen Zeichen?
+        span.textContent = lastLine + e.data;
+        const neededLineW = span.getBoundingClientRect().width;
+
+        // Passt der neue Buchstabe trotzdem noch in die aktuelle Breite?
+        // → Browser normal machen lassen, Zettel bleibt gleich groß.
+        if (neededLineW <= innerW + 0.5) return;
+
+        // Ab hier: Der neue Buchstabe würde tatsächlich über den Rand gehen.
+        // Jetzt entscheiden wir: verbreitern oder Wort umbrechen.
+
+        // Breite des neuen Zeichens
+        span.textContent = e.data;
+        const charW = span.getBoundingClientRect().width || 0;
+
+        const maxW = max.width;
+
+        // 1) Maximalbreite erreicht → aktuelles Wort in nächste Zeile verschieben
+        if (!charW || currentW >= maxW - 0.5 || currentW + charW > maxW) {
+          e.preventDefault();
+          wrapWordToNextLine(e.data);
+          return;
+        }
+
+        // 2) Sonst: Note verbreitern – aber nicht in 1-Pixel-Schritten,
+        //    sondern in "Paketen", damit sie nicht bei jedem Tastendruck wächst.
+        let extra = neededLineW - innerW;   // was wirklich fehlt
+        const minStep = charW * 2;          // mindestens Platz für ~2 Zeichen
+        if (extra < minStep) extra = minStep;
+
+        let targetW = currentW + extra;
+        if (targetW > maxW) targetW = maxW;
+
+        if (targetW > currentW + 0.5) {
+          noteEl.style.width = targetW + 'px';
+        }
+        // WICHTIG: kein preventDefault hier → der Browser fügt
+        // das Zeichen ganz normal ein, aber in der bereits breiteren Note.
       });
     }
   }
