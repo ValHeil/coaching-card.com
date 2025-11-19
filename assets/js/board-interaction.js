@@ -2037,6 +2037,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         span.textContent = lastLine + e.data;
         const neededLineW = span.getBoundingClientRect().width;
 
+        console.log('[NOTE BEFOREINPUT]',
+          'char=', JSON.stringify(e.data),
+          'currentW=', currentW.toFixed(1),
+          'innerW=', innerW.toFixed(1),
+          'neededLineW=', neededLineW.toFixed(1),
+          'maxW=', max.width.toFixed(1)
+        );
+
         // passt noch ohne Änderung → Browser darf normal einfügen
         if (neededLineW <= innerW + 0.5) {
           return;
@@ -2062,6 +2070,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Breite eines Zeichens vergrößern, DANN Buchstaben einfügen.
         let targetW = currentW + charW;
         if (targetW > maxW) targetW = maxW;
+
+        console.log('[NOTE RESIZE]', 'targetW=', targetW, 'maxW=', max.width);
+        if (targetW >= max.width - 1) debugger;
 
         if (targetW > currentW + 0.5) {
           noteEl.style.width = targetW + 'px';
