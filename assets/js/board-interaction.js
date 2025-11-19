@@ -2029,75 +2029,67 @@ document.addEventListener('DOMContentLoaded', async function() {
     };
 
     if ('onbeforeinput' in content) {
-      content.addEventListener('beforeinput', (e) => {
-        if (!e || e.defaultPrevented) return;
+  content.addEventListener('beforeinput', (e) => {
+    if (!e || e.defaultPrevented) return;
 
-        // Nur „normale“ Texteingaben (kein Backspace, kein Enter etc.)
-        if (e.inputType !== 'insertText' && e.inputType !== 'insertCompositionText') return;
-        if (e.isComposing) return;
-        if (typeof e.data !== 'string' || !e.data) return;
-        if (e.data === '\n') return; // Enter → Breite nicht ändern
+    // Nur „normale“ Texteingaben (kein Backspace, kein Enter etc.)
+    if (e.inputType !== 'insertText' && e.inputType !== 'insertCompositionText') return;
+    if (typeof e.data !== 'string' || !e.data) return;
+    if (e.data === '\n') return; // Enter → Breite nicht ändern
 
-        // Nur behandeln, wenn der Cursor wirklich am Ende ist
-        if (!isCaretAtEndOfContent()) return;
+    const max  = getMaxNoteSize();
+    const area = document.querySelector('.board-area');
+    const s    = parseFloat(area?.dataset.scale || '1') || 1;
 
-        const max  = getMaxNoteSize();
-        const area = document.querySelector('.board-area');
-        const s    = parseFloat(area?.dataset.scale || '1') || 1;
+    const rect     = noteEl.getBoundingClientRect();
+    let currentW   = rect.width / s;
 
-        const rect     = noteEl.getBoundingClientRect();
-        let currentW   = rect.width / s;
+    // Innenbreite (ohne Padding) bestimmen
+    const csNote   = getComputedStyle(noteEl);
+    const padLeft  = parseFloat(csNote.paddingLeft)  || 0;
+    const padRight = parseFloat(csNote.paddingRight) || 0;
+    const innerW   = currentW - (padLeft + padRight);
 
-        // Innenbreite (ohne Padding) bestimmen
-        const csNote   = getComputedStyle(noteEl);
-        const padLeft  = parseFloat(csNote.paddingLeft)  || 0;
-        const padRight = parseFloat(csNote.paddingRight) || 0;
-        const innerW   = currentW - (padLeft + padRight);
+    // Text der letzten Zeile bestimmen
+    const fullText = (content.innerText || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\u00A0/g, ' ');
+    const lines    = fullText.split('\n');
+    const lastLine = lines[lines.length - 1] || '';
 
-        // Text-Inhalt (ganzer Zettel, mit \n)
-        const fullText = (content.innerText || '')
-          .replace(/\r\n/g, '\n')
-          .replace(/\u00A0/g, ' ');
-        const lines    = fullText.split('\n');
-        const lastLine = lines[lines.length - 1] || '';
+    const span = ensureLineMeasureSpan();
 
-        const span = ensureLineMeasureSpan();
+    // Wie breit wäre die letzte Zeile inkl. des neuen Zeichens?
+    span.textContent = lastLine + e.data;
+    const neededLineW = span.getBoundingClientRect().width;
 
-        // Wie breit wäre die letzte Zeile inkl. des neuen Zeichens?
-        span.textContent = lastLine + e.data;
-        const neededLineW = span.getBoundingClientRect().width;
+    // Passt der neue Buchstabe noch in die aktuelle Breite?
+    if (neededLineW <= innerW + 0.5) return;
 
-        // Passt der neue Buchstabe noch in die aktuelle Breite?
-        if (neededLineW <= innerW + 0.5) {
-          // Passt → Browser darf ganz normal einfügen
-          return;
-        }
+    const maxW = max.width;
 
-        // Wieviel zusätzliche Inhalts-Breite brauchen wir?
-        const deltaContentW = neededLineW - innerW;
-        const maxW          = max.width;
-        let   targetW       = currentW + deltaContentW;
+    // Wie viel Innenbreite fehlt der Note,
+    // damit die letzte Zeile inkl. neuem Zeichen hineinpasst?
+    let extraInner = neededLineW - innerW;
+    if (extraInner < 0) extraInner = 0;
+    extraInner += 2; // bisschen Luft
 
-        // Wenn wir selbst bei Verbreiterung über Max kommen würden:
-        if (targetW > maxW) {
-          // → wir brechen an Wortgrenze in die nächste Zeile um
-          e.preventDefault();
-          wrapWordToNextLine(e.data);
-          return;
-        }
+    // gewünschte neue Außenbreite
+    let targetW = currentW + extraInner;
 
-        // Hier: Wir können den Zettel noch verbreitern,
-        // TUN das zuerst und fügen dann selbst den Buchstaben ein.
-        e.preventDefault();
-
-        if (targetW > currentW + 0.5) {
-          noteEl.style.width = targetW + 'px';
-        }
-
-        const newText = fullText + e.data; // Cursor ist am Ende
-        applyManualTextChange(newText);
-      });
+    // Wenn wir dafür über die Maximalbreite müssten → Wort umbrechen
+    if (targetW > maxW - 0.5) {
+      e.preventDefault();
+      wrapWordToNextLine(e.data);
+      return;
     }
+
+    // Ansonsten Note auf die Zielbreite ziehen,
+    // danach fügt der Browser das Zeichen ein.
+    noteEl.style.width = targetW + 'px';
+  });
+}
+
   }
 
   
