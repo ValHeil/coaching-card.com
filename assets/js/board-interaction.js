@@ -1812,12 +1812,18 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   // Lässt eine Notiz ohne Scrollbalken mit dem Inhalt wachsen.
-  // Breite wächst zuerst bis zur Maximalbreite; danach erhöht sich die Höhe.
+  // - Höhe wächst automatisch nach unten.
+  // - Breite bleibt grundsätzlich konstant, wird aber VOR der Eingabe
+  //   stückweise vergrößert, damit der Text nicht erst umbrechen
+  //   und dann wieder „zurückspringen“ muss.
   function attachNoteAutoGrow(noteEl) {
     if (!noteEl || noteEl._autoGrowAttached) return;
     noteEl._autoGrowAttached = true;
 
-    const content = noteEl.querySelector('.notiz-content') || noteEl.querySelector('.note-content');
+    const content =
+      noteEl.querySelector('.notiz-content') ||
+      noteEl.querySelector('.note-content');
+
     if (!content) return;
 
     const save =
@@ -1828,23 +1834,20 @@ document.addEventListener('DOMContentLoaded', async function() {
     const recalc = () => {
       const max = getMaxNoteSize();
       const cs  = getComputedStyle(noteEl);
+
       const padTop    = parseFloat(cs.paddingTop)    || 0;
       const padBottom = parseFloat(cs.paddingBottom) || 0;
-      const padLeft   = parseFloat(cs.paddingLeft)   || 0;
-      const padRight  = parseFloat(cs.paddingRight)  || 0;
-      const padY = padTop + padBottom;
-      const padX = padLeft + padRight;
+      const padY      = padTop + padBottom;
 
       const area = document.querySelector('.board-area');
       const s = parseFloat(area?.dataset.scale || '1') || 1;
 
       const rect = noteEl.getBoundingClientRect();
-      const currentW = rect.width / s;
       const currentH = rect.height / s;
 
       noteEl._autoGrowInProgress = true;
 
-      // Platzhalter-Text erkennen (wie in setupNoteEditingHandlers)
+      // Platzhalter erkennen (gleiche Texte wie im Editing-Code)
       const rawText = (content.textContent || '').replace(/\u200B/g, '').trim();
       const PLACEHOLDER_TEXT     = 'Schreiben sie hier ihren Text...';
       const PLACEHOLDER_TEXT_OLD = 'Schreiben sie hier ihren Text.';
@@ -1853,33 +1856,24 @@ document.addEventListener('DOMContentLoaded', async function() {
         rawText === PLACEHOLDER_TEXT_OLD;
 
       // Solange nur der Platzhalter steht und NICHT editiert wird:
-      // feste Grundgröße (200×200) beibehalten.
+      // Grundgröße aus CSS beibehalten (z.B. 200×200).
       if (isPlaceholder && !noteEl.classList.contains('is-editing')) {
-        const minW = cs.minWidth;
         const minH = cs.minHeight;
-        if (minW && minW !== '0px' && minW !== 'auto') noteEl.style.width  = minW;
-        if (minH && minH !== '0px' && minH !== 'auto') noteEl.style.height = minH;
+        if (minH && minH !== '0px' && minH !== 'auto') {
+          noteEl.style.height = minH;
+        }
         noteEl.style.overflowY = 'visible';
         noteEl._autoGrowInProgress = false;
         return;
       }
 
-      // Breite & Höhe freigeben → gewünschte Größe messen
-      noteEl.style.width  = 'auto';
+      // Höhe freigeben → gewünschte Höhe messen
       noteEl.style.height = 'auto';
 
       const neededH = content.scrollHeight + padY;
-      const neededW = content.scrollWidth  + padX;
-
       const targetH = Math.min(max.height, neededH);
-      let   targetW = Math.min(max.width,  neededW);
 
-      const minWidthPx = parseFloat(cs.minWidth) || 0;
-      if (targetW < minWidthPx) targetW = minWidthPx;
-
-      if (Math.abs(currentW - targetW) > 1) {
-        noteEl.style.width = targetW + 'px';
-      }
+      // Nur anpassen, wenn sich wirklich etwas ändert
       if (Math.abs(currentH - targetH) > 1) {
         noteEl.style.height = targetH + 'px';
       }
@@ -1896,16 +1890,49 @@ document.addEventListener('DOMContentLoaded', async function() {
       try { save(); } catch {}
     };
 
-
-    // FÜR andere Stellen verfügbar machen (z.B. resize Handler)
+    // Recalc-Callback auch für den ResizeObserver verfügbar machen
     noteEl._autoGrowRecalc = recalc;
 
-    // Inhalt hat sich geändert → neu messen
+    // Bei Texteingabe: Auto-Grow auslösen (Höhe)
     content.addEventListener('input', recalc);
 
-    // Erste Berechnung leicht verzögert
+    // Initial ein Mal nach dem Einfügen laufen lassen
     setTimeout(recalc, 0);
+
+    // ------------------------------------------------------------------
+    // VOR der Texteingabe die Breite schrittweise vergrößern,
+    // damit der Text nicht erst in die nächste Zeile rutscht
+    // und danach wieder nach oben springt.
+    // ------------------------------------------------------------------
+    const STEP_PX = 20; // pro Zeichen etwa 20px mehr Breite
+
+    if ('onbeforeinput' in content) {
+      content.addEventListener('beforeinput', (e) => {
+        if (!e || e.defaultPrevented) return;
+
+        // Nur „normale“ Texteingaben (kein Backspace, kein Enter)
+        if (e.inputType !== 'insertText' && e.inputType !== 'insertCompositionText') return;
+        if (typeof e.data !== 'string' || !e.data) return;
+        if (e.data === '\n') return; // Enter machen wir nicht breiter
+
+        const max = getMaxNoteSize();
+        const area = document.querySelector('.board-area');
+        const s = parseFloat(area?.dataset.scale || '1') || 1;
+        const rect = noteEl.getBoundingClientRect();
+        const currentW = rect.width / s;
+
+        // Bereits am maximal erlaubten Wert → nichts tun
+        if (currentW >= max.width - 1) return;
+
+        const targetW = Math.min(max.width, currentW + STEP_PX);
+
+        if (targetW > currentW + 0.5) {
+          noteEl.style.width = targetW + 'px';
+        }
+      });
+    }
   }
+
   
   // Focus Note Texte nach Board-Typ
   const focusNoteTexts = {
