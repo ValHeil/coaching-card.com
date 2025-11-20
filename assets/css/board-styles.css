@@ -862,7 +862,7 @@ body {
   resize: both;           /* manueller Resize bleibt möglich */
   overflow: visible;      /* keine Scrollbalken; Notiz wächst */
   max-width: 80vw;        /* Sicherheit, nicht aus dem Viewport */
-  max-height: 400px;
+  max-height: 70vh;
 }
 
 .notiz-content {
