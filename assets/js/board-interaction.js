@@ -1853,8 +1853,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         noteEl.style.width  = 'auto';
         noteEl.style.height = 'auto';
 
-        let targetW = Math.ceil(content.scrollWidth + padX);
+        const SLACK_PX = 16;
+
+        let targetW = Math.ceil(content.scrollWidth + padX + SLACK_PX);
+
+        // minWidth respektieren – solange der Text + Slack
+        // noch kleiner als minW ist, bleibt die Notiz bei minW
         targetW = Math.max(targetW, minW);
+
         if (targetW > max.width) {
           targetW = max.width;
         }
@@ -2791,9 +2797,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         el.style.borderColor = border;
 
         // Position/Größe laut Template (mit Fallback auf feste Notiz-Maße)
-       w.w = (typeof w.w === 'number' && w.w > 0) ? w.w : 200;
-       w.h = (typeof w.h === 'number' && w.h > 0) ? w.h : 200;
-       place(el, w);
+        w.w = (typeof w.w === 'number' && w.w > 0) ? w.w : 200;
+        w.h = (typeof w.h === 'number' && w.h > 0) ? w.h : 200;
+
+        // CSS-Variablen so setzen, dass abgezogene Zettel
+        // genau so groß starten wie der Block
+        el.style.setProperty('--note-w', w.w + 'px');
+        el.style.setProperty('--note-h', w.h + 'px');
+
+        place(el, w);
 
         // Erst jetzt anhängen (falls neu)
         if (isNew) area.appendChild(el);
