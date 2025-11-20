@@ -1746,28 +1746,28 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Maximal zulässige Notizgröße dynamisch relativ zum Viewport
   function getMaxNoteSize() {
+    // Board-Bühne bestimmen
     const area =
       document.querySelector('.board-area') ||
       document.getElementById('session-board') ||
       document.body;
 
     const rect = area.getBoundingClientRect();
-
-    // Board-Skalierung (Zoom) berücksichtigen
     const s = parseFloat(area.dataset.scale || '1') || 1;
-    const w = rect.width  / s;
+    const w = rect.width / s;
     const h = rect.height / s;
 
-    // Erst separat begrenzen …
+    // Maximalbreite: ca. 90% der Board-Breite, hart gedeckelt
     const maxW = Math.max(220, Math.min(w * 0.9, 900));
-    const maxH = Math.max(220, Math.min(h * 0.9, 900));
 
-    // … dann symmetrisch machen: im Extremfall wieder quadratisch
-    const side = Math.min(maxW, maxH);
+    // Maximalhöhe soll höchstens so groß sein wie maxW (→ im Extremfall quadratisch),
+    // wird aber zusätzlich durch die Board-Höhe begrenzt
+    const maxHByBoard = Math.max(150, Math.min(h * 0.9, 900));
+    const maxH = Math.min(maxW, maxHByBoard);
 
     return {
-      width:  side,
-      height: side
+      width:  maxW,
+      height: maxH
     };
   }
 
@@ -1817,6 +1817,37 @@ document.addEventListener('DOMContentLoaded', async function() {
       console.warn('ResizeObserver nicht verfügbar oder Fehler:', e);
     }
   }
+
+  // Hinweis anzeigen, wenn die Notiz die maximale Höhe erreicht hat
+  function showNoteFullWarning(noteEl) {
+    if (!noteEl) return;
+
+    // Eventuell laufenden Timer zurücksetzen
+    if (noteEl._noteFullTimer) {
+      clearTimeout(noteEl._noteFullTimer);
+      noteEl._noteFullTimer = null;
+    }
+
+    noteEl.classList.add('note-full');
+
+    let msg = noteEl.querySelector('.note-full-message');
+    if (!msg) {
+      msg = document.createElement('div');
+      msg.className = 'note-full-message';
+      msg.textContent = 'Diese Notiz ist voll';
+      noteEl.appendChild(msg);
+    }
+
+    msg.style.display = 'block';
+
+    // Hinweis nach ~2,5s wieder ausblenden
+    noteEl._noteFullTimer = setTimeout(() => {
+      noteEl.classList.remove('note-full');
+      if (msg) msg.style.display = 'none';
+      noteEl._noteFullTimer = null;
+    }, 2500);
+  }
+
 
   // Auto-Wachstum der Notizzettel (Breite/Höhe) ----------------------------
   function attachNoteAutoGrow(noteEl) {
@@ -1928,12 +1959,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         // 4) Höhe anhand tatsächlicher Inhalte bestimmen
-        noteEl.style.height = 'auto'; // natürliche Höhe
-        const naturalH = Math.ceil(content.scrollHeight + padY);
+        noteEl.style.height = 'auto';
 
-        let targetH = naturalH;
-        if (targetH < minH) targetH = minH;
+        // "Roh"-Zielhöhe (ungeclamped) berechnen
+        const rawTargetH = Math.ceil(content.scrollHeight + padY);
+
+        let targetH = rawTargetH;
+        targetH = Math.max(targetH, minH);
         if (targetH > max.height) targetH = max.height;
+
+        // Haben wir in diesem Recalc zum ersten Mal das Höhen-Limit erreicht?
+        const hitMaxHeightNow = rawTargetH >= max.height && currentH < max.height - 1;
+        if (hitMaxHeightNow) {
+          showNoteFullWarning(noteEl);
+        }
 
         // aktuelle Höhe nach evtl. Breitenänderung neu messen
         const rect2 = noteEl.getBoundingClientRect();
