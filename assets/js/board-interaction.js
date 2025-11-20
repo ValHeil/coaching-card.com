@@ -1760,7 +1760,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // „vernünftige“ Grenzen – kannst du bei Bedarf anpassen
     return {
       width:  Math.max(220, Math.min(w * 0.9, 900)),
-      height: Math.max(150, Math.min(h * 0.9, 900))
+      height: 400
     };
   }
 
@@ -1821,84 +1821,96 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       function recalc() {
         const max = getMaxNoteSize();
-        const cs = getComputedStyle(noteEl);
-        const padX = px(parseFloat(cs.paddingLeft)) + px(parseFloat(cs.paddingRight))
-                   + px(parseFloat(cs.borderLeftWidth)) + px(parseFloat(cs.borderRightWidth));
-        const padY = px(parseFloat(cs.paddingTop)) + px(parseFloat(cs.paddingBottom))
-                   + px(parseFloat(cs.borderTopWidth)) + px(parseFloat(cs.borderBottomWidth));
+        const cs  = getComputedStyle(noteEl);
+
+        const padX =
+          px(parseFloat(cs.paddingLeft))  +
+          px(parseFloat(cs.paddingRight)) +
+          px(parseFloat(cs.borderLeftWidth)) +
+          px(parseFloat(cs.borderRightWidth));
+
+        const padY =
+          px(parseFloat(cs.paddingTop))   +
+          px(parseFloat(cs.paddingBottom))+
+          px(parseFloat(cs.borderTopWidth)) +
+          px(parseFloat(cs.borderBottomWidth));
 
         // Min-Größen aus CSS berücksichtigen
-        const minW = Math.max(0, px(parseFloat(cs.minWidth)) || 0);
+        const minW = Math.max(0, px(parseFloat(cs.minWidth))  || 0);
         const minH = Math.max(0, px(parseFloat(cs.minHeight)) || 0);
 
         noteEl._autoGrowInProgress = true;
 
-        // Zuerst horizontale Wunschbreite ermitteln (ohne Umbruch)
+        // aktuelle Inline-Styles merken
         const prevWhiteSpace = content.style.whiteSpace;
         const prevWidthStyle = content.style.width;
+
+        // 1) Wunschbreite des Textes ohne Umbruch messen
         content.style.whiteSpace = 'nowrap';
         content.style.width = 'max-content';
 
-        // temporär auf auto setzen, um natürliche Größe zu ermitteln
-        noteEl.style.width = 'auto';
+        // Note kurz auf "natürlich" setzen, damit scrollWidth stimmt
+        noteEl.style.width  = 'auto';
         noteEl.style.height = 'auto';
 
-        // Zielbreite: Inhalt + Rahmen, zwischen min und max
         let targetW = Math.ceil(content.scrollWidth + padX);
         targetW = Math.max(targetW, minW);
         if (targetW > max.width) {
           targetW = max.width;
-          content.style.whiteSpace = 'normal'; // danach in die Höhe wachsen
-          content.style.wordBreak = 'break-word';
-          content.style.overflowWrap = 'anywhere';
         }
 
-        // Setzen, nur wenn wirklich geändert (verhindert ResizeObserver-Jitter)
-        const sX = (parseFloat(document.querySelector('.board-area')?.dataset.scaleX || '1') || 1);
-        const sY = (parseFloat(document.querySelector('.board-area')?.dataset.scaleY || '1') || 1);
-        const currentW = Math.ceil(noteEl.getBoundingClientRect().width  / sX);
-        const currentH = Math.ceil(noteEl.getBoundingClientRect().height / sY);
+        // Skalierung des Boards berücksichtigen
+        const boardArea = document.querySelector('.board-area');
+        const sX = (parseFloat(boardArea?.dataset.scaleX || boardArea?.dataset.scale || '1') || 1);
+        const sY = (parseFloat(boardArea?.dataset.scaleY || boardArea?.dataset.scale || '1') || 1);
 
+        const rect = noteEl.getBoundingClientRect();
+        const currentW = Math.ceil(rect.width  / sX);
+        const currentH = Math.ceil(rect.height / sY);
+
+        // Nur setzen, wenn sich die Breite wirklich ändert (verhindert Jitter mit ResizeObserver)
         if (Math.abs(currentW - targetW) > 1) {
           noteEl.style.width = targetW + 'px';
         }
 
-        // Höhe: Inhaltshöhe bei gesetzter Breite
+        // 2) Höhe anhand der neuen Breite bestimmen
+        noteEl.style.height = 'auto';
         let targetH = Math.ceil(content.scrollHeight + padY);
         targetH = Math.max(targetH, minH);
         if (targetH > max.height) targetH = max.height;
+
         if (Math.abs(currentH - targetH) > 1) {
           noteEl.style.height = targetH + 'px';
         }
 
-        // Wenn Max-Höhe erreicht, vertikales Scrollen erlauben, sonst sichtbar lassen
+        // Bei Max-Höhe: Scroll erlauben, sonst einfach wachsen lassen
         if (targetH >= max.height - 1) {
           noteEl.style.overflowY = 'auto';
         } else {
           noteEl.style.overflowY = 'visible';
         }
 
-        // Nach der Messung immer umbruchfähig rendern
-        content.style.width = '100%';
-        content.style.whiteSpace = 'normal';
-        content.style.wordBreak = 'break-word';
+        // 3) Content-Styles wieder auf "normal" (Zeilenumbrüche wie im CSS)
+        content.style.whiteSpace  = prevWhiteSpace || '';
+        content.style.width       = prevWidthStyle || '100%';
+        content.style.wordBreak   = 'break-word';
         content.style.overflowWrap = 'anywhere';
+
         noteEl._autoGrowInProgress = false;
+
         // Beim Ziehen KEIN Autosave (vermeidet Snapshot-Jitter)
         if (!noteEl.classList.contains('being-dragged')) {
           debouncedSave();
         }
-
-        debouncedSave();
       }
 
-      // Speichern, um extern aufrufen zu können (z. B. bei window.resize)
+      // Für äußere Aufrufer (z. B. window.resize)
       noteEl._autoGrowRecalc = recalc;
 
-      // Initial berechnen
+      // Initial einmal messen
       requestAnimationFrame(recalc);
 
-      // Auf Eingaben reagieren
+      // Auf Eingaben/Mutation reagieren
       ['input', 'keyup', 'change'].forEach(ev => content.addEventListener(ev, recalc));
       const mo = new MutationObserver(recalc);
       mo.observe(content, { childList: true, characterData: true, subtree: true });
@@ -1908,8 +1920,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       console.warn('AutoGrow-Setup fehlgeschlagen:', e);
     }
   }
-
-
 
   
   // Focus Note Texte nach Board-Typ
