@@ -2033,7 +2033,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         // Bei Max-Höhe: Scroll erlauben, sonst einfach wachsen lassen
-        if (naturalH > max.height) {
+        if (rawTargetH > max.height) {
           noteEl.style.overflowY = 'auto';
         } else {
           noteEl.style.overflowY = 'visible';
