@@ -184,6 +184,50 @@ function normalizeTemplate(raw) {
   };
 }
 
+// Prüft, ob eine Notiz keinen sichtbaren Platz mehr für weiteren Text hat
+function isNoteFull(noteEl, contentEl) {
+  if (!noteEl || !contentEl) return false;
+
+  // Maximal erlaubte Größe (gleiche Logik wie beim Auto-Grow)
+  let max = { width: 400, height: 400 };
+  try {
+    if (typeof getMaxNoteSize === 'function') {
+      max = getMaxNoteSize();
+    }
+  } catch (_) {}
+
+  const area =
+    document.querySelector('.board-area') ||
+    document.getElementById('session-board') ||
+    document.body;
+
+  const rect = noteEl.getBoundingClientRect();
+  const sx = parseFloat((area && (area.dataset.scaleX || area.dataset.scale)) || '1') || 1;
+  const sy = parseFloat((area && (area.dataset.scaleY || area.dataset.scale)) || '1') || 1;
+  const currentW = rect.width / sx;
+  const currentH = rect.height / sy;
+
+  const csNote = getComputedStyle(noteEl);
+  const padTop = parseFloat(csNote.paddingTop) || 0;
+  const padBottom = parseFloat(csNote.paddingBottom) || 0;
+  const padY = padTop + padBottom;
+
+  // „Wunschhöhe“ des Inhalts in gleichen Pixeln wie max.height
+  const naturalH = contentEl.scrollHeight + padY;
+
+  const atMaxH = currentH >= (max.height - 1);
+  const atMaxW = currentW >= (max.width - 1);
+  const wantsMoreH = naturalH > (max.height + 0.5);
+
+  // Voll ist die Notiz, wenn:
+  // 1) Sie bereits die maximale Höhe erreicht hat UND der Inhalt noch höher sein möchte
+  //    → es gäbe also eine zusätzliche Zeile, die nicht mehr sichtbar wäre
+  // ODER
+  // 2) Höhe UND Breite beide am Limit sind
+  return (atMaxH && wantsMoreH) || (atMaxH && atMaxW);
+}
+
+
 // 1st: /app/assets/boards/<slug>/board.json
 // 2nd: /wp-json/cc/v1/boards/<slug> (liefert { template: {...} })
 // 3rd: sinnvolles Minimal-Template (kein harter Fehler)
@@ -1822,12 +1866,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   function showNoteFullWarning(noteEl) {
     if (!noteEl) return;
 
-    // Eventuell laufenden Timer zurücksetzen
-    if (noteEl._noteFullTimer) {
-      clearTimeout(noteEl._noteFullTimer);
-      noteEl._noteFullTimer = null;
-    }
-
     noteEl.classList.add('note-full');
 
     let msg = noteEl.querySelector('.note-full-message');
@@ -1835,16 +1873,28 @@ document.addEventListener('DOMContentLoaded', async function() {
       msg = document.createElement('div');
       msg.className = 'note-full-message';
       msg.textContent = 'Diese Notiz ist voll';
+
+      // Fallback-Styling, falls CSS noch nicht angepasst ist
+      msg.style.position = 'absolute';
+      msg.style.top = '-1.8rem';
+      msg.style.left = '0.5rem';
+      msg.style.padding = '2px 6px';
+      msg.style.fontSize = '11px';
+      msg.style.borderRadius = '4px';
+      msg.style.background = 'rgba(220, 38, 38, 0.9)';
+      msg.style.color = '#fff';
+      msg.style.pointerEvents = 'none';
+      msg.style.zIndex = '9999';
+
       noteEl.appendChild(msg);
     }
 
-    msg.style.display = 'block';
-
-    // Hinweis nach ~2,5s wieder ausblenden
-    noteEl._noteFullTimer = setTimeout(() => {
+    clearTimeout(noteEl._noteFullTimeout);
+    noteEl._noteFullTimeout = setTimeout(() => {
       noteEl.classList.remove('note-full');
-      if (msg) msg.style.display = 'none';
-      noteEl._noteFullTimer = null;
+      if (msg && msg.parentNode === noteEl) {
+        msg.remove();
+      }
     }, 2500);
   }
 
@@ -4105,20 +4155,34 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Bullet-Logik:
     // - Erste Eingabe in leerer Notiz setzt "• " + erstes Zeichen
     // - Enter erzeugt neue Zeile mit "• "
+    // - Wenn Notiz „voll“ ist: keine neue Zeile / keine neuen Zeichen mehr
     content.addEventListener('keydown', (e) => {
       const isEnter     = (e.key === 'Enter');
       const isPrintable = (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey);
-      const textNow = (content.textContent || '').replace(/\u200B/g, '');
+
+      const textNow  = (content.textContent || '').replace(/\u200B/g, '');
       const emptyNow = (textNow.trim() === '');
 
-      // Enter erzeugt neue Bullet-Zeile
+      // 1) Notiz voll? → weitere Eingabe blockieren
+      //    - Enter: keine neue Zeile mehr
+      //    - normale Zeichen: auch keine „unsichtbaren“ Zeichen zulassen,
+      //      wenn Text eigentlich in eine neue Zeile wandern müsste
+      if (isNoteFull(notiz, content) && (isEnter || isPrintable)) {
+        e.preventDefault();
+        if (typeof showNoteFullWarning === 'function') {
+          showNoteFullWarning(notiz);
+        }
+        return;
+      }
+
+      // 2) Enter erzeugt neue Bullet-Zeile
       if (isEnter) {
         e.preventDefault();
         document.execCommand('insertHTML', false, '\n• ');
         return;
       }
 
-      // Erste Eingabe in leerer Notiz: direkt "• " + erstes Zeichen
+      // 3) Erste Eingabe in leerer Notiz: direkt "• " + erstes Zeichen
       if (isPrintable && emptyNow) {
         e.preventDefault();
         const firstChar = e.key;
@@ -4134,6 +4198,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       }
     });
+
 
     // Bearbeitung beenden, wenn außerhalb geklickt wird
     function endEditing() {
