@@ -1746,21 +1746,28 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Maximal zulässige Notizgröße dynamisch relativ zum Viewport
   function getMaxNoteSize() {
-    // Board-Bühne bestimmen
     const area =
       document.querySelector('.board-area') ||
       document.getElementById('session-board') ||
       document.body;
 
     const rect = area.getBoundingClientRect();
+
+    // Board-Skalierung (Zoom) berücksichtigen
     const s = parseFloat(area.dataset.scale || '1') || 1;
-    const w = rect.width / s;
+    const w = rect.width  / s;
     const h = rect.height / s;
 
-    // „vernünftige“ Grenzen – kannst du bei Bedarf anpassen
+    // Erst separat begrenzen …
+    const maxW = Math.max(220, Math.min(w * 0.9, 900));
+    const maxH = Math.max(220, Math.min(h * 0.9, 900));
+
+    // … dann symmetrisch machen: im Extremfall wieder quadratisch
+    const side = Math.min(maxW, maxH);
+
     return {
-      width:  Math.max(220, Math.min(w * 0.9, 900)),
-      height: Math.max(150, Math.min(h * 0.9, 900))
+      width:  side,
+      height: side
     };
   }
 
@@ -1811,121 +1818,176 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
 
+  // Auto-Wachstum der Notizzettel (Breite/Höhe) ----------------------------
   function attachNoteAutoGrow(noteEl) {
-    try {
-      if (!noteEl || noteEl._autoGrowAttached) return;
-      const content = noteEl.querySelector('.notiz-content, .note-content');
-      if (!content) return;
+    if (!noteEl || noteEl._autoGrowAttached) return;
 
-      function px(n) { return isNaN(n) ? 0 : n; }
+    const content = noteEl.querySelector('.notiz-content, .note-content');
+    if (!content) return;
 
-      function recalc() {
-        const max = getMaxNoteSize();
-        const cs  = getComputedStyle(noteEl);
+    // Hilfsfunktion für parseFloat mit Fallback
+    const px = (v) => {
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : 0;
+    };
 
-        const padX =
-          px(parseFloat(cs.paddingLeft))  +
-          px(parseFloat(cs.paddingRight)) +
-          px(parseFloat(cs.borderLeftWidth)) +
-          px(parseFloat(cs.borderRightWidth));
+    // Gemeinsames unsichtbares Measure-Element für alle Notizen
+    let measureEl = window.__ccNoteMeasureEl;
+    if (!measureEl) {
+      measureEl = document.createElement('div');
+      measureEl.id = '__cc-note-measure';
+      measureEl.style.position   = 'absolute';
+      measureEl.style.visibility = 'hidden';
+      measureEl.style.left       = '-9999px';
+      measureEl.style.top        = '-9999px';
+      measureEl.style.whiteSpace = 'pre';   // Zeilenumbrüche beachten, aber kein Wrap erzwingen
+      measureEl.style.padding    = '0';
+      measureEl.style.margin     = '0';
+      measureEl.style.border     = '0';
+      document.body.appendChild(measureEl);
+      window.__ccNoteMeasureEl = measureEl;
+    }
 
-        const padY =
-          px(parseFloat(cs.paddingTop))   +
-          px(parseFloat(cs.paddingBottom))+
-          px(parseFloat(cs.borderTopWidth)) +
-          px(parseFloat(cs.borderBottomWidth));
-
-        // Min-Größen aus CSS berücksichtigen
-        const minW = Math.max(0, px(parseFloat(cs.minWidth))  || 0);
-        const minH = Math.max(0, px(parseFloat(cs.minHeight)) || 0);
-
+    function recalc() {
+      try {
         noteEl._autoGrowInProgress = true;
 
-        // aktuelle Inline-Styles merken
-        const prevWhiteSpace = content.style.whiteSpace;
-        const prevWidthStyle = content.style.width;
+        const max = getMaxNoteSize();
+        const csNote = getComputedStyle(noteEl);
 
-        // 1) Wunschbreite des Textes ohne Umbruch messen
-        content.style.whiteSpace = 'nowrap';
-        content.style.width = 'max-content';
+        // Innenabstände für die Breite/Höhe berücksichtigen
+        const padX = px(csNote.paddingLeft) + px(csNote.paddingRight) + 10;
+        const padY = px(csNote.paddingTop)  + px(csNote.paddingBottom) + 10;
 
-        // Note kurz auf "natürlich" setzen, damit scrollWidth stimmt
-        noteEl.style.width  = 'auto';
-        noteEl.style.height = 'auto';
+        const minW = parseFloat(csNote.minWidth)  || 180;
+        const minH = parseFloat(csNote.minHeight) || 180;
 
-        const SLACK_PX = 16;
-
-        let targetW = Math.ceil(content.scrollWidth + padX + SLACK_PX);
-
-        // minWidth respektieren – solange der Text + Slack
-        // noch kleiner als minW ist, bleibt die Notiz bei minW
-        targetW = Math.max(targetW, minW);
-
-        if (targetW > max.width) {
-          targetW = max.width;
-        }
-
-        // Skalierung des Boards berücksichtigen
-        const boardArea = document.querySelector('.board-area');
-        const sX = (parseFloat(boardArea?.dataset.scaleX || boardArea?.dataset.scale || '1') || 1);
-        const sY = (parseFloat(boardArea?.dataset.scaleY || boardArea?.dataset.scale || '1') || 1);
+        // Aktuelle Breite/Höhe in "unskalierten" Pixeln
+        const area =
+          document.querySelector('.board-area') ||
+          document.getElementById('session-board') ||
+          document.body;
 
         const rect = noteEl.getBoundingClientRect();
-        const currentW = Math.ceil(rect.width  / sX);
-        const currentH = Math.ceil(rect.height / sY);
+        const sx = parseFloat(area.dataset.scaleX || area.dataset.scale || '1') || 1;
+        const sy = parseFloat(area.dataset.scaleY || area.dataset.scale || '1') || 1;
 
-        // Nur setzen, wenn sich die Breite wirklich ändert (verhindert Jitter mit ResizeObserver)
+        const currentW = rect.width  / sx;
+        const currentH = rect.height / sy;
+
+        // 1) Platzhalter erkennen und NICHT zum Messen benutzen
+        const rawText = ((content.innerText || content.textContent || '') + '')
+          .replace(/\u200B/g, ''); // zero-width chars raus
+
+        const placeholder = content.getAttribute('data-placeholder');
+        const isPlaceholder = placeholder &&
+          rawText.trim() === placeholder.trim();
+
+        if (isPlaceholder) {
+          // Neuer Zettel: einfach bei der Ausgangsgröße bleiben
+          const targetW = Math.max(minW, Math.min(max.width,  currentW || minW));
+          const targetH = Math.max(minH, Math.min(max.height, currentH || minH));
+          noteEl.style.width  = targetW + 'px';
+          noteEl.style.height = targetH + 'px';
+          noteEl._autoGrowInProgress = false;
+          return;
+        }
+
+        // 2) Nur die AKTUELLE Zeile messen (alles nach dem letzten Zeilenumbruch)
+        const lines = rawText.split(/\r?\n/);
+        const activeLine = lines.length ? lines[lines.length - 1] : '';
+
+        // Schrift-/Textstil auf das Measure-Element übertragen
+        const csContent = getComputedStyle(content);
+        measureEl.style.fontFamily   = csContent.fontFamily;
+        measureEl.style.fontSize     = csContent.fontSize;
+        measureEl.style.fontWeight   = csContent.fontWeight;
+        measureEl.style.fontStyle    = csContent.fontStyle;
+        measureEl.style.letterSpacing= csContent.letterSpacing;
+        measureEl.style.textTransform= csContent.textTransform;
+        measureEl.style.lineHeight   = csContent.lineHeight;
+        measureEl.style.wordSpacing  = csContent.wordSpacing;
+
+        measureEl.textContent = activeLine || '';
+
+        const textW = Math.ceil(measureEl.getBoundingClientRect().width);
+
+        // Ein wenig Luft, damit der Text die rechte Kante nicht sofort berührt
+        const SLACK_PX = 16;
+
+        let targetW = textW + padX + SLACK_PX;
+        if (targetW < minW) targetW = minW;
+        if (targetW > max.width) targetW = max.width;
+
+        // WICHTIG: Nur wachsen, nicht bei kürzerer Zeile wieder schrumpfen
+        if (targetW < currentW) targetW = currentW;
+
+        // 3) Breite setzen, falls sinnvoll geändert
         if (Math.abs(currentW - targetW) > 1) {
           noteEl.style.width = targetW + 'px';
         }
 
-        // 2) Höhe anhand der neuen Breite bestimmen
-        noteEl.style.height = 'auto';
-        let targetH = Math.ceil(content.scrollHeight + padY);
-        targetH = Math.max(targetH, minH);
+        // 4) Höhe anhand tatsächlicher Inhalte bestimmen
+        noteEl.style.height = 'auto'; // natürliche Höhe
+        const naturalH = Math.ceil(content.scrollHeight + padY);
+
+        let targetH = naturalH;
+        if (targetH < minH) targetH = minH;
         if (targetH > max.height) targetH = max.height;
 
-        if (Math.abs(currentH - targetH) > 1) {
+        // aktuelle Höhe nach evtl. Breitenänderung neu messen
+        const rect2 = noteEl.getBoundingClientRect();
+        const currentH2 = rect2.height / sy;
+
+        if (Math.abs(currentH2 - targetH) > 1) {
           noteEl.style.height = targetH + 'px';
         }
 
         // Bei Max-Höhe: Scroll erlauben, sonst einfach wachsen lassen
-        if (targetH >= max.height - 1) {
+        if (naturalH > max.height) {
           noteEl.style.overflowY = 'auto';
         } else {
           noteEl.style.overflowY = 'visible';
         }
 
-        // 3) Content-Styles wieder auf "normal" (Zeilenumbrüche wie im CSS)
-        content.style.whiteSpace  = prevWhiteSpace || '';
-        content.style.width       = prevWidthStyle || '100%';
-        content.style.wordBreak   = 'break-word';
+        // Sicherheitshalber sinnvolle Defaults für den Text
+        content.style.whiteSpace   = 'pre-wrap';
+        content.style.wordBreak    = 'break-word';
         content.style.overflowWrap = 'anywhere';
-
+      } catch (err) {
+        console.error('[NOTE AUTOGROW] Fehler bei recalc()', err);
+      } finally {
         noteEl._autoGrowInProgress = false;
+      }
+    }
 
-        // Beim Ziehen KEIN Autosave (vermeidet Snapshot-Jitter)
-        if (!noteEl.classList.contains('being-dragged')) {
-          debouncedSave();
+    // Recalc-Funktion auch für andere Hooks verfügbar machen
+    noteEl._autoGrowRecalc = recalc;
+    noteEl._autoGrowAttached = true;
+
+    // Initial einmal nach dem Einfügen in den DOM rechnen
+    requestAnimationFrame(recalc);
+
+    // Recalc bei Texteingabe
+    ['input', 'keyup', 'change'].forEach(evt => {
+      content.addEventListener(evt, recalc);
+    });
+
+    // Recalc bei DOM-Änderungen im Content (z.B. Platzhalter → Bullet, Remote-Updates)
+    const mo = new MutationObserver(muts => {
+      for (const m of muts) {
+        if (m.type === 'characterData' || m.type === 'childList') {
+          recalc();
+          break;
         }
       }
+    });
+    mo.observe(content, { childList: true, characterData: true, subtree: true });
 
-      // Für äußere Aufrufer (z. B. window.resize)
-      noteEl._autoGrowRecalc = recalc;
-
-      // Initial einmal messen
-      requestAnimationFrame(recalc);
-
-      // Auf Eingaben/Mutation reagieren
-      ['input', 'keyup', 'change'].forEach(ev => content.addEventListener(ev, recalc));
-      const mo = new MutationObserver(recalc);
-      mo.observe(content, { childList: true, characterData: true, subtree: true });
-
-      noteEl._autoGrowAttached = true;
-    } catch (e) {
-      console.warn('AutoGrow-Setup fehlgeschlagen:', e);
-    }
+    // Optional: bei Fenster-Resize auch nochmal anpassen
+    window.addEventListener('resize', recalc);
   }
+
 
   
   // Focus Note Texte nach Board-Typ
