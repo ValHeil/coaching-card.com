@@ -862,14 +862,14 @@ body {
   resize: both;           /* manueller Resize bleibt möglich */
   overflow: visible;      /* keine Scrollbalken; Notiz wächst */
   max-width: 80vw;        /* Sicherheit, nicht aus dem Viewport */
-  max-height: 70vh;
+  max-height: 400px;
 }
 
 .notiz-content {
   box-sizing: border-box;
   display: inline-block;
   width: 100% !important;
-  white-space: pre-wrap !important; 
+  white-space: pre-wrap; 
   overflow: visible !important;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -1075,7 +1075,7 @@ footer.board-footer {
 }
 
 .notiz-content {
-  white-space: pre-wrap !important; /* Absätze/Zeilenumbrüche erhalten */
+  white-space: pre-wrap; /* Absätze/Zeilenumbrüche erhalten */
 }
 
 #cards-container, .cards-container { position: relative; }
