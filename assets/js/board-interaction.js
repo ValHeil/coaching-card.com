@@ -1856,7 +1856,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       // Platzhalter-Text abfangen
       const rawText = (content.textContent || '').replace(/\u200B/g, '').trim();
-      const PH1 = 'Schreiben sie hier ihren Text...';
+      const PH1 = 'Schreiben sie hier ihren Text.';
       const PH2 = 'Schreiben sie hier ihren Text.';
       const PH3 = 'Schreiben sie hier ihren Text';
       const isPlaceholder =
@@ -1901,11 +1901,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     setTimeout(recalc, 0);
 
     // ------------------------------------------------------------------
-    // NEU: VOR der Texteingabe prüfen wir anhand der WIRKLICHEN
-    // Caret-Position, ob der nächste Buchstabe noch in die Zeile passt.
+    // NEU: VOR der Texteingabe prüfen wir, ob der nächste Buchstabe
+    // noch in die aktuelle Zeile passt.
     //
-    // - Wir messen die Breite des aktuellen Zeilenrests über
-    //   getSelection().getRangeAt(0).getClientRects().
+    // - Wir messen die Breite der letzten Zeile.
     // - Wenn das neue Zeichen nicht mehr reinpasst:
     //   * Note wird (falls möglich) breiter gemacht
     //   * Standard-Eingabe wird verhindert
@@ -1987,6 +1986,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (typeof e.data !== 'string' || !e.data) return;
         if (e.data === '\n') return; // Enter → Breite nicht ändern
 
+        // Nur eingreifen, wenn der Caret wirklich am Ende steht.
+        // Sonst Browser alles allein machen lassen.
+        if (!isCaretAtEndOfContent()) {
+          return;
+        }
+
         const max  = getMaxNoteSize();
         const area = document.querySelector('.board-area');
         const s    = parseFloat(area?.dataset.scale || '1') || 1;
@@ -2000,10 +2005,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         const padRight = parseFloat(csNote.paddingRight) || 0;
         const innerW   = currentW - (padLeft + padRight);
 
-        // Text der letzten Zeile (vor dem neuen Zeichen)
-        const fullText = (content.innerText || '')
-          .replace(/\r\n/g, '\n')
-          .replace(/\u00A0/g, ' ');
+        // Volltext (möglichst über getNoteText, damit alles konsistent ist)
+        let fullText;
+        if (typeof getNoteText === 'function') {
+          fullText = getNoteText(noteEl) || '';
+        } else {
+          fullText = (content.innerText || '')
+            .replace(/\r\n/g, '\n')
+            .replace(/\u00A0/g, ' ');
+        }
+
         const lines    = fullText.split('\n');
         const lastLine = lines[lines.length - 1] || '';
 
@@ -2013,7 +2024,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         span.textContent = lastLine;
         const currentLineW = span.getBoundingClientRect().width || 0;
 
-        // NEU:
         // Solange die Zeile noch deutlich Luft hat (z.B. < 75% der Innenbreite),
         // fassen wir den Zettel GAR NICHT an.
         // → Der Notizzettel wächst NICHT bei den ersten Buchstaben.
@@ -2041,7 +2051,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         // 1) Maximalbreite erreicht → aktuelles Wort in nächste Zeile verschieben
         if (!charW || currentW >= maxW - 0.5 || currentW + charW > maxW) {
           e.preventDefault();
-          wrapWordToNextLine(e.data);
+          // Falls du eine eigene Logik für Zeilenumbruch hast, hier aufrufen.
+          // Wenn nicht, fallback: Browser normal umbrechen lassen:
+          // (In deinem aktuellen Code ist wrapWordToNextLine nicht definiert –
+          //  darum hier lieber nichts Aufwändiges machen.)
+          applyManualTextChange(fullText + e.data);
           return;
         }
 
@@ -2057,11 +2071,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (targetW > currentW + 0.5) {
           noteEl.style.width = targetW + 'px';
         }
-        // WICHTIG: kein preventDefault hier → der Browser fügt
-        // das Zeichen ganz normal ein, aber in der bereits breiteren Note.
+
+        // WICHTIG:
+        // Jetzt NICHT den Browser einfügen lassen (sonst passiert das Umbruch-Jitter),
+        // sondern selbst den Text aktualisieren – bei bereits vergrößerter Note.
+        e.preventDefault();
+        applyManualTextChange(fullText + e.data);
       });
     }
   }
+
 
 
   
