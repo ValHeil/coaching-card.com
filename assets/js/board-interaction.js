@@ -1760,7 +1760,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // „vernünftige“ Grenzen – kannst du bei Bedarf anpassen
     return {
       width:  Math.max(220, Math.min(w * 0.9, 900)),
-      height: 400
+      height: Math.max(150, Math.min(h * 0.9, 900))
     };
   }
 
