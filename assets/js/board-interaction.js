@@ -1807,7 +1807,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Maximalhöhe soll höchstens so groß sein wie maxW (→ im Extremfall quadratisch),
     // wird aber zusätzlich durch die Board-Höhe begrenzt
     const maxHByBoard = Math.max(150, Math.min(h * 0.9, 900));
-    const maxH = Math.min(maxW, maxHByBoard);
+    const maxH = Math.min(maxW * 2, maxHByBoard);
 
     return {
       width:  maxW,
@@ -1866,6 +1866,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   function showNoteFullWarning(noteEl) {
     if (!noteEl) return;
 
+    // Notiz sichtbar als "voll" markieren
     noteEl.classList.add('note-full');
 
     let msg = noteEl.querySelector('.note-full-message');
@@ -1874,29 +1875,38 @@ document.addEventListener('DOMContentLoaded', async function() {
       msg.className = 'note-full-message';
       msg.textContent = 'Diese Notiz ist voll';
 
-      // Fallback-Styling, falls CSS noch nicht angepasst ist
+      // Fallback-Styling, falls CSS (board-styles.css) noch nicht greift
       msg.style.position = 'absolute';
-      msg.style.top = '-1.8rem';
+      msg.style.top = '-1.9rem';
       msg.style.left = '0.5rem';
-      msg.style.padding = '2px 6px';
+      msg.style.padding = '2px 8px';
       msg.style.fontSize = '11px';
       msg.style.borderRadius = '4px';
-      msg.style.background = 'rgba(220, 38, 38, 0.9)';
+      msg.style.background = 'rgba(220, 38, 38, 0.95)';
       msg.style.color = '#fff';
       msg.style.pointerEvents = 'none';
+      msg.style.whiteSpace = 'nowrap';
       msg.style.zIndex = '9999';
 
       noteEl.appendChild(msg);
     }
 
+    // sicherstellen, dass sie sichtbar ist
+    msg.style.display = 'block';
+
+    // alten Timer aufräumen, falls der noch läuft
     clearTimeout(noteEl._noteFullTimeout);
+
+    // nach ~2,5s Border und Meldung wieder zurücknehmen
     noteEl._noteFullTimeout = setTimeout(() => {
       noteEl.classList.remove('note-full');
-      if (msg && msg.parentNode === noteEl) {
-        msg.remove();
+      if (msg) {
+        msg.style.display = 'none';
       }
+      noteEl._noteFullTimeout = null;
     }, 2500);
   }
+
 
 
   // Auto-Wachstum der Notizzettel (Breite/Höhe) ----------------------------
