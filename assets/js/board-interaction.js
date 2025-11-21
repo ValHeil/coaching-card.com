@@ -188,6 +188,12 @@ function normalizeTemplate(raw) {
 function isNoteFull(noteEl, contentEl) {
   if (!noteEl || !contentEl) return false;
 
+  // Wenn AutoGrow die Notiz bereits als "voll" markiert hat,
+  // direkt true zurückgeben (wird z.B. beim nächsten Enter genutzt)
+  if (noteEl.dataset && noteEl.dataset.noteHeightFull === '1') {
+    return true;
+  }
+
   // Maximal erlaubte Größe (gleiche Logik wie beim Auto-Grow)
   let max = { width: 400, height: 400 };
   try {
@@ -221,11 +227,11 @@ function isNoteFull(noteEl, contentEl) {
 
   // Voll ist die Notiz, wenn:
   // 1) Sie bereits die maximale Höhe erreicht hat UND der Inhalt noch höher sein möchte
-  //    → es gäbe also eine zusätzliche Zeile, die nicht mehr sichtbar wäre
   // ODER
   // 2) Höhe UND Breite beide am Limit sind
   return (atMaxH && wantsMoreH) || (atMaxH && atMaxW);
 }
+
 
 
 // 1st: /app/assets/boards/<slug>/board.json
@@ -1911,6 +1917,45 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Auto-Wachstum der Notizzettel (Breite/Höhe) ----------------------------
   function attachNoteAutoGrow(noteEl) {
+    const MAX_NOTE_HEIGHT = 260; // aktuell nicht direkt benutzt, bleibt aber zur Orientierung
+    let noteIsFull = false;
+    let lastNoteLimitMessageAt = 0;
+
+    // Globaler Toast-Hinweis unten am Bildschirm
+    function showNoteLimitMessage() {
+      const now = Date.now();
+      // nicht spammen, max. alle 1.5s
+      if (now - lastNoteLimitMessageAt < 1500) return;
+      lastNoteLimitMessageAt = now;
+
+      let toast = document.getElementById('note-limit-toast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'note-limit-toast';
+        toast.style.position      = 'fixed';
+        toast.style.left          = '50%';
+        toast.style.bottom        = '16px';
+        toast.style.transform     = 'translateX(-50%)';
+        toast.style.padding       = '10px 14px';
+        toast.style.borderRadius  = '999px';
+        toast.style.background    = '#b42318';
+        toast.style.color         = '#fff';
+        toast.style.fontSize      = '14px';
+        toast.style.boxShadow     = '0 4px 12px rgba(0,0,0,3)';
+        toast.style.zIndex        = '99999';
+        toast.style.transition    = 'opacity .25s ease';
+        document.body.appendChild(toast);
+      }
+
+      toast.textContent = 'Dieser Notizzettel ist voll. Bitte verwende einen neuen Notizzettel.';
+      toast.style.opacity = '1';
+
+      window.clearTimeout(toast._timer);
+      toast._timer = window.setTimeout(() => {
+        toast.style.opacity = '0';
+      }, 2500);
+    }
+
     if (!noteEl || noteEl._autoGrowAttached) return;
 
     const content = noteEl.querySelector('.notiz-content, .note-content');
@@ -1960,8 +2005,8 @@ document.addEventListener('DOMContentLoaded', async function() {
           document.body;
 
         const rect = noteEl.getBoundingClientRect();
-        const sx = parseFloat(area.dataset.scaleX || area.dataset.scale || '1') || 1;
-        const sy = parseFloat(area.dataset.scaleY || area.dataset.scale || '1') || 1;
+        const sx = parseFloat((area && (area.dataset.scaleX || area.dataset.scale)) || '1') || 1;
+        const sy = parseFloat((area && (area.dataset.scaleY || area.dataset.scale)) || '1') || 1;
 
         const currentW = rect.width  / sx;
         const currentH = rect.height / sy;
@@ -1990,14 +2035,14 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         // Schrift-/Textstil auf das Measure-Element übertragen
         const csContent = getComputedStyle(content);
-        measureEl.style.fontFamily   = csContent.fontFamily;
-        measureEl.style.fontSize     = csContent.fontSize;
-        measureEl.style.fontWeight   = csContent.fontWeight;
-        measureEl.style.fontStyle    = csContent.fontStyle;
-        measureEl.style.letterSpacing= csContent.letterSpacing;
-        measureEl.style.textTransform= csContent.textTransform;
-        measureEl.style.lineHeight   = csContent.lineHeight;
-        measureEl.style.wordSpacing  = csContent.wordSpacing;
+        measureEl.style.fontFamily    = csContent.fontFamily;
+        measureEl.style.fontSize      = csContent.fontSize;
+        measureEl.style.fontWeight    = csContent.fontWeight;
+        measureEl.style.fontStyle     = csContent.fontStyle;
+        measureEl.style.letterSpacing = csContent.letterSpacing;
+        measureEl.style.textTransform = csContent.textTransform;
+        measureEl.style.lineHeight    = csContent.lineHeight;
+        measureEl.style.wordSpacing   = csContent.wordSpacing;
 
         measureEl.textContent = activeLine || '';
 
@@ -2028,10 +2073,26 @@ document.addEventListener('DOMContentLoaded', async function() {
         targetH = Math.max(targetH, minH);
         if (targetH > max.height) targetH = max.height;
 
+        // Aktuellen "Voll"-Status basierend auf Inhaltshöhe bestimmen
+        const fullNow = rawTargetH >= max.height - 0.5;
+
         // Haben wir in diesem Recalc zum ersten Mal das Höhen-Limit erreicht?
-        const hitMaxHeightNow = rawTargetH >= max.height && currentH < max.height - 1;
+        const hitMaxHeightNow = fullNow && currentH < max.height - 1;
         if (hitMaxHeightNow) {
-          showNoteFullWarning(noteEl);
+          // Hinweis direkt an der Notiz
+          if (typeof showNoteFullWarning === 'function') {
+            showNoteFullWarning(noteEl);
+          }
+        }
+
+        // Flag + Toast nur bei Statuswechsel setzen
+        if (fullNow && !noteIsFull) {
+          noteIsFull = true;
+          noteEl.dataset.noteHeightFull = '1'; // wird von isNoteFull() benutzt
+          showNoteLimitMessage();
+        } else if (!fullNow && noteIsFull) {
+          noteIsFull = false;
+          delete noteEl.dataset.noteHeightFull;
         }
 
         // aktuelle Höhe nach evtl. Breitenänderung neu messen
@@ -2086,6 +2147,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Optional: bei Fenster-Resize auch nochmal anpassen
     window.addEventListener('resize', recalc);
   }
+
 
 
   
