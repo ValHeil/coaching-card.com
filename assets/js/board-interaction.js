@@ -185,52 +185,56 @@ function normalizeTemplate(raw) {
 }
 
 // Prüft, ob eine Notiz keinen sichtbaren Platz mehr für weiteren Text hat
-function isNoteFull(noteEl, contentEl) {
-  if (!noteEl || !contentEl) return false;
-
-  // Wenn AutoGrow die Notiz bereits als "voll" markiert hat,
-  // direkt true zurückgeben (wird z.B. beim nächsten Enter genutzt)
-  if (noteEl.dataset && noteEl.dataset.noteHeightFull === '1') {
-    return true;
-  }
-
-  // Maximal erlaubte Größe (gleiche Logik wie beim Auto-Grow)
-  let max = { width: 400, height: 400 };
+function isNoteFull(notiz, content, anticipateExtraLine) {
   try {
-    if (typeof getMaxNoteSize === 'function') {
-      max = getMaxNoteSize();
+    if (!notiz || !content) return false;
+
+    // 1) Wenn AutoGrow bereits "voll" markiert hat, sofort true
+    if (notiz.dataset.noteHeightFull === '1') {
+      return true;
     }
-  } catch (_) {}
 
-  const area =
-    document.querySelector('.board-area') ||
-    document.getElementById('session-board') ||
-    document.body;
+    const max = getMaxNoteSize();
+    const csNote     = getComputedStyle(notiz);
+    const csContent  = getComputedStyle(content);
 
-  const rect = noteEl.getBoundingClientRect();
-  const sx = parseFloat((area && (area.dataset.scaleX || area.dataset.scale)) || '1') || 1;
-  const sy = parseFloat((area && (area.dataset.scaleY || area.dataset.scale)) || '1') || 1;
-  const currentW = rect.width / sx;
-  const currentH = rect.height / sy;
+    const padTop    = parseFloat(csNote.paddingTop)    || 0;
+    const padBottom = parseFloat(csNote.paddingBottom) || 0;
 
-  const csNote = getComputedStyle(noteEl);
-  const padTop = parseFloat(csNote.paddingTop) || 0;
-  const padBottom = parseFloat(csNote.paddingBottom) || 0;
-  const padY = padTop + padBottom;
+    // kleine Sicherheitsmarge
+    const deltaExtra = 4;
+    const limit = max.height - padTop - padBottom - deltaExtra;
+    if (limit <= 0) return false;
 
-  // „Wunschhöhe“ des Inhalts in gleichen Pixeln wie max.height
-  const naturalH = contentEl.scrollHeight + padY;
+    let rawScrollH = content.scrollHeight;
+    if (!Number.isFinite(rawScrollH)) rawScrollH = 0;
 
-  const atMaxH = currentH >= (max.height - 1);
-  const atMaxW = currentW >= (max.width - 1);
-  const wantsMoreH = naturalH > (max.height + 0.5);
+    // inneres Padding des Textbereichs dazurechnen
+    const padBottomInner = parseFloat(csContent.paddingBottom) || 0;
+    rawScrollH += padBottomInner;
 
-  // Voll ist die Notiz, wenn:
-  // 1) Sie bereits die maximale Höhe erreicht hat UND der Inhalt noch höher sein möchte
-  // ODER
-  // 2) Höhe UND Breite beide am Limit sind
-  return (atMaxH && wantsMoreH) || (atMaxH && atMaxW);
+    // minimale Marge nach unten
+    rawScrollH += 2;
+
+    // --- WICHTIG: für Enter eine zusätzliche Zeile "vorweg" denken ---
+    if (anticipateExtraLine) {
+      let lineH = parseFloat(csContent.lineHeight);
+
+      if (!Number.isFinite(lineH) || csContent.lineHeight === 'normal') {
+        const fontSize = parseFloat(csContent.fontSize) || 16;
+        lineH = fontSize * 1.4;
+      }
+
+      rawScrollH += lineH;
+    }
+
+    return rawScrollH >= limit;
+  } catch (e) {
+    console.warn('isNoteFull() Fehler:', e);
+    return false;
+  }
 }
+
 
 
 
@@ -4229,6 +4233,28 @@ document.addEventListener('DOMContentLoaded', async function() {
     // - Enter erzeugt neue Zeile mit "• "
     // - Wenn Notiz „voll“ ist: keine neue Zeile / keine neuen Zeichen mehr
     content.addEventListener('keydown', (e) => {
+      const key = ev.key;
+
+      // ... falls du dir hier schon notiz/content referenzen holst:
+      const notiz = noteEl; // oder wie deine Variable aktuell heißt
+
+      // 1) ENTER: prüfen, ob eine neue Zeile die Note zu hoch machen würde
+      const wantsNewLine = (key === 'Enter');
+
+      if (wantsNewLine && isNoteFull(notiz, content, true)) {
+        // → Note ist „voll“ im Sinne von: eine weitere Zeile würde über max.height hinausgehen
+        if (typeof showNoteFullWarning === 'function') {
+          showNoteFullWarning(notiz);
+        }
+        if (typeof showNoteLimitMessage === 'function') {
+          showNoteLimitMessage();
+        }
+
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+
       const isEnter     = (e.key === 'Enter');
       const isPrintable = (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey);
 
