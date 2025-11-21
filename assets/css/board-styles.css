@@ -1261,3 +1261,13 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
   border-color: transparent transparent var(--note-border, #e6e673) transparent;
   opacity: .6;
 }
+
+/* --- Finaler Override für Notizzettel-Auto-Grow --- */
+.notiz {
+  overflow: visible !important;
+}
+
+.notiz-content {
+  overflow: visible !important;
+  overflow-y: visible !important;
+}
