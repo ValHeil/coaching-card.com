@@ -184,7 +184,6 @@ function normalizeTemplate(raw) {
   };
 }
 
-// Prüft, ob eine Notiz keinen sichtbaren Platz mehr für weiteren Text hat
 function isNoteFull(notiz, content, anticipateExtraLine) {
   try {
     if (!notiz || !content) return false;
@@ -194,9 +193,26 @@ function isNoteFull(notiz, content, anticipateExtraLine) {
       return true;
     }
 
-    const max       = getMaxNoteSize();
     const csNote    = getComputedStyle(notiz);
     const csContent = getComputedStyle(content);
+
+    // 2) Maximalhöhe bestimmen – bevorzugt über getMaxNoteSize(), falls vorhanden
+    let max;
+    if (typeof getMaxNoteSize === 'function') {
+      max = getMaxNoteSize();
+    } else {
+      // Fallback: aus CSS max-height der Notiz / Default
+      const maxHStyle = parseFloat(csNote.maxHeight);
+      const maxHeight =
+        Number.isFinite(maxHStyle) && maxHStyle > 0
+          ? maxHStyle
+          : 260; // Fallback, falls nichts gesetzt ist
+
+      max = {
+        width:  Infinity,
+        height: maxHeight
+      };
+    }
 
     const padTop    = parseFloat(csNote.paddingTop)    || 0;
     const padBottom = parseFloat(csNote.paddingBottom) || 0;
@@ -221,7 +237,7 @@ function isNoteFull(notiz, content, anticipateExtraLine) {
       return rawScrollH >= limit;
     }
 
-    // --- Fall B: wir überlegen, ob WIRKLICH noch eine komplette neue Zeile reinpasst ---
+    // --- Fall B: überlegen, ob WIRKLICH noch eine komplette neue Zeile reinpasst ---
     let lineH = parseFloat(csContent.lineHeight);
     if (!Number.isFinite(lineH) || csContent.lineHeight === 'normal') {
       const fontSize = parseFloat(csContent.fontSize) || 16;
@@ -242,9 +258,6 @@ function isNoteFull(notiz, content, anticipateExtraLine) {
     return false;
   }
 }
-
-
-
 
 
 // 1st: /app/assets/boards/<slug>/board.json
@@ -4279,7 +4292,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Bullet-Logik:
     // - Erste Eingabe in leerer Notiz setzt "• " + erstes Zeichen
     // - Enter erzeugt neue Zeile mit "• "
-    // - Wenn Notiz „voll“ ist: keine neue Zeile / keine neuen Zeichen mehr
     content.addEventListener('keydown', (e) => {
       const noteEl = notiz;              // das aktuelle Notiz-Element
       const key    = e.key;
@@ -4293,9 +4305,16 @@ document.addEventListener('DOMContentLoaded', async function() {
       // --- Aktuelle Breite vs. Max-Breite bestimmen (unskaliert) ---
       let atMaxWidth = false;
       try {
-        const max = (typeof getMaxNoteSize === 'function')
-          ? getMaxNoteSize()
-          : { width: Infinity, height: Infinity };
+        let maxWidth;
+
+        if (typeof getMaxNoteSize === 'function') {
+          const max = getMaxNoteSize();
+          maxWidth = max && Number.isFinite(max.width) ? max.width : Infinity;
+        } else {
+          const csNote = getComputedStyle(noteEl);
+          const mw = parseFloat(csNote.maxWidth);
+          maxWidth = Number.isFinite(mw) && mw > 0 ? mw : Infinity;
+        }
 
         const area =
           document.querySelector('.board-area') ||
@@ -4307,7 +4326,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const currentW = rect.width / sx;
 
         // kleine Toleranz von 1px
-        atMaxWidth = currentW >= (max.width - 1);
+        atMaxWidth = currentW >= (maxWidth - 1);
       } catch (_) {
         atMaxWidth = false;
       }
@@ -4327,7 +4346,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       // b) Normale Zeichen:
       //    Nur blockieren, wenn die Note sowohl in der Höhe
-      //    als auch in der Breite „ausgereizt“ ist.
+      //    als auch in der Breite „ausgereizt“ ist bzw. eine neue Zeile nötig wäre.
       if (
         isPrintable &&
         atMaxWidth &&
@@ -4363,6 +4382,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       }
     });
+
 
 
 
