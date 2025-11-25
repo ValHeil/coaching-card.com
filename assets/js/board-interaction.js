@@ -4258,6 +4258,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Einrichten der Bearbeitungs-Handler für eine Notiz
   function setupNoteEditingHandlers(notiz) {
+    if (!notiz) return;
+    if (notiz._editingHandlersAttached) return;
+    notiz._editingHandlersAttached = true;
+    
     const content = notiz.querySelector('.notiz-content') || notiz.querySelector('.note-content');
     if (!content) return;
 
@@ -6205,7 +6209,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
       // ab hier nur noch echte Notizzettel (Container ist durch oben ausgeschlossen)
-      const { el } = ensureNoteEl(nid);  // erzeugt + hängt Handler (AutoGrow, Edit, Drag) an
+      const { el } = ensureNoteEl(nid);  // erzeugt + hängt Basis-Handler an
       el.style.position = 'absolute';
 
       // Position aus nx/ny (bevorzugt) oder Fallback left/top übernehmen
@@ -6257,8 +6261,22 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (noteData.width)    el.style.width  = noteData.width;
       if (noteData.height)   el.style.height = noteData.height;
 
-      // Text setzen (damit AutoGrow/Limit-Logik beim Tippen greift)
+      // Text wieder in die Notiz schreiben
       setNoteText(el, noteData.content || '');
+
+      // *** WICHTIG: AutoGrow + Limit-Logik nach dem Setzen des Textes initialisieren/aktualisieren ***
+      if (typeof el._autoGrowRecalc === 'function') {
+        // Falls AutoGrow schon hängt: einmal neu durchmessen
+        el._autoGrowRecalc();
+      } else if (typeof attachNoteAutoGrow === 'function') {
+        // Falls noch nie initialisiert: AutoGrow anhängen
+        attachNoteAutoGrow(el);
+      }
+
+      // sicherstellen, dass die Editier-Handler (inkl. Voll-Check) an der Notiz hängen
+      if (typeof setupNoteEditingHandlers === 'function') {
+        setupNoteEditingHandlers(el);
+      }
 
       if (el.parentNode !== stage) {
         stage.appendChild(el);
@@ -6270,12 +6288,21 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
 
-    // Verwaiste Notizen entfernen (wenn sie nicht mehr im State sind)
-    document.querySelectorAll('.notiz').forEach(el => {
-      if (!seen.has(el.id)) el.remove();
-    });
+    // Verwaiste Notizzettel im Notes-Container aufräumen
+    if (stage) {
+      stage.querySelectorAll('.notiz').forEach(el => {
+        const id = el.id || '';
+        // Notizen ohne ID lassen wir zur Sicherheit stehen
+        if (!id) return;
+        if (!seen.has(id)) {
+          el.remove();
+        }
+      });
+    }
   }
   window.restoreNotes = restoreNotes;
+
+
 
 
 
