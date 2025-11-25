@@ -2633,16 +2633,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         el.style.borderStyle = 'none';
       }
 
-      el.style.display        = 'flex';
-      el.style.flexDirection  = 'column';
-      el.style.overflow       = 'hidden';
-      el.style.pointerEvents  = 'auto';
-      el.style.padding        = (p.padding != null ? p.padding : 12) + 'px';
+      el.style.display       = 'flex';
+      el.style.flexDirection = 'column';
+      el.style.overflow      = 'hidden';
+      el.style.pointerEvents = 'auto';
+      el.style.padding       = (p.padding != null ? p.padding : 12) + 'px';
 
-      // Titel
-      const title = document.createElement('div');
-      title.className = 'focus-note-title desc-title';
+      // === Titel als <h2>, damit .focus-note-area h2 greift (fett, Abstand, Farbe) ===
+      const title = document.createElement('h2');
+      title.className = 'focus-note-title';
       title.textContent = (p.title ?? p.heading ?? '').trim() || 'Focus Note';
+
+      // === Body-Wrapper, der den Inhalt vertikal zentriert ===
+      const contentWrap = document.createElement('div');
+      contentWrap.className = 'focus-note-content';
 
       // Body: Display + Editable (beide erzeugen; je nach Modus anzeigen)
       const bodyDisplay  = document.createElement('div');
@@ -2720,31 +2724,40 @@ document.addEventListener('DOMContentLoaded', async function() {
         title.removeAttribute('contenteditable');
       }
 
-      // Einmaliges Leeren des Platzhalter-Texts
-      (function setupOneTimeClear(target, text) {
+      // Einmaliges Leeren des Platzhalter-Texts für den Body
+      (function setupOneTimeClear(target, defaultText) {
         if (!target) return;
-        const clear = () => {
-          if (target.textContent === text) target.textContent = '';
-          target.removeEventListener('focus', clear);
-        };
-        target.addEventListener('focus', clear, { once: true });
+        let cleared = false;
+        target.addEventListener('focus', () => {
+          const txt = (target.textContent || '').trim();
+          if (!cleared && txt === (defaultText || '').trim()) {
+            target.textContent = '';
+            cleared = true;
+          }
+        });
+        target.addEventListener('input', () => {
+          const txt = (target.textContent || '').trim();
+          if (txt && txt !== (defaultText || '').trim()) {
+            cleared = true;
+          }
+        });
       })(bodyEditable, placeholder);
 
-      // AUTOSAVE: FocusNote
-      if (typeof saveCurrentBoardState === 'function') {
-        if (canEditTitle) {
-          title.addEventListener('input', () => saveCurrentBoardState('focusNote'));
-          title.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
-        }
-        if (canEditBody) {
-          bodyEditable.addEventListener('input', () => saveCurrentBoardState('focusNote'));
-          bodyEditable.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
-        }
+      // === AUTOSAVE: FocusNote – Änderungen triggern Save ===
+      if (canEditTitle) {
+        title.addEventListener('input', () => saveCurrentBoardState('focusNote'));
+        title.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
       }
+      if (canEditBody) {
+        bodyEditable.addEventListener('input', () => saveCurrentBoardState('focusNote'));
+        bodyEditable.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
+      }
+      // === /AUTOSAVE FocusNote ===
 
-      // In DOM einsetzen
+      // === In DOM einsetzen: Titel + zentrierter Body ===
+      contentWrap.appendChild(canEditBody ? bodyEditable : bodyDisplay);
       el.appendChild(title);
-      el.appendChild(canEditBody ? bodyEditable : bodyDisplay);
+      el.appendChild(contentWrap);
 
       const boardArea = document.querySelector('.board-area') || document.body;
       boardArea.appendChild(el);
