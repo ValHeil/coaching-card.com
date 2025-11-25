@@ -4290,12 +4290,34 @@ document.addEventListener('DOMContentLoaded', async function() {
       const textNow  = (content.textContent || '').replace(/\u200B/g, '');
       const emptyNow = (textNow.trim() === '');
 
-      // 1) Prüfen, ob die Notiz bereits voll ist
-      const alreadyFull        = isNoteFull(noteEl, content, false);
-      const wouldOverflowLine  = isNoteFull(noteEl, content, true);
+      // --- Aktuelle Breite vs. Max-Breite bestimmen (unskaliert) ---
+      let atMaxWidth = false;
+      try {
+        const max = (typeof getMaxNoteSize === 'function')
+          ? getMaxNoteSize()
+          : { width: Infinity, height: Infinity };
 
-      // a) Wenn bereits voll: Enter + sichtbare Zeichen blockieren
-      if ((isEnter || isPrintable) && alreadyFull) {
+        const area =
+          document.querySelector('.board-area') ||
+          document.getElementById('session-board') ||
+          document.body;
+
+        const rect = noteEl.getBoundingClientRect();
+        const sx = parseFloat((area && (area.dataset.scaleX || area.dataset.scale)) || '1') || 1;
+        const currentW = rect.width / sx;
+
+        // kleine Toleranz von 1px
+        atMaxWidth = currentW >= (max.width - 1);
+      } catch (_) {
+        atMaxWidth = false;
+      }
+
+      // --- 1) Prüfen, ob die Notiz (von der Höhe her) voll ist ---
+      const alreadyFull       = isNoteFull(noteEl, content, false);
+      const wouldOverflowLine = isNoteFull(noteEl, content, true);
+
+      // a) ENTER: immer blocken, sobald in der Höhe kein Platz mehr ist
+      if (isEnter && (alreadyFull || (!alreadyFull && wouldOverflowLine))) {
         e.preventDefault();
         if (typeof showNoteFullWarning === 'function') {
           showNoteFullWarning(noteEl);
@@ -4303,9 +4325,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         return;
       }
 
-      // b) Noch nicht voll, aber eine zusätzliche Zeile würde über max.height gehen
-      //    → ebenfalls blockieren (gilt für Enter und "normale" Zeichen)
-      if ((isEnter || isPrintable) && !alreadyFull && wouldOverflowLine) {
+      // b) Normale Zeichen:
+      //    Nur blockieren, wenn die Note sowohl in der Höhe
+      //    als auch in der Breite „ausgereizt“ ist.
+      if (
+        isPrintable &&
+        atMaxWidth &&
+        (alreadyFull || (!alreadyFull && wouldOverflowLine))
+      ) {
         e.preventDefault();
         if (typeof showNoteFullWarning === 'function') {
           showNoteFullWarning(noteEl);
@@ -4313,14 +4340,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         return;
       }
 
-      // 2) Enter erzeugt neue Bullet-Zeile (wenn wir nicht oben geblockt haben)
+      // --- 2) Enter erzeugt neue Bullet-Zeile (wenn wir nicht oben geblockt haben) ---
       if (isEnter) {
         e.preventDefault();
         document.execCommand('insertHTML', false, '\n• ');
         return;
       }
 
-      // 3) Erste Eingabe in leerer Notiz: direkt "• " + erstes Zeichen
+      // --- 3) Erste Eingabe in leerer Notiz: direkt "• " + erstes Zeichen ---
       if (isPrintable && emptyNow) {
         e.preventDefault();
         const firstChar = key;
@@ -4336,6 +4363,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       }
     });
+
 
 
 
