@@ -531,74 +531,101 @@ function ensureNotesContainer() {
       || document.querySelector('.board-area');
 }
 
+// Sorgt dafür, dass es für eine gegebene ID genau EIN Notiz-Element
+// gibt und hängt ALLE nötigen Handler (AutoGrow, Edit, Drag) dran.
 function ensureNoteEl(id) {
-  // IDs, die niemals als einzelner Notizzettel verwendet werden sollen
-  const FORBIDDEN_NOTE_IDS = new Set(['notes-container']);
-
-  // vorhandenes Element mit dieser ID suchen
-  let el = id ? document.getElementById(id) : null;
-
-  // Wenn es zwar ein Element gibt, dieses aber KEIN echter Notizzettel ist
-  // (z.B. der Notizblock-Container ".notizzettel-box.notes-container"),
-  // dann NICHT wiederverwenden – wir erzeugen gleich einen neuen .notiz.
-  if (
-    el &&
-    !el.classList.contains('notiz') &&
-    !el.classList.contains('note') &&    // alter Klassename
-    el.dataset.role === 'notepad'        // Notizblock-Bereich
-  ) {
-    el = null;
+  if (!id) {
+    id = 'note-' +
+      Date.now().toString(36) + '-' +
+      Math.random().toString(36).slice(2, 7);
   }
 
-  // Falls die ID ausdrücklich eine verbotene Container-ID ist, nie dieses
-  // Element als Notizzettel benutzen. Wir erzeugen einen eigenen .notiz
-  // mit derselben ID NICHT – IDs müssen eindeutig bleiben.
-  if (id && FORBIDDEN_NOTE_IDS.has(String(id))) {
-    el = null;
-  }
+  // Ziel-Container für alle Notizen
+  const notesWrap =
+    document.getElementById('notes-container') ||
+    document.querySelector('.notes-container') ||
+    document.querySelector('.board-area') ||
+    document.body;
 
-  if (!el) {
-    // neuen Notizzettel erzeugen
-    el = document.createElement('div');
-    el.className = 'notiz';
-    if (id && !FORBIDDEN_NOTE_IDS.has(String(id))) {
-      el.id = id;
-    }
+  let noteEl = document.getElementById(id);
+
+  if (!noteEl) {
+    // Neue Note erzeugen (wie beim Abziehen vom Notizblock)
+    noteEl = document.createElement('div');
+    noteEl.id = id;
+    noteEl.className = 'notiz';
+    noteEl.style.position = 'absolute';
 
     const content = document.createElement('div');
     content.className = 'notiz-content';
-    content.setAttribute('contenteditable', 'false');
-    el.appendChild(content);
+    content.setAttribute('contenteditable', 'true');
+    content.setAttribute('spellcheck', 'true');
 
-    const container = ensureNotesContainer();
-    if (container) container.appendChild(el);
+    const PLACEHOLDER_TEXT = 'Schreiben sie hier ihren Text.';
+    content.textContent = PLACEHOLDER_TEXT;
+    if (!content.getAttribute('data-placeholder')) {
+      content.setAttribute('data-placeholder', PLACEHOLDER_TEXT);
+    }
 
-    L('DOM_CREATE', { id: el.id || id || '(auto)' });
+    noteEl.appendChild(content);
+    notesWrap.appendChild(noteEl);
   } else {
-    L('DOM_REUSE', {
-      id: el.id || id,
-      locked: el.dataset.locked,
-      by: el.dataset.lockedBy,
-      until: el.dataset.lockedUntil,
-      isEditingClass: el.classList.contains('is-editing')
-    });
+    console.debug('[RESTORE-NOTE] DOM-Reuse für', id);
   }
 
-  // Content-Element robust finden
-  const content = el.querySelector('.notiz-content') || el.querySelector('.note-content');
+  // Farben aus CSS-Variablen / Styles konsistent setzen
+  try {
+    const cs    = getComputedStyle(noteEl);
+    const bgVar = (cs.getPropertyValue('--note-bg')     || '').trim();
+    const brVar = (cs.getPropertyValue('--note-border') || '').trim();
+    const bg    = bgVar || (noteEl.style.backgroundColor || cs.backgroundColor || '#ffff99');
+    const br    = brVar || (noteEl.style.borderColor     || cs.borderColor     || '#e6e673');
 
-  // immer die Handler/Beobachter setzen
-  try { attachNoteResizeObserver && attachNoteResizeObserver(el); } catch {}
-  try { attachNoteAutoGrow && attachNoteAutoGrow(el); } catch {}
-  try { setupNoteEditingHandlers && setupNoteEditingHandlers(el); } catch {}
-  try { enhanceDraggableNote && enhanceDraggableNote(el); } catch {}
+    noteEl.style.setProperty('--note-bg', bg);
+    noteEl.style.setProperty('--note-border', br);
+    noteEl.style.backgroundColor = bg;
+    noteEl.style.borderColor     = br;
+  } catch {}
 
-  // Falls versehentlich gelockt: entsperren (nur Erzeugung, kein Editing!)
-  delete el.dataset.locked;
-  el.classList.remove('is-editing');
+  // **WICHTIG**: Hier werden ALLE Note-Features immer (wieder) angehängt
+  try {
+    if (typeof attachNoteResizeObserver === 'function') {
+      attachNoteResizeObserver(noteEl);
+    }
+  } catch (e) {
+    console.warn('[ensureNoteEl] attachNoteResizeObserver Fehler', e);
+  }
 
-  return { el, content };
+  try {
+    if (noteEl._autoGrowAttached && typeof noteEl._autoGrowRecalc === 'function') {
+      // Falls AutoGrow schon dran ist: zumindest einmal recalc fahren
+      noteEl._autoGrowRecalc();
+    } else if (typeof attachNoteAutoGrow === 'function') {
+      attachNoteAutoGrow(noteEl);
+    }
+  } catch (e) {
+    console.warn('[ensureNoteEl] attachNoteAutoGrow Fehler', e);
+  }
+
+  try {
+    if (typeof makeDraggable === 'function') {
+      makeDraggable(noteEl);
+    }
+  } catch (e) {
+    console.warn('[ensureNoteEl] makeDraggable Fehler', e);
+  }
+
+  try {
+    if (typeof setupNoteEditingHandlers === 'function') {
+      setupNoteEditingHandlers(noteEl);
+    }
+  } catch (e) {
+    console.warn('[ensureNoteEl] setupNoteEditingHandlers Fehler', e);
+  }
+
+  return { el: noteEl };
 }
+
 
 
 function isLockActiveForMe(note) {
@@ -6178,7 +6205,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
       // ab hier nur noch echte Notizzettel (Container ist durch oben ausgeschlossen)
-      const { el } = ensureNoteEl(nid);  // erzeugt + hängt Handler an
+      const { el } = ensureNoteEl(nid);  // erzeugt + hängt Handler (AutoGrow, Edit, Drag) an
       el.style.position = 'absolute';
 
       // Position aus nx/ny (bevorzugt) oder Fallback left/top übernehmen
@@ -6230,8 +6257,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (noteData.width)    el.style.width  = noteData.width;
       if (noteData.height)   el.style.height = noteData.height;
 
+      // Text setzen (damit AutoGrow/Limit-Logik beim Tippen greift)
       setNoteText(el, noteData.content || '');
-      if (el.parentNode !== stage) stage.appendChild(el);
+
+      if (el.parentNode !== stage) {
+        stage.appendChild(el);
+      }
 
       // die tatsächlich verwendete ID merken
       if (el.id) {
@@ -6239,19 +6270,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
 
-    // Verwaiste Notizzettel im Notes-Container aufräumen
-    if (stage) {
-      stage.querySelectorAll('.notiz').forEach(el => {
-        const id = el.id || '';
-        // Notizen ohne ID lassen wir zur Sicherheit stehen
-        if (!id) return;
-        if (!seen.has(id)) {
-          el.remove();
-        }
-      });
-    }
+    // Verwaiste Notizen entfernen (wenn sie nicht mehr im State sind)
+    document.querySelectorAll('.notiz').forEach(el => {
+      if (!seen.has(el.id)) el.remove();
+    });
   }
   window.restoreNotes = restoreNotes;
+
 
 
 
