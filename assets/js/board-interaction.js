@@ -4106,6 +4106,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     // 4) Notiz-Element erzeugen
     const noteEl = document.createElement('div');
     noteEl.className = 'notiz';
+    // Eindeutige ID vergeben, falls noch keine vorhanden ist
+    if (!noteEl.id) {
+      noteEl.id = 'note-' +
+        Date.now().toString(36) + '-' +
+        Math.random().toString(36).slice(2, 7);
+    }
     // Variablen UND direkte Styles setzen (für alte CSS, die noch feste Farben nutzt)
     noteEl.style.setProperty('--note-bg', bgBase);
     noteEl.style.setProperty('--note-border', brBase);
@@ -6154,22 +6160,31 @@ document.addEventListener('DOMContentLoaded', async function() {
     const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
     const stageRect = getStageRect();
 
-    notes.forEach(noteData => {
+    notes.forEach((noteData, idx) => {
       if (!noteData) return;
 
-      // Offensichtliche Container-/Notizblock-Einträge ignorieren
-      if (!noteData.id) return;
-      const nid = String(noteData.id);
-      if (nid === 'notes-container') return;
+      // 1) ID aus dem gespeicherten Zustand holen
+      let nid = (noteData.id != null && noteData.id !== '') ? String(noteData.id) : '';
 
-      // ab hier nur noch echte Notizzettel
+      // "notes-container" selbst nie als Notiz benutzen
+      if (nid === 'notes-container') {
+        nid = '';
+      }
+
+      // 2) Fallback für alte States ohne ID:
+      //    -> stabile, eindeutige ID aus Index ableiten
+      if (!nid) {
+        nid = 'note-' + (idx + 1);
+      }
+
+      // ab hier nur noch echte Notizzettel (Container ist durch oben ausgeschlossen)
       const { el } = ensureNoteEl(nid);  // erzeugt + hängt Handler an
       el.style.position = 'absolute';
 
-      // --- deine bestehende Positions-/Style-Logik bleibt unverändert ---
+      // Position aus nx/ny (bevorzugt) oder Fallback left/top übernehmen
       let leftPx, topPx;
       if (typeof noteData.nx === 'number' && typeof noteData.ny === 'number') {
-        const p = fromNorm(noteData.nx, noteData.ny);
+        const p = fromNorm(noteData.nx, noteData.ny); // Bühnen-Pixel (unskaliert)
         const parentRect = (el.parentElement || stage).getBoundingClientRect();
         leftPx = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
         topPx  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
@@ -6185,6 +6200,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         el.style.zIndex = String(noteData.zIndex);
       }
 
+      // Hintergrund + Rand konsistent setzen (auch für alte States)
       const bgColor =
         noteData.noteBg ||
         noteData.backgroundColor ||
@@ -6196,6 +6212,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         '';
 
       if (!borderColor && bgColor) {
+        // Falls nur Hintergrund gespeichert war: Randfarbe wie beim Erzeugen ableiten
         borderColor = darken(bgColor, 18);
       }
 
@@ -6203,6 +6220,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         el.style.setProperty('--note-bg', bgColor);
         el.style.backgroundColor = bgColor;
       }
+
       if (borderColor) {
         el.style.setProperty('--note-border', borderColor);
         el.style.borderColor = borderColor;
@@ -6214,14 +6232,24 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       setNoteText(el, noteData.content || '');
       if (el.parentNode !== stage) stage.appendChild(el);
-      seen.add(nid);
+
+      // die tatsächlich verwendete ID merken
+      if (el.id) {
+        seen.add(el.id);
+      }
     });
 
-
-    // Verwaiste Notizen entfernen (wenn sie nicht mehr im State sind)
-    document.querySelectorAll('.notiz').forEach(el => {
-      if (!seen.has(el.id)) el.remove();
-    });
+    // Verwaiste Notizzettel im Notes-Container aufräumen
+    if (stage) {
+      stage.querySelectorAll('.notiz').forEach(el => {
+        const id = el.id || '';
+        // Notizen ohne ID lassen wir zur Sicherheit stehen
+        if (!id) return;
+        if (!seen.has(id)) {
+          el.remove();
+        }
+      });
+    }
   }
   window.restoreNotes = restoreNotes;
 
