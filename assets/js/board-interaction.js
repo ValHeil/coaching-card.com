@@ -2597,7 +2597,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // --- focusNote: Titel + Text mit optionaler Bearbeitung + Autosave ---
     tpl.widgets.filter(w => w.type === 'focusNote').forEach(w => {
-      const p = prop(w); // gemergte Props (z.B. title, body, titleUserEditable, bodyUserEditable)
+      const p = prop(w); // gemergte Props (title, body, titleUserEditable, bodyUserEditable, Styles)
 
       // Container
       const el = document.createElement('div');
@@ -2605,16 +2605,44 @@ document.addEventListener('DOMContentLoaded', async function() {
       el.style.position = 'absolute';
       el.dataset.widget = 'focusNote';
 
-      // Geometrie
-      el.style.left = ((w.x || 0)) + 'px';
-      el.style.top  = ((w.y || 0)) + 'px';
+      // Geometrie aus Template
+      if (w.x != null) el.style.left = w.x + 'px';
+      if (w.y != null) el.style.top  = w.y + 'px';
       if (w.w) el.style.width  = w.w + 'px';
       if (w.h) el.style.height = w.h + 'px';
+
+      // Hintergrund / Rahmen wie im Builder
+      const fillCol = p.background || p.color || null;
+      const fillA   = (typeof p.opacity === 'number') ? p.opacity : 1;
+      el.style.background = fillCol
+        ? (fillA >= 1 ? fillCol : hexToRgba(fillCol, fillA))
+        : 'transparent';
+
+      if (p.radius != null) el.style.borderRadius = p.radius + 'px';
+
+      if (p.borderWidth) {
+        const bw = p.borderWidth;
+        const bs = p.borderStyle || 'solid';
+        const bc = p.borderColor || 'rgba(0,0,0,0.15)';
+        const ba = (typeof p.borderOpacity === 'number') ? p.borderOpacity : 1;
+        el.style.borderWidth = bw + 'px';
+        el.style.borderStyle = bs;
+        el.style.borderColor = (ba >= 1 ? bc : hexToRgba(bc, ba));
+      } else {
+        el.style.borderWidth = '0';
+        el.style.borderStyle = 'none';
+      }
+
+      el.style.display        = 'flex';
+      el.style.flexDirection  = 'column';
+      el.style.overflow       = 'hidden';
+      el.style.pointerEvents  = 'auto';
+      el.style.padding        = (p.padding != null ? p.padding : 12) + 'px';
 
       // Titel
       const title = document.createElement('div');
       title.className = 'focus-note-title desc-title';
-      title.textContent = (p.title || '').trim();
+      title.textContent = (p.title ?? p.heading ?? '').trim() || 'Focus Note';
 
       // Body: Display + Editable (beide erzeugen; je nach Modus anzeigen)
       const bodyDisplay  = document.createElement('div');
@@ -2625,18 +2653,55 @@ document.addEventListener('DOMContentLoaded', async function() {
       bodyEditable.id = 'focus-note-editable';
       bodyEditable.className = 'focus-note-editable desc-content';
 
-      const initialBody = (p.body || '').trim();
+      const initialBody = (p.body ?? p.text ?? '').trim();
       const placeholder = 'Schreiben sie hier die Focus Note der Sitzung rein';
       bodyEditable.dataset.placeholder = placeholder;
 
       bodyDisplay.textContent  = initialBody;
       bodyEditable.textContent = initialBody || placeholder;
 
-      // Editierbarkeit robust interpretieren
+      // Text-Ausrichtung & Schrift aus dem Builder
+      const align = ['left','center','right'].includes(p.textAlign) ? p.textAlign : 'center';
+      title.style.textAlign        = align;
+      bodyDisplay.style.textAlign  = align;
+      bodyEditable.style.textAlign = align;
+
+      if (p.fontSize) {
+        const fs = p.fontSize + 'px';
+        title.style.fontSize        = fs;
+        bodyDisplay.style.fontSize  = fs;
+        bodyEditable.style.fontSize = fs;
+      }
+      if (p.fontFamily) {
+        title.style.fontFamily        = p.fontFamily;
+        bodyDisplay.style.fontFamily  = p.fontFamily;
+        bodyEditable.style.fontFamily = p.fontFamily;
+      }
+      if (p.fontColor) {
+        title.style.color        = p.fontColor;
+        bodyDisplay.style.color  = p.fontColor;
+        bodyEditable.style.color = p.fontColor;
+      }
+      if (p.bold) {
+        title.style.fontWeight        = '700';
+        bodyDisplay.style.fontWeight  = '700';
+        bodyEditable.style.fontWeight = '700';
+      }
+      if (p.italic) {
+        title.style.fontStyle        = 'italic';
+        bodyDisplay.style.fontStyle  = 'italic';
+        bodyEditable.style.fontStyle = 'italic';
+      }
+      if (p.underline) {
+        title.style.textDecoration        = 'underline';
+        bodyDisplay.style.textDecoration  = 'underline';
+        bodyEditable.style.textDecoration = 'underline';
+      }
+
+      // Editierbarkeit aus Template-Props
       const canEditTitle = (typeof asBool === 'function') ? asBool(p.titleUserEditable) : !!p.titleUserEditable;
       const canEditBody  = (typeof asBool === 'function') ? asBool(p.bodyUserEditable)  : !!p.bodyUserEditable;
 
-      // Sichtbarkeit/Toggles
       if (canEditBody) {
         bodyEditable.setAttribute('contenteditable', 'true');
         bodyEditable.setAttribute('spellcheck', 'true');
@@ -2655,7 +2720,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         title.removeAttribute('contenteditable');
       }
 
-      // One-time Placeholder Clear für das Editable
+      // Einmaliges Leeren des Platzhalter-Texts
       (function setupOneTimeClear(target, text) {
         if (!target) return;
         const clear = () => {
@@ -2665,16 +2730,17 @@ document.addEventListener('DOMContentLoaded', async function() {
         target.addEventListener('focus', clear, { once: true });
       })(bodyEditable, placeholder);
 
-      // === AUTOSAVE: FocusNote – Änderungen triggern Save ===
-      if (canEditTitle) {
-        title.addEventListener('input', () => saveCurrentBoardState('focusNote'));
-        title.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
+      // AUTOSAVE: FocusNote
+      if (typeof saveCurrentBoardState === 'function') {
+        if (canEditTitle) {
+          title.addEventListener('input', () => saveCurrentBoardState('focusNote'));
+          title.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
+        }
+        if (canEditBody) {
+          bodyEditable.addEventListener('input', () => saveCurrentBoardState('focusNote'));
+          bodyEditable.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
+        }
       }
-      if (canEditBody) {
-        bodyEditable.addEventListener('input', () => saveCurrentBoardState('focusNote'));
-        bodyEditable.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
-      }
-      // === /AUTOSAVE FocusNote ===
 
       // In DOM einsetzen
       el.appendChild(title);
@@ -2683,6 +2749,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const boardArea = document.querySelector('.board-area') || document.body;
       boardArea.appendChild(el);
     });
+
 
     // --- bgrect zuerst (Z-Reihenfolge)
     tpl.widgets.filter(w => w.type === 'bgrect').forEach(w => {
@@ -2880,106 +2947,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         desc.style.overflowY = 'auto';
       });
     });
-
-    // --- focusNote: große Fokus-Notiz an Template-Position
-    const focus = tpl.widgets.find(w => w.type === 'focusNote');
-    if (focus) {
-      const p = prop(focus); // merged props
-      // Container erstellen
-      const el = document.createElement('div');
-      el.className = '.focus-note-area';
-      el.style.position = 'absolute';
-      el.style.boxShadow = 'none';                     // kein Notizzettel-Schatten
-      el.style.display = 'flex';
-      el.style.flexDirection = 'column';
-      el.style.overflow = 'hidden';
-      // Geometrie aus Template
-      el.style.left   = px(focus.x || 0);
-      el.style.top    = px(focus.y || 0);
-      if (focus.w) el.style.width  = px(focus.w);
-      if (focus.h) el.style.height = px(focus.h);
-
-      // Optik aus Props
-      const bg  = p.background || p.color || '#e6f6ea';
-      const rad = (p.radius != null ? p.radius : 14);
-      const bw  = (p.borderWidth  != null ? p.borderWidth  : 2);
-      const bs  = (p.borderStyle  || 'solid');
-      const bc  = (p.borderColor  || '#c5e7d2');
-      const ba  = (p.borderOpacity != null ? p.borderOpacity : 1);
-      el.style.background   = bg;
-      el.style.borderRadius = rad + 'px';
-      el.style.border       = bw > 0 && bs !== 'none' ? `${bw}px ${bs} rgba( ${hexToRgba
-        ? hexToRgba(bc, ba).match(/\d+,\d+,\d+,\d+(\.\d+)?/)[0]
-        : '197,231,210,' + ba } )` : 'none';
-
-     // Titel + Inhalt (Defaults merken für "einmalig löschen")
-      const titleText = p.title ?? p.heading ?? 'Focus Note';
-      const bodyText  = p.body  ?? p.text    ?? '';
-      const defaultTitle = (titleText ?? '').trim();
-      const defaultBody  = (bodyText  ?? '').trim();
-
-      const title = document.createElement('div');
-      title.className = 'focus-note-title';
-      title.textContent = titleText;
-      if (p.titleUserEditable) title.setAttribute('contenteditable', 'true');
-
-      const content = document.createElement('div');
-      content.className = 'focus-note-content';
-      content.textContent = bodyText;
-      if (p.bodyUserEditable) content.setAttribute('contenteditable', 'true');
-
-      // === Ausrichtung & Schrift aus dem Builder übernehmen ===
-      // Der Builder schreibt die Ausrichtung in props.textAlign (links/center/rechts) :contentReference[oaicite:1]{index=1}
-      const align = (['left','center','right'].includes(p.textAlign) ? p.textAlign : 'center');
-      title.style.textAlign   = align;
-      content.style.textAlign = align;
-
-      // optionale Text-Props aus dem Builder (global für beide Felder)
-      if (p.fontSize)   { title.style.fontSize   = p.fontSize + 'px'; content.style.fontSize   = p.fontSize + 'px'; }
-      if (p.fontColor)  { title.style.color      = p.fontColor;       content.style.color      = p.fontColor; }
-      if (p.fontFamily) { title.style.fontFamily = p.fontFamily;      content.style.fontFamily = p.fontFamily; }
-      if (p.bold)       { content.style.fontWeight = '700'; } // Title hat unten schon 700
-      if (p.italic)     { content.style.fontStyle  = 'italic'; }
-      if (p.underline)  { content.style.textDecoration = 'underline'; }
-
-      // Layout für sauberes Scrollen statt Wachsen (leicht angepasst)
-      title.style.padding = '8px 12px';
-      title.style.fontWeight = '700'; // behalten
-      title.style.borderBottom = '1px solid rgba(0,0,0,0.06)';
-      title.style.userSelect = 'text';
-
-      content.style.flex = '1';
-      content.style.padding = '12px';
-      content.style.overflow = 'auto';
-      content.style.whiteSpace = 'pre-wrap';
-      content.style.wordBreak = 'break-word';
-      content.style.userSelect = 'text';
-
-      // === "Einmalig löschen", wenn Admin-Text noch drin ist ===
-      function setupOneTimeClear(node, defaultVal) {
-        let clearedOnce = false;
-        node.addEventListener('focus', () => {
-          const cur = (node.textContent || '').trim();
-          if (!clearedOnce && cur === (defaultVal || '')) {
-            node.textContent = '';
-            clearedOnce = true;
-          }
-        });
-        node.addEventListener('input', () => {
-          // Sobald der Nutzer etwas Eigenes drin hat, nie wieder auto-löschen
-          const cur = (node.textContent || '').trim();
-          if (cur && cur !== (defaultVal || '')) clearedOnce = true;
-        });
-      }
-      if (p.titleUserEditable)  setupOneTimeClear(title,   defaultTitle);
-      if (p.bodyUserEditable)   setupOneTimeClear(content, defaultBody);
-
-      el.appendChild(title);
-      el.appendChild(content);
-
-      // Platzieren …
-      place(el, focus);
-    }
 
 
     // --- description: Infobox/Fließtext aus Template (mit optionaler Bearbeitung)
@@ -5889,8 +5856,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       stack:        captureStackPosition(),
       // NEU: Perms mitschreiben – so wissen wir beim Restore exakt, was gesetzt werden darf
       perms: {
-        focusNote: readFocusNotePermsFromDOM(),
-        cardholders: readCardholderPermsFromDOM()
+        focusNote:    readFocusNotePermsFromDOM(),
+        cardholders:  readCardholderPermsFromDOM(),
+        descriptions: readDescriptionPermsFromDOM()
       },
       timestamp:    new Date().toISOString()
     };
@@ -5927,10 +5895,29 @@ document.addEventListener('DOMContentLoaded', async function() {
     return perms;
   }
 
-  // Erfasst den Inhalt der Focus Note (unterstützt .focus-note und .focus-note-area)
+  function readDescriptionPermsFromDOM(){
+    const perms = [];
+    const nodes = Array.from(document.querySelectorAll('.board-description-box'));
+    nodes.forEach((el, idx) => {
+      const headerEl = el.querySelector('.desc-title');
+      const bodyEl   = headerEl ? headerEl.nextElementSibling : el.children[1];
+
+      perms.push({
+        idx,
+        titleEditable: !!(headerEl && headerEl.isContentEditable),
+        bodyEditable:  !!(bodyEl   && bodyEl.isContentEditable)
+      });
+    });
+    return perms;
+  }
+
+
+  // Erfasst den Inhalt der Focus Note (unterstützt .focus-note-area und alte .focus-note)
   function captureFocusNote() {
-    // 1) Wrapper flexibel finden (neue & alte Variante)
-    const wrap = document.querySelector('.focus-note, .focus-note-area');
+    // 1) Wrapper: neue Variante (.focus-note-area) bevorzugen
+    const wrap =
+      document.querySelector('.focus-note-area') ||
+      document.querySelector('.focus-note');
     if (!wrap) return null;
 
     // 2) Titel-Knoten wie bei Description/Cardholder
@@ -5960,6 +5947,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
 
+
   function captureAllCardholders() {
     const out = [];
     document.querySelectorAll('.board-cardholder').forEach((el, idx) => {
@@ -5976,7 +5964,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     return out;
   }
 
-  function restoreCardholders(items) {
+  function restoreCardholders(items, perms) {
     if (!Array.isArray(items)) return;
     const nodes = Array.from(document.querySelectorAll('.board-cardholder'));
 
@@ -5988,10 +5976,38 @@ document.addEventListener('DOMContentLoaded', async function() {
         ? headerEl.nextElementSibling
         : (el.querySelector('.bb-ch-desc, .ch-desc, .desc-content') || el.children[1]);
 
+      // Inhalt wiederherstellen
       if (headerEl && typeof d.title === 'string') headerEl.textContent = d.title;
       if (bodyEl   && typeof d.body  === 'string') bodyEl.textContent  = d.body;
+
+      // Edit-Flags anwenden
+      if (Array.isArray(perms)) {
+        const p = perms.find(p => p && p.idx === i);
+        if (p) {
+          const tEditable = !!p.titleEditable;
+          const bEditable = !!p.bodyEditable;
+
+          if (headerEl) {
+            if (tEditable) {
+              headerEl.setAttribute('contenteditable', 'true');
+              headerEl.setAttribute('spellcheck', 'true');
+            } else {
+              headerEl.removeAttribute('contenteditable');
+            }
+          }
+          if (bodyEl) {
+            if (bEditable) {
+              bodyEl.setAttribute('contenteditable', 'true');
+              bodyEl.setAttribute('spellcheck', 'true');
+            } else {
+              bodyEl.removeAttribute('contenteditable');
+            }
+          }
+        }
+      }
     });
   }
+
 
   // Erfasst alle Notizzettel und ihre Eigenschaften
   function captureAllNotes() {
@@ -6108,9 +6124,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     const { skipCards = false } = opts;
 
     try { restoreFocusNote(state.focusNote ?? null, state.perms?.focusNote || null); } catch(e){ console.warn('restoreFocusNote:', e); }
-    try { restoreDescriptions(state.descriptions || []); } catch(e){ console.warn('restoreDescriptions:', e); }
+    try { restoreDescriptions(state.descriptions || [], state.perms?.descriptions || null); } catch(e){ console.warn('restoreDescriptions:', e); }
     try { restoreCardholders(state.cardholders || [], state.perms?.cardholders || null); } catch(e){ console.warn('restoreCardholders:', e); }
     try { restoreNotes(state.notes || []); } catch(e){ console.warn('restoreNotes:', e); }
+
 
     // Stapel-Position wiederherstellen
     try { restoreStackPosition(state.stack || null); } catch(e){ console.warn('restoreStackPosition:', e); }
@@ -6124,8 +6141,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   window.restoreBoardState = restoreBoardState;
 
 
-  // Stellt die Focus Note wieder her
-  function restoreFocusNote(state) {
+  // Stellt die Focus Note wieder her (Inhalt + optionale Edit-Perms)
+  function restoreFocusNote(state, perms) {
     if (!state) return;
 
     const wrap         = document.querySelector('.focus-note-area');
@@ -6135,7 +6152,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Backwards-Compat: früher war state nur der Body als String
     if (typeof state === 'string') {
-      if (bodyDisplay) { bodyDisplay.textContent = state; bodyDisplay.classList.toggle('has-content', !!state); }
+      if (bodyDisplay) {
+        bodyDisplay.textContent = state;
+        bodyDisplay.classList.toggle('has-content', !!state);
+      }
       if (bodyEditable) bodyEditable.textContent = state;
       return;
     }
@@ -6143,11 +6163,43 @@ document.addEventListener('DOMContentLoaded', async function() {
     const title = state.title ?? '';
     const body  = state.body  ?? '';
 
-    // WIE BEI DESCRIPTION: immer in den DOM schreiben (Restore ≠ Editier-Gate)
+    // Inhalt immer zurückschreiben
     if (titleEl)      titleEl.textContent = title;
     if (bodyEditable) bodyEditable.textContent = body;
-    if (bodyDisplay) { bodyDisplay.textContent = body; bodyDisplay.classList.toggle('has-content', !!body); }
+    if (bodyDisplay) {
+      bodyDisplay.textContent = body;
+      bodyDisplay.classList.toggle('has-content', !!body);
+    }
+
+    // Gespeicherte Edit-Flags anwenden (falls vorhanden)
+    if (perms && typeof perms === 'object') {
+      const tEditable = !!perms.titleEditable;
+      const bEditable = !!perms.bodyEditable;
+
+      if (titleEl) {
+        if (tEditable) {
+          titleEl.setAttribute('contenteditable', 'true');
+          titleEl.setAttribute('spellcheck', 'true');
+        } else {
+          titleEl.removeAttribute('contenteditable');
+        }
+      }
+
+      if (bodyEditable && bodyDisplay) {
+        if (bEditable) {
+          bodyEditable.setAttribute('contenteditable', 'true');
+          bodyEditable.setAttribute('spellcheck', 'true');
+          bodyEditable.style.display = '';
+          bodyDisplay.style.display  = 'none';
+        } else {
+          bodyEditable.removeAttribute('contenteditable');
+          bodyEditable.style.display = 'none';
+          bodyDisplay.style.display  = '';
+        }
+      }
+    }
   }
+
 
   function captureAllDescriptions() {
     const out = [];
@@ -6164,17 +6216,48 @@ document.addEventListener('DOMContentLoaded', async function() {
     return out;
   }
 
-  function restoreDescriptions(descs) {
+  function restoreDescriptions(descs, perms) {
     if (!Array.isArray(descs)) return;
     const nodes = Array.from(document.querySelectorAll('.board-description-box'));
+
     descs.forEach((d, i) => {
       const el = nodes[i]; if (!el) return;
+
       const titleEl = el.querySelector('.desc-title');
       const bodyEl  = titleEl ? titleEl.nextElementSibling : el.children[1];
+
+      // Inhalt
       if (titleEl && typeof d.title === 'string') titleEl.textContent = d.title;
       if (bodyEl  && typeof d.body  === 'string') bodyEl.textContent  = d.body;
+
+      // Edit-Flags
+      if (Array.isArray(perms)) {
+        const p = perms.find(p => p && p.idx === i);
+        if (p) {
+          const tEditable = !!p.titleEditable;
+          const bEditable = !!p.bodyEditable;
+
+          if (titleEl) {
+            if (tEditable) {
+              titleEl.setAttribute('contenteditable', 'true');
+              titleEl.setAttribute('spellcheck', 'true');
+            } else {
+              titleEl.removeAttribute('contenteditable');
+            }
+          }
+          if (bodyEl) {
+            if (bEditable) {
+              bodyEl.setAttribute('contenteditable', 'true');
+              bodyEl.setAttribute('spellcheck', 'true');
+            } else {
+              bodyEl.removeAttribute('contenteditable');
+            }
+          }
+        }
+      }
     });
   }
+
 
   
   function restoreNotes(notes, opts = {}) {
