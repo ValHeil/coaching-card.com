@@ -2597,7 +2597,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // --- focusNote: Titel + Text mit optionaler Bearbeitung + Autosave ---
     tpl.widgets.filter(w => w.type === 'focusNote').forEach(w => {
-      const p = prop(w); // gemergte Props (title, body, titleUserEditable, bodyUserEditable, Styles)
+      const p = prop(w); // gemergte Props aus Widget + Template + Defaults
 
       // Container
       const el = document.createElement('div');
@@ -2605,29 +2605,29 @@ document.addEventListener('DOMContentLoaded', async function() {
       el.style.position = 'absolute';
       el.dataset.widget = 'focusNote';
 
-      // Geometrie aus Template
+      // Geometrie
       el.style.left = ((w.x || 0)) + 'px';
       el.style.top  = ((w.y || 0)) + 'px';
       if (w.w) el.style.width  = w.w + 'px';
       if (w.h) el.style.height = w.h + 'px';
 
-      // Grundlayout (Flex, damit der Body mittig/vernünftig sitzt)
+      // Grundlayout (Flex: Titel oben, Body in der Mitte)
       el.style.display       = 'flex';
       el.style.flexDirection = 'column';
       el.style.overflow      = 'hidden';
       el.style.pointerEvents = 'auto';
 
-      // Titel
-      const title = document.createElement('div');
-      title.className = 'focus-note-title desc-title';
+      // Titel als <h2>, damit .focus-note-area h2 aus dem CSS greift
+      const title = document.createElement('h2');
+      title.className = 'focus-note-title';
       title.textContent = (p.title ?? p.heading ?? '').trim() || 'Focus Note';
 
-      // Kein schwarzer Fokus-Rahmen beim Editieren der Überschrift
+      // kein schwarzer Fokus-Rand beim Editieren der Überschrift
       title.style.outline   = 'none';
       title.style.boxShadow = 'none';
-      // (Border bleibt vom CSS, falls du dort eine Linie gesetzt hast)
+      title.style.border    = 'none';
 
-      // Body: Display + Editable (beide erzeugen; je nach Modus anzeigen)
+      // Body: Display + Editable
       const bodyDisplay  = document.createElement('div');
       bodyDisplay.id = 'focus-note-display';
       bodyDisplay.className = 'focus-note-display desc-content';
@@ -2643,6 +2643,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       bodyDisplay.textContent  = initialBody;
       bodyEditable.textContent = initialBody || placeholder;
 
+      // Wrapper, damit Body mittig in der Box sitzt (.focus-note-content)
+      const contentWrap = document.createElement('div');
+      contentWrap.className = 'focus-note-content';
+
       // Text-Ausrichtung & Schrift aus dem Builder
       const align = ['left', 'center', 'right'].includes(p.textAlign) ? p.textAlign : 'center';
       title.style.textAlign        = align;
@@ -2650,10 +2654,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       bodyEditable.style.textAlign = align;
 
       if (p.fontSize) {
-        const fs = p.fontSize + 'px';
-        title.style.fontSize        = fs;
-        bodyDisplay.style.fontSize  = fs;
-        bodyEditable.style.fontSize = fs;
+        title.style.fontSize        = p.fontSize + 'px';
+        bodyDisplay.style.fontSize  = p.fontSize + 'px';
+        bodyEditable.style.fontSize = p.fontSize + 'px';
       }
       if (p.fontFamily) {
         title.style.fontFamily        = p.fontFamily;
@@ -2681,10 +2684,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         bodyEditable.style.textDecoration = 'underline';
       }
 
-      // Editierbarkeit aus Template-Props
-      const canEditTitle = (typeof asBool === 'function') ? asBool(p.titleUserEditable) : !!p.titleUserEditable;
-      const canEditBody  = (typeof asBool === 'function') ? asBool(p.bodyUserEditable)  : !!p.bodyUserEditable;
+      // Editierbarkeit laut Widget-Flags
+      const canEditTitle = (typeof asBool === 'function')
+        ? asBool(p.titleUserEditable)
+        : !!p.titleUserEditable;
 
+      const canEditBody = (typeof asBool === 'function')
+        ? asBool(p.bodyUserEditable)
+        : !!p.bodyUserEditable;
+
+      // Body: Umschalten zwischen Display/Editable
       if (canEditBody) {
         bodyEditable.setAttribute('contenteditable', 'true');
         bodyEditable.setAttribute('spellcheck', 'true');
@@ -2696,6 +2705,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         bodyDisplay.style.display  = '';
       }
 
+      // Titel editierbar ja/nein
       if (canEditTitle) {
         title.setAttribute('contenteditable', 'true');
         title.setAttribute('spellcheck', 'true');
@@ -2703,15 +2713,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         title.removeAttribute('contenteditable');
       }
 
-      // Einmaliges Leeren von Admin-/Platzhalter-Text (Titel & Body),
-      // damit der Nutzer nicht erst löschen muss.
+      // Einmaliges Leeren von Admin-/Platzhalter-Text (Titel & Body)
       function setupOneTimeClear(node, defaultVal) {
-        if (!node) return;
+        const def = (defaultVal || '').trim();
+        if (!def) return;
         let clearedOnce = false;
 
         node.addEventListener('focus', () => {
           const cur = (node.textContent || '').trim();
-          if (!clearedOnce && cur === (defaultVal || '').trim()) {
+          if (!clearedOnce && cur === def) {
             node.textContent = '';
             clearedOnce = true;
           }
@@ -2719,37 +2729,41 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         node.addEventListener('input', () => {
           const cur = (node.textContent || '').trim();
-          if (cur && cur !== (defaultVal || '').trim()) {
-            clearedOnce = true;
-          }
+          if (cur && cur !== def) clearedOnce = true;
         });
       }
 
       const defaultTitle = (title.textContent || '').trim();
       const defaultBody  = (bodyEditable.textContent || '').trim();
 
-      if (canEditTitle) setupOneTimeClear(title, defaultTitle);
+      if (canEditTitle) setupOneTimeClear(title,       defaultTitle);
       if (canEditBody)  setupOneTimeClear(bodyEditable, defaultBody);
 
-      // AUTOSAVE: FocusNote (Titel & Body)
+      // AUTOSAVE: FocusNote – Änderungen triggern Save
       if (typeof saveCurrentBoardState === 'function') {
-        if (canEditTitle) {
-          title.addEventListener('input', () => saveCurrentBoardState('focusNote'));
-          title.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
-        }
-        if (canEditBody) {
-          bodyEditable.addEventListener('input', () => saveCurrentBoardState('focusNote'));
-          bodyEditable.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
-        }
+        const trigger = () => {
+          try {
+            saveCurrentBoardState('focusNote');
+          } catch (e) {
+            console.warn('FocusNote autosave failed', e);
+          }
+        };
+        ['input', 'blur'].forEach(ev => {
+          title.addEventListener(ev, trigger);
+          bodyEditable.addEventListener(ev, trigger);
+        });
       }
 
-      // In DOM einsetzen
+      // DOM: Titel + Wrapper mit Body einsetzen
+      contentWrap.appendChild(canEditBody ? bodyEditable : bodyDisplay);
       el.appendChild(title);
-      el.appendChild(canEditBody ? bodyEditable : bodyDisplay);
+      el.appendChild(contentWrap);
 
+      // Auf dem Board platzieren
       const boardArea = document.querySelector('.board-area') || document.body;
       boardArea.appendChild(el);
     });
+
 
 
 
