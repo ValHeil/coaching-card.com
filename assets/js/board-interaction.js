@@ -194,9 +194,9 @@ function isNoteFull(notiz, content, anticipateExtraLine) {
       return true;
     }
 
-    const max = getMaxNoteSize();
-    const csNote     = getComputedStyle(notiz);
-    const csContent  = getComputedStyle(content);
+    const max       = getMaxNoteSize();
+    const csNote    = getComputedStyle(notiz);
+    const csContent = getComputedStyle(content);
 
     const padTop    = parseFloat(csNote.paddingTop)    || 0;
     const padBottom = parseFloat(csNote.paddingBottom) || 0;
@@ -216,24 +216,33 @@ function isNoteFull(notiz, content, anticipateExtraLine) {
     // minimale Marge nach unten
     rawScrollH += 2;
 
-    // --- WICHTIG: für Enter eine zusätzliche Zeile "vorweg" denken ---
-    if (anticipateExtraLine) {
-      let lineH = parseFloat(csContent.lineHeight);
-
-      if (!Number.isFinite(lineH) || csContent.lineHeight === 'normal') {
-        const fontSize = parseFloat(csContent.fontSize) || 16;
-        lineH = fontSize * 1.4;
-      }
-
-      rawScrollH += lineH;
+    // --- Fall A: aktueller Inhalt passt schon nicht mehr sauber rein ---
+    if (!anticipateExtraLine) {
+      return rawScrollH >= limit;
     }
 
-    return rawScrollH >= limit;
+    // --- Fall B: wir überlegen, ob WIRKLICH noch eine komplette neue Zeile reinpasst ---
+    let lineH = parseFloat(csContent.lineHeight);
+    if (!Number.isFinite(lineH) || csContent.lineHeight === 'normal') {
+      const fontSize = parseFloat(csContent.fontSize) || 16;
+      lineH = fontSize * 1.4;
+    }
+
+    // Es soll nur dann noch eine neue Zeile erlaubt sein, wenn
+    // mindestens ~eine Zeilenhöhe Luft ist. Ist es knapper, behandeln wir
+    // die Notiz als "voll", damit keine leere Bullet-Zeile entsteht.
+    const minFree   = lineH * 0.95;
+    const freeSpace = limit - rawScrollH;
+
+    // true  → Note gilt als voll, neue Zeile / Wrap wird geblockt
+    // false → es ist genug Platz für eine weitere sichtbare Zeile
+    return freeSpace < minFree;
   } catch (e) {
     console.warn('isNoteFull() Fehler:', e);
     return false;
   }
 }
+
 
 
 
