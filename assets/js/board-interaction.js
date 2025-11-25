@@ -2606,47 +2606,26 @@ document.addEventListener('DOMContentLoaded', async function() {
       el.dataset.widget = 'focusNote';
 
       // Geometrie aus Template
-      if (w.x != null) el.style.left = w.x + 'px';
-      if (w.y != null) el.style.top  = w.y + 'px';
+      el.style.left = ((w.x || 0)) + 'px';
+      el.style.top  = ((w.y || 0)) + 'px';
       if (w.w) el.style.width  = w.w + 'px';
       if (w.h) el.style.height = w.h + 'px';
 
-      // Hintergrund / Rahmen wie im Builder
-      const fillCol = p.background || p.color || null;
-      const fillA   = (typeof p.opacity === 'number') ? p.opacity : 1;
-      el.style.background = fillCol
-        ? (fillA >= 1 ? fillCol : hexToRgba(fillCol, fillA))
-        : 'transparent';
-
-      if (p.radius != null) el.style.borderRadius = p.radius + 'px';
-
-      if (p.borderWidth) {
-        const bw = p.borderWidth;
-        const bs = p.borderStyle || 'solid';
-        const bc = p.borderColor || 'rgba(0,0,0,0.15)';
-        const ba = (typeof p.borderOpacity === 'number') ? p.borderOpacity : 1;
-        el.style.borderWidth = bw + 'px';
-        el.style.borderStyle = bs;
-        el.style.borderColor = (ba >= 1 ? bc : hexToRgba(bc, ba));
-      } else {
-        el.style.borderWidth = '0';
-        el.style.borderStyle = 'none';
-      }
-
+      // Grundlayout (Flex, damit der Body mittig/vernünftig sitzt)
       el.style.display       = 'flex';
       el.style.flexDirection = 'column';
       el.style.overflow      = 'hidden';
       el.style.pointerEvents = 'auto';
-      el.style.padding       = (p.padding != null ? p.padding : 12) + 'px';
 
-      // === Titel als <h2>, damit .focus-note-area h2 greift (fett, Abstand, Farbe) ===
-      const title = document.createElement('h2');
-      title.className = 'focus-note-title';
+      // Titel
+      const title = document.createElement('div');
+      title.className = 'focus-note-title desc-title';
       title.textContent = (p.title ?? p.heading ?? '').trim() || 'Focus Note';
 
-      // === Body-Wrapper, der den Inhalt vertikal zentriert ===
-      const contentWrap = document.createElement('div');
-      contentWrap.className = 'focus-note-content';
+      // Kein schwarzer Fokus-Rahmen beim Editieren der Überschrift
+      title.style.outline   = 'none';
+      title.style.boxShadow = 'none';
+      // (Border bleibt vom CSS, falls du dort eine Linie gesetzt hast)
 
       // Body: Display + Editable (beide erzeugen; je nach Modus anzeigen)
       const bodyDisplay  = document.createElement('div');
@@ -2665,7 +2644,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       bodyEditable.textContent = initialBody || placeholder;
 
       // Text-Ausrichtung & Schrift aus dem Builder
-      const align = ['left','center','right'].includes(p.textAlign) ? p.textAlign : 'center';
+      const align = ['left', 'center', 'right'].includes(p.textAlign) ? p.textAlign : 'center';
       title.style.textAlign        = align;
       bodyDisplay.style.textAlign  = align;
       bodyEditable.style.textAlign = align;
@@ -2724,44 +2703,54 @@ document.addEventListener('DOMContentLoaded', async function() {
         title.removeAttribute('contenteditable');
       }
 
-      // Einmaliges Leeren des Platzhalter-Texts für den Body
-      (function setupOneTimeClear(target, defaultText) {
-        if (!target) return;
-        let cleared = false;
-        target.addEventListener('focus', () => {
-          const txt = (target.textContent || '').trim();
-          if (!cleared && txt === (defaultText || '').trim()) {
-            target.textContent = '';
-            cleared = true;
+      // Einmaliges Leeren von Admin-/Platzhalter-Text (Titel & Body),
+      // damit der Nutzer nicht erst löschen muss.
+      function setupOneTimeClear(node, defaultVal) {
+        if (!node) return;
+        let clearedOnce = false;
+
+        node.addEventListener('focus', () => {
+          const cur = (node.textContent || '').trim();
+          if (!clearedOnce && cur === (defaultVal || '').trim()) {
+            node.textContent = '';
+            clearedOnce = true;
           }
         });
-        target.addEventListener('input', () => {
-          const txt = (target.textContent || '').trim();
-          if (txt && txt !== (defaultText || '').trim()) {
-            cleared = true;
+
+        node.addEventListener('input', () => {
+          const cur = (node.textContent || '').trim();
+          if (cur && cur !== (defaultVal || '').trim()) {
+            clearedOnce = true;
           }
         });
-      })(bodyEditable, placeholder);
-
-      // === AUTOSAVE: FocusNote – Änderungen triggern Save ===
-      if (canEditTitle) {
-        title.addEventListener('input', () => saveCurrentBoardState('focusNote'));
-        title.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
       }
-      if (canEditBody) {
-        bodyEditable.addEventListener('input', () => saveCurrentBoardState('focusNote'));
-        bodyEditable.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
-      }
-      // === /AUTOSAVE FocusNote ===
 
-      // === In DOM einsetzen: Titel + zentrierter Body ===
-      contentWrap.appendChild(canEditBody ? bodyEditable : bodyDisplay);
+      const defaultTitle = (title.textContent || '').trim();
+      const defaultBody  = (bodyEditable.textContent || '').trim();
+
+      if (canEditTitle) setupOneTimeClear(title, defaultTitle);
+      if (canEditBody)  setupOneTimeClear(bodyEditable, defaultBody);
+
+      // AUTOSAVE: FocusNote (Titel & Body)
+      if (typeof saveCurrentBoardState === 'function') {
+        if (canEditTitle) {
+          title.addEventListener('input', () => saveCurrentBoardState('focusNote'));
+          title.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
+        }
+        if (canEditBody) {
+          bodyEditable.addEventListener('input', () => saveCurrentBoardState('focusNote'));
+          bodyEditable.addEventListener('blur',  () => saveCurrentBoardState('focusNote'));
+        }
+      }
+
+      // In DOM einsetzen
       el.appendChild(title);
-      el.appendChild(contentWrap);
+      el.appendChild(canEditBody ? bodyEditable : bodyDisplay);
 
       const boardArea = document.querySelector('.board-area') || document.body;
       boardArea.appendChild(el);
     });
+
 
 
     // --- bgrect zuerst (Z-Reihenfolge)
