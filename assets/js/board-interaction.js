@@ -4089,7 +4089,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     content.setAttribute('spellcheck', 'true');
 
     // Sichtbarer Platzhalter-Text für neue Notizen
-    const PLACEHOLDER_TEXT = 'Schreiben sie hier ihren Text...';
+    const PLACEHOLDER_TEXT = 'Schreiben sie hier ihren Text.';
     content.textContent = PLACEHOLDER_TEXT;
 
     // Optional: data-placeholder für CSS (falls du :empty:before o.ä. nutzt)
@@ -4099,7 +4099,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     noteEl.appendChild(content);
 
-    // 5) Erste Position beim Abziehen: Maus-/Touch-Position relativ zum Notes-Container
+    // 5) Erste Position beim Abziehen: Maus-/Touch-Position
     const isTouch = e.type && e.type.startsWith && e.type.startsWith('touch');
     const getPoint = (ev) => {
       const t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]) || ev;
@@ -4119,9 +4119,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     try { if (typeof enhanceDraggableNote === 'function') enhanceDraggableNote(noteEl); } catch {}
 
     const wrapRect = notesWrap.getBoundingClientRect();
-    // Startposition leicht versetzt, damit man die „Abzieh“-Bewegung sieht
-    let left = start.x - wrapRect.left + notesWrap.scrollLeft - 20;
-    let top  = start.y - wrapRect.top  + notesWrap.scrollTop  - 20;
+    const srcRect  = src.getBoundingClientRect();
+
+    // Griffposition beibehalten:
+    // Note wird zuerst genau dort platziert, wo der Block gerade liegt.
+    // Dadurch ist der Abstand Maus ↔ Zettel derselbe wie Maus ↔ Block.
+    let left = srcRect.left - wrapRect.left + notesWrap.scrollLeft;
+    let top  = srcRect.top  - wrapRect.top  + notesWrap.scrollTop;
 
     noteEl.style.left = left + 'px';
     noteEl.style.top  = top  + 'px';
@@ -4169,6 +4173,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       try { noteEl.setPointerCapture(e.pointerId); } catch {}
     }
   }
+
 
 
   // Hilfsfunktion, um den höchsten z-index zu finden
