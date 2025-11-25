@@ -1974,6 +1974,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     const content = noteEl.querySelector('.notiz-content, .note-content');
     if (!content) return;
 
+    // Merkt sich den letzten „gültigen“ Inhalt, der noch in die Max-Höhe passt
+    let lastSafeHTML = content.innerHTML || '';
+
     // Hilfsfunktion für parseFloat mit Fallback
     const px = (v) => {
       const n = parseFloat(v);
@@ -2001,7 +2004,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       try {
         noteEl._autoGrowInProgress = true;
 
-        const max = getMaxNoteSize();
+        const max    = getMaxNoteSize();
         const csNote = getComputedStyle(noteEl);
 
         // Innenabstände für die Breite/Höhe berücksichtigen
@@ -2023,6 +2026,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         const currentW = rect.width  / sx;
         const currentH = rect.height / sy;
+
+        // Status vor diesem Recalc merken
+        const wasFull = noteIsFull;
 
         // 1) Platzhalter erkennen und NICHT zum Messen benutzen
         const rawText = ((content.innerText || content.textContent || '') + '')
@@ -2082,6 +2088,33 @@ document.addEventListener('DOMContentLoaded', async function() {
         // "Roh"-Zielhöhe (ungeclamped) berechnen
         const rawTargetH = Math.ceil(content.scrollHeight + padY);
 
+        // >>> NEU: harter Schutz, damit keine leere Zusatzzeile stehen bleibt <<<
+        // Wenn die Note bereits als „voll“ markiert war und der neue Inhalt
+        // jetzt über die Maximalhöhe hinaus gehen würde, machen wir die
+        // letzte Änderung rückgängig (Enter oder Buchstabe wird visuell
+        // zurückgenommen).
+        if (wasFull && rawTargetH > max.height && lastSafeHTML) {
+          if (content.innerHTML !== lastSafeHTML) {
+            content.innerHTML = lastSafeHTML;
+
+            // Cursor wieder ans Ende setzen
+            try {
+              const sel = window.getSelection && window.getSelection();
+              if (sel) {
+                const range = document.createRange();
+                range.selectNodeContents(content);
+                range.collapse(false);
+                sel.removeAllRanges();
+                sel.addRange(range);
+              }
+            } catch {}
+
+            // Mit dem zurückgesetzten Inhalt noch einmal sauber rechnen
+            requestAnimationFrame(recalc);
+          }
+          return;
+        }
+
         let targetH = rawTargetH;
         targetH = Math.max(targetH, minH);
         if (targetH > max.height) targetH = max.height;
@@ -2106,6 +2139,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else if (!fullNow && noteIsFull) {
           noteIsFull = false;
           delete noteEl.dataset.noteHeightFull;
+        }
+
+        // "sicheren" Inhalt merken, solange alles in die Note passt
+        if (rawTargetH <= max.height) {
+          lastSafeHTML = content.innerHTML;
         }
 
         // aktuelle Höhe nach evtl. Breitenänderung neu messen
@@ -2160,6 +2198,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Optional: bei Fenster-Resize auch nochmal anpassen
     window.addEventListener('resize', recalc);
   }
+
 
 
 
