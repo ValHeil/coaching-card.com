@@ -5942,6 +5942,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       const nx = world.width  ? (leftStage / world.width)  : 0;
       const ny = world.height ? (topStage  / world.height) : 0;
 
+      // Farben/Variablen konsistent mitschreiben
+      const bgVar   = notiz.style.getPropertyValue('--note-bg')     || '';
+      const brVar   = notiz.style.getPropertyValue('--note-border') || '';
+      const bgColor = bgVar || (notiz.style.backgroundColor || '');
+      const brColor = brVar || (notiz.style.borderColor     || (bgColor ? darken(bgColor, 18) : ''));
+
       out.push({
         id: notiz.id,
         nx, ny,
@@ -5950,7 +5956,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         width:  notiz.style.width  || '',
         height: notiz.style.height || '',
         zIndex: notiz.style.zIndex || '',
-        backgroundColor: notiz.style.backgroundColor || '',
+        // neu: Farben & Variablen explizit sichern
+        backgroundColor: bgColor,
+        borderColor:     brColor,
+        noteBg:          bgVar,
+        noteBorder:      brVar,
         rotation: notiz.style.getPropertyValue('--rotation') || '',
         // Text statt innerHTML – sicher gegen Markup
         content: getNoteText(notiz)
@@ -5959,6 +5969,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     return out;
   }
+
 
 
   // Erfasst alle Karten und ihre Eigenschaften
@@ -6096,7 +6107,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
 
-  // Stellt alle Notizzettel wieder her – respektiert laufende lokale Bearbeitung
+  
   function restoreNotes(notes, opts = {}) {
     if (!Array.isArray(notes) || !notes.length) return;
     if (opts && opts.skipNotes) return;
@@ -6130,11 +6141,39 @@ document.addEventListener('DOMContentLoaded', async function() {
       el.style.left = leftPx + 'px';
       el.style.top  = topPx  + 'px';
 
-      if (noteData.zIndex !== undefined && noteData.zIndex !== '') el.style.zIndex = String(noteData.zIndex);
-      if (noteData.backgroundColor) el.style.backgroundColor = noteData.backgroundColor;
+      if (noteData.zIndex !== undefined && noteData.zIndex !== '') {
+        el.style.zIndex = String(noteData.zIndex);
+      }
+
+      // Hintergrund + Rand konsistent setzen (auch für alte States)
+      const bgColor =
+        noteData.noteBg ||
+        noteData.backgroundColor ||
+        '';
+
+      let borderColor =
+        noteData.noteBorder ||
+        noteData.borderColor ||
+        '';
+
+      if (!borderColor && bgColor) {
+        // Falls nur Hintergrund gespeichert war: Randfarbe wie beim Erzeugen ableiten
+        borderColor = darken(bgColor, 18);
+      }
+
+      if (bgColor) {
+        el.style.setProperty('--note-bg', bgColor);
+        el.style.backgroundColor = bgColor;
+      }
+
+      if (borderColor) {
+        el.style.setProperty('--note-border', borderColor);
+        el.style.borderColor = borderColor;
+      }
+
       if (noteData.rotation) el.style.setProperty('--rotation', noteData.rotation);
-      if (noteData.width)  el.style.width  = noteData.width;
-      if (noteData.height) el.style.height = noteData.height;
+      if (noteData.width)    el.style.width  = noteData.width;
+      if (noteData.height)   el.style.height = noteData.height;
 
       setNoteText(el, noteData.content || '');
       if (el.parentNode !== stage) stage.appendChild(el);
@@ -6147,6 +6186,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
   window.restoreNotes = restoreNotes;
+
 
 
 
