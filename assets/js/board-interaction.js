@@ -532,20 +532,51 @@ function ensureNotesContainer() {
 }
 
 function ensureNoteEl(id) {
-  let el = document.getElementById(id);
+  // IDs, die niemals als einzelner Notizzettel verwendet werden sollen
+  const FORBIDDEN_NOTE_IDS = new Set(['notes-container']);
+
+  // vorhandenes Element mit dieser ID suchen
+  let el = id ? document.getElementById(id) : null;
+
+  // Wenn es zwar ein Element gibt, dieses aber KEIN echter Notizzettel ist
+  // (z.B. der Notizblock-Container ".notizzettel-box.notes-container"),
+  // dann NICHT wiederverwenden – wir erzeugen gleich einen neuen .notiz.
+  if (
+    el &&
+    !el.classList.contains('notiz') &&
+    !el.classList.contains('note') &&    // alter Klassename
+    el.dataset.role === 'notepad'        // Notizblock-Bereich
+  ) {
+    el = null;
+  }
+
+  // Falls die ID ausdrücklich eine verbotene Container-ID ist, nie dieses
+  // Element als Notizzettel benutzen. Wir erzeugen einen eigenen .notiz
+  // mit derselben ID NICHT – IDs müssen eindeutig bleiben.
+  if (id && FORBIDDEN_NOTE_IDS.has(String(id))) {
+    el = null;
+  }
+
   if (!el) {
+    // neuen Notizzettel erzeugen
     el = document.createElement('div');
     el.className = 'notiz';
-    el.id = id;
+    if (id && !FORBIDDEN_NOTE_IDS.has(String(id))) {
+      el.id = id;
+    }
+
     const content = document.createElement('div');
     content.className = 'notiz-content';
     content.setAttribute('contenteditable', 'false');
     el.appendChild(content);
-    ensureNotesContainer().appendChild(el);
-    L('DOM_CREATE', { id });
+
+    const container = ensureNotesContainer();
+    if (container) container.appendChild(el);
+
+    L('DOM_CREATE', { id: el.id || id || '(auto)' });
   } else {
     L('DOM_REUSE', {
-      id,
+      id: el.id || id,
       locked: el.dataset.locked,
       by: el.dataset.lockedBy,
       until: el.dataset.lockedUntil,
@@ -568,6 +599,7 @@ function ensureNoteEl(id) {
 
   return { el, content };
 }
+
 
 function isLockActiveForMe(note) {
   const locked = note && note.dataset.locked === '1';
@@ -6123,13 +6155,21 @@ document.addEventListener('DOMContentLoaded', async function() {
     const stageRect = getStageRect();
 
     notes.forEach(noteData => {
-      const { el } = ensureNoteEl(noteData.id); // erzeugt + hängt Handler an
+      if (!noteData) return;
+
+      // Offensichtliche Container-/Notizblock-Einträge ignorieren
+      if (!noteData.id) return;
+      const nid = String(noteData.id);
+      if (nid === 'notes-container') return;
+
+      // ab hier nur noch echte Notizzettel
+      const { el } = ensureNoteEl(nid);  // erzeugt + hängt Handler an
       el.style.position = 'absolute';
 
-      // Position aus nx/ny (bevorzugt) oder Fallback left/top übernehmen
+      // --- deine bestehende Positions-/Style-Logik bleibt unverändert ---
       let leftPx, topPx;
       if (typeof noteData.nx === 'number' && typeof noteData.ny === 'number') {
-        const p = fromNorm(noteData.nx, noteData.ny); // Bühnen-Pixel (unskaliert)
+        const p = fromNorm(noteData.nx, noteData.ny);
         const parentRect = (el.parentElement || stage).getBoundingClientRect();
         leftPx = Math.round(p.x - ((parentRect.left - stageRect.left) / s));
         topPx  = Math.round(p.y - ((parentRect.top  - stageRect.top ) / s));
@@ -6145,7 +6185,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         el.style.zIndex = String(noteData.zIndex);
       }
 
-      // Hintergrund + Rand konsistent setzen (auch für alte States)
       const bgColor =
         noteData.noteBg ||
         noteData.backgroundColor ||
@@ -6157,7 +6196,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         '';
 
       if (!borderColor && bgColor) {
-        // Falls nur Hintergrund gespeichert war: Randfarbe wie beim Erzeugen ableiten
         borderColor = darken(bgColor, 18);
       }
 
@@ -6165,7 +6203,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         el.style.setProperty('--note-bg', bgColor);
         el.style.backgroundColor = bgColor;
       }
-
       if (borderColor) {
         el.style.setProperty('--note-border', borderColor);
         el.style.borderColor = borderColor;
@@ -6177,8 +6214,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       setNoteText(el, noteData.content || '');
       if (el.parentNode !== stage) stage.appendChild(el);
-      seen.add(noteData.id);
+      seen.add(nid);
     });
+
 
     // Verwaiste Notizen entfernen (wenn sie nicht mehr im State sind)
     document.querySelectorAll('.notiz').forEach(el => {
