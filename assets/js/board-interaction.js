@@ -1811,12 +1811,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     const w = rect.width / s;
     const h = rect.height / s;
 
-    // Maximalbreite: ca. 90% der Board-Breite, hart gedeckelt
-    const maxW = Math.max(220, Math.min(w * 0.9, 900));
+    // Maximalbreite: ca. 45% der Board-Breite, hart gedeckelt (halbiert)
+    const maxW = Math.max(220, Math.min(w * 0.45, 450));
 
-    // Maximalhöhe soll höchstens so groß sein wie maxW (→ im Extremfall quadratisch),
-    // wird aber zusätzlich durch die Board-Höhe begrenzt
-    const maxHByBoard = Math.max(150, Math.min(h * 0.9, 900));
+    // Maximalhöhe: ebenfalls halbiert gegenüber vorher
+    const maxHByBoard = Math.max(150, Math.min(h * 0.45, 450));
     const maxH = Math.min(maxW * 2, maxHByBoard);
 
     return {
@@ -1824,6 +1823,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       height: maxH
     };
   }
+
 
   // Kleine Debounce-Hilfe fürs Speichern
   function debounce(fn, delay) {
@@ -4233,47 +4233,39 @@ document.addEventListener('DOMContentLoaded', async function() {
     // - Enter erzeugt neue Zeile mit "• "
     // - Wenn Notiz „voll“ ist: keine neue Zeile / keine neuen Zeichen mehr
     content.addEventListener('keydown', (e) => {
-      const key = ev.key;
+      const noteEl = notiz;              // das aktuelle Notiz-Element
+      const key    = e.key;
 
-      // ... falls du dir hier schon notiz/content referenzen holst:
-      const notiz = noteEl; // oder wie deine Variable aktuell heißt
-
-      // 1) ENTER: prüfen, ob eine neue Zeile die Note zu hoch machen würde
-      const wantsNewLine = (key === 'Enter');
-
-      if (wantsNewLine && isNoteFull(notiz, content, true)) {
-        // → Note ist „voll“ im Sinne von: eine weitere Zeile würde über max.height hinausgehen
-        if (typeof showNoteFullWarning === 'function') {
-          showNoteFullWarning(notiz);
-        }
-        if (typeof showNoteLimitMessage === 'function') {
-          showNoteLimitMessage();
-        }
-
-        ev.preventDefault();
-        ev.stopPropagation();
-        return;
-      }
-
-      const isEnter     = (e.key === 'Enter');
-      const isPrintable = (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey);
+      const isEnter     = (key === 'Enter');
+      const isPrintable = (key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey);
 
       const textNow  = (content.textContent || '').replace(/\u200B/g, '');
       const emptyNow = (textNow.trim() === '');
 
-      // 1) Notiz voll? → weitere Eingabe blockieren
-      //    - Enter: keine neue Zeile mehr
-      //    - normale Zeichen: auch keine „unsichtbaren“ Zeichen zulassen,
-      //      wenn Text eigentlich in eine neue Zeile wandern müsste
-      if (isNoteFull(notiz, content) && (isEnter || isPrintable)) {
+      // 1) Prüfen, ob die Notiz bereits voll ist
+      const alreadyFull        = isNoteFull(noteEl, content, false);
+      const wouldOverflowLine  = isNoteFull(noteEl, content, true);
+
+      // a) Wenn bereits voll: Enter + sichtbare Zeichen blockieren
+      if ((isEnter || isPrintable) && alreadyFull) {
         e.preventDefault();
         if (typeof showNoteFullWarning === 'function') {
-          showNoteFullWarning(notiz);
+          showNoteFullWarning(noteEl);
         }
         return;
       }
 
-      // 2) Enter erzeugt neue Bullet-Zeile
+      // b) Noch nicht voll, aber eine zusätzliche Zeile würde über max.height gehen
+      //    → ebenfalls blockieren (gilt für Enter und "normale" Zeichen)
+      if ((isEnter || isPrintable) && !alreadyFull && wouldOverflowLine) {
+        e.preventDefault();
+        if (typeof showNoteFullWarning === 'function') {
+          showNoteFullWarning(noteEl);
+        }
+        return;
+      }
+
+      // 2) Enter erzeugt neue Bullet-Zeile (wenn wir nicht oben geblockt haben)
       if (isEnter) {
         e.preventDefault();
         document.execCommand('insertHTML', false, '\n• ');
@@ -4283,7 +4275,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       // 3) Erste Eingabe in leerer Notiz: direkt "• " + erstes Zeichen
       if (isPrintable && emptyNow) {
         e.preventDefault();
-        const firstChar = e.key;
+        const firstChar = key;
         content.textContent = '• ' + firstChar;
 
         const range = document.createRange();
@@ -4296,6 +4288,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       }
     });
+
 
 
     // Bearbeitung beenden, wenn außerhalb geklickt wird
