@@ -173,16 +173,49 @@ function fromNormCard(nx, ny) { return fromNorm(nx, ny); }
 // Liefert ein schlankes Template-Objekt (egal welche Rohform ankommt)
 function normalizeTemplate(raw) {
   if (!raw) return null;
+
   const tpl = raw.template || raw.board || raw; // erlaubte Varianten
   const widgets = Array.isArray(tpl.widgets) ? tpl.widgets : [];
-  return {
-    worldW: tpl.worldW || tpl.width  || tpl.w || null,
-    worldH: tpl.worldH || tpl.height || tpl.h || null,
-    bgColor: tpl.bgColor || tpl.backgroundColor || null,
-    bgImage: tpl.bgImage || tpl.backgroundImage || null,
-    widgets
-  };
+
+  // Verschachtelte World-Daten (wie aus PHP/Node)
+  const world = tpl.world || (tpl.meta && tpl.meta.world) || {};
+
+  const worldW =
+    tpl.worldW ||
+    tpl.width ||
+    tpl.w ||
+    world.worldW ||
+    world.width ||
+    world.w ||
+    null;
+
+  const worldH =
+    tpl.worldH ||
+    tpl.height ||
+    tpl.h ||
+    world.worldH ||
+    world.height ||
+    world.h ||
+    null;
+
+  const bgColor =
+    tpl.bgColor ||
+    tpl.backgroundColor ||
+    world.bgColor ||
+    world.backgroundColor ||
+    null;
+
+  const bgImage =
+    tpl.bgImage ||
+    tpl.backgroundImage ||
+    world.bgImage ||
+    world.backgroundImage ||
+    null;
+
+  return { worldW, worldH, bgColor, bgImage, widgets };
 }
+
+
 
 function isNoteFull(notiz, content, anticipateExtraLine) {
   try {
