@@ -2638,48 +2638,62 @@ document.addEventListener('DOMContentLoaded', async function() {
       el.style.position = 'absolute';
       el.dataset.widget = 'focusNote';
 
-      // Optik wie bei description/bgrect aus den Props
+      // Geometrie aus Template
+      el.style.left = ((w.x || 0)) + 'px';
+      el.style.top  = ((w.y || 0)) + 'px';
+      if (w.w) el.style.width  = w.w + 'px';
+      if (w.h) el.style.height = w.h + 'px';
+
+      // HINTERGRUND / RAHMEN WIE IM BUILDER
+      // → Werte aus dem Widget haben Vorrang vor CSS; CSS wirkt nur noch als Fallback
       const fillCol = p.background || p.color || null;
       const fillA   = (typeof p.opacity === 'number') ? p.opacity : 1;
+
       if (fillCol) {
-        el.style.backgroundColor = (fillA >= 1) ? fillCol : hexToRgba(fillCol, fillA);
-      }
-      if (p.radius != null) {
-        el.style.borderRadius = p.radius + 'px';
-      }
-      if (p.borderWidth) {
-        const bw   = p.borderWidth;
-        const bsty = p.borderStyle || 'solid';
-        const ba   = (typeof p.borderOpacity === 'number') ? p.borderOpacity : 1;
-        const bc   = p.borderColor || 'rgba(0,0,0,0.15)';
-        el.style.borderWidth = bw + 'px';
-        el.style.borderStyle = bsty;
-        el.style.borderColor = (ba >= 1 ? bc : hexToRgba(bc, ba));
+        const fill = (fillA >= 1 ? fillCol : hexToRgba(fillCol, fillA));
+        el.style.background      = fill;
+        el.style.backgroundColor = fill;
+      } else {
+        // kein expliziter Wert im Widget → CSS-Fallback darf greifen
+        el.style.background      = '';
+        el.style.backgroundColor = '';
       }
 
-      // Fallback-Größen, falls im Template nichts gesetzt ist
-      if (!w.w) w.w = 520;
-      if (!w.h) w.h = 240;
+      const radius = (typeof p.radius === 'number') ? p.radius : null;
+      if (radius != null) {
+        el.style.borderRadius = radius + 'px';
+      }
 
-      // Geometrie konsequent über die gleiche Funktion wie andere Widgets
-      place(el, w);
+      const bw   = (typeof p.borderWidth === 'number') ? p.borderWidth : 0;
+      const bsty = p.borderStyle || 'solid';
+      if (bw > 0 && bsty !== 'none') {
+        const bc = p.borderColor || 'rgba(0,0,0,0.15)';
+        const ba = (typeof p.borderOpacity === 'number') ? p.borderOpacity : 1;
+        el.style.border = `${bw}px ${bsty} ${ba >= 1 ? bc : hexToRgba(bc, ba)}`;
+      } else {
+        el.style.border = 'none';
+      }
+
+      // Padding nur setzen, wenn im Widget vorhanden – sonst CSS-Fallback (25px usw.)
+      if (typeof p.padding === 'number') {
+        el.style.padding = p.padding + 'px';
+      }
 
       // Grundlayout (Flex: Titel oben, Body in der Mitte)
       el.style.display       = 'flex';
       el.style.flexDirection = 'column';
       el.style.overflow      = 'hidden';
       el.style.pointerEvents = 'auto';
-      el.style.padding       = (p.padding != null ? p.padding : 25) + 'px';
 
-      // Titel als <h2>, damit .focus-note-area h2 aus dem CSS greift
+      // Titel als <h2>, damit .focus-note-area h2 aus dem CSS greifen KANN
       const title = document.createElement('h2');
       title.className = 'focus-note-title';
-      title.textContent =
-        (p.title ?? p.heading ?? '').trim() || 'Focus Note';
+      title.textContent = (p.title ?? p.heading ?? '').trim() || 'Focus Note';
 
-      // Farben optional aus Props überschreiben
-      const titleColor = p.titleColor || p.fontColor || null;
-      if (titleColor) title.style.color = titleColor;
+      // kein schwarzer Fokus-Rand beim Editieren der Überschrift
+      title.style.outline   = 'none';
+      title.style.boxShadow = 'none';
+      title.style.border    = 'none';
 
       // Body: Display + Editable
       const bodyDisplay  = document.createElement('div');
@@ -2691,48 +2705,132 @@ document.addEventListener('DOMContentLoaded', async function() {
       bodyEditable.className = 'focus-note-editable desc-content';
 
       const initialBody = (p.body ?? p.text ?? '').trim();
-      const placeholder = p.placeholder || 'Schreiben sie hier die Focus Note der Sitzung rein';
-
+      const placeholder = 'Schreiben sie hier die Focus Note der Sitzung rein';
       bodyEditable.dataset.placeholder = placeholder;
+
+      bodyDisplay.textContent  = initialBody;
       bodyEditable.textContent = initialBody || placeholder;
-      bodyDisplay.textContent  = initialBody || placeholder;
-      if (initialBody) {
-        bodyDisplay.classList.add('has-content');
-      }
 
-      // Body-Farbe (falls im Widget gesetzt)
-      const bodyColor = p.bodyColor || p.fontColor || null;
-      if (bodyColor) {
-        bodyDisplay.style.color  = bodyColor;
-        bodyEditable.style.color = bodyColor;
-      }
-
-      // Editierbarkeit gemäß Props
-      const canEditTitle = !!p.titleUserEditable;
-      const canEditBody  = !!p.bodyUserEditable;
-
-      if (canEditTitle) {
-        title.setAttribute('contenteditable', 'true');
-        title.style.cursor = 'text';
-      }
-      if (canEditBody) {
-        bodyEditable.setAttribute('contenteditable', 'true');
-        bodyEditable.style.cursor = 'text';
-      } else {
-        bodyEditable.setAttribute('contenteditable', 'false');
-      }
-
-      // Struktur zusammenbauen
-      el.appendChild(title);
-
+      // Wrapper, damit Body mittig in der Box sitzt (.focus-note-content)
       const contentWrap = document.createElement('div');
       contentWrap.className = 'focus-note-content';
-      contentWrap.appendChild(bodyDisplay);
-      contentWrap.appendChild(bodyEditable);
+
+      // Text-Ausrichtung & Schrift aus dem Builder
+      const align = ['left', 'center', 'right'].includes(p.textAlign) ? p.textAlign : 'center';
+      title.style.textAlign        = align;
+      bodyDisplay.style.textAlign  = align;
+      bodyEditable.style.textAlign = align;
+
+      if (p.fontSize) {
+        title.style.fontSize        = p.fontSize + 'px';
+        bodyDisplay.style.fontSize  = p.fontSize + 'px';
+        bodyEditable.style.fontSize = p.fontSize + 'px';
+      }
+      if (p.fontFamily) {
+        title.style.fontFamily        = p.fontFamily;
+        bodyDisplay.style.fontFamily  = p.fontFamily;
+        bodyEditable.style.fontFamily = p.fontFamily;
+      }
+      if (p.fontColor) {
+        title.style.color        = p.fontColor;
+        bodyDisplay.style.color  = p.fontColor;
+        bodyEditable.style.color = p.fontColor;
+      }
+      if (p.bold) {
+        title.style.fontWeight        = '700';
+        bodyDisplay.style.fontWeight  = '700';
+        bodyEditable.style.fontWeight = '700';
+      }
+      if (p.italic) {
+        title.style.fontStyle        = 'italic';
+        bodyDisplay.style.fontStyle  = 'italic';
+        bodyEditable.style.fontStyle = 'italic';
+      }
+      if (p.underline) {
+        title.style.textDecoration        = 'underline';
+        bodyDisplay.style.textDecoration  = 'underline';
+        bodyEditable.style.textDecoration = 'underline';
+      }
+
+      // Editierbarkeit laut Widget-Flags
+      const canEditTitle = (typeof asBool === 'function')
+        ? asBool(p.titleUserEditable)
+        : !!p.titleUserEditable;
+
+      const canEditBody = (typeof asBool === 'function')
+        ? asBool(p.bodyUserEditable)
+        : !!p.bodyUserEditable;
+
+      // Body: Umschalten zwischen Display/Editable
+      if (canEditBody) {
+        bodyEditable.setAttribute('contenteditable', 'true');
+        bodyEditable.setAttribute('spellcheck', 'true');
+        bodyEditable.style.display = '';
+        bodyDisplay.style.display  = 'none';
+      } else {
+        bodyEditable.removeAttribute('contenteditable');
+        bodyEditable.style.display = 'none';
+        bodyDisplay.style.display  = '';
+      }
+
+      // Titel editierbar ja/nein
+      if (canEditTitle) {
+        title.setAttribute('contenteditable', 'true');
+        title.setAttribute('spellcheck', 'true');
+      } else {
+        title.removeAttribute('contenteditable');
+      }
+
+      // Einmaliges Leeren von Admin-/Platzhalter-Text (Titel & Body)
+      function setupOneTimeClear(node, defaultVal) {
+        const def = (defaultVal || '').trim();
+        if (!def) return;
+        let clearedOnce = false;
+
+        node.addEventListener('focus', () => {
+          const cur = (node.textContent || '').trim();
+          if (!clearedOnce && cur === def) {
+            node.textContent = '';
+            clearedOnce = true;
+          }
+        });
+
+        node.addEventListener('input', () => {
+          const cur = (node.textContent || '').trim();
+          if (cur && cur !== def) clearedOnce = true;
+        });
+      }
+
+      const defaultTitle = (title.textContent || '').trim();
+      const defaultBody  = (bodyEditable.textContent || '').trim();
+
+      if (canEditTitle) setupOneTimeClear(title,       defaultTitle);
+      if (canEditBody)  setupOneTimeClear(bodyEditable, defaultBody);
+
+      // AUTOSAVE: FocusNote – Änderungen triggern Save
+      if (typeof saveCurrentBoardState === 'function') {
+        const trigger = () => {
+          try {
+            saveCurrentBoardState('focusNote');
+          } catch (e) {
+            console.warn('FocusNote autosave failed', e);
+          }
+        };
+        ['input', 'blur'].forEach(ev => {
+          title.addEventListener(ev, trigger);
+          bodyEditable.addEventListener(ev, trigger);
+        });
+      }
+
+      // DOM: Titel + Wrapper mit Body einsetzen
+      contentWrap.appendChild(canEditBody ? bodyEditable : bodyDisplay);
+      el.appendChild(title);
       el.appendChild(contentWrap);
 
-      // In die Bühne
-      area.appendChild(el);
+      // Auf dem Board platzieren (skaliert etc.)
+      const boardArea = document.querySelector('.board-area') || document.body;
+      boardArea.appendChild(el);
+      place(el, w); // deine bestehende Platzierungsfunktion
     });
 
 
