@@ -1271,3 +1271,11 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
   overflow: visible !important;
   overflow-y: visible !important;
 }
+
+/* Board-Builder-Layouts: Größen kommen aus dem Template,
+   darum statische Mindesthöhen abschalten. */
+.board-description-box,
+.focus-note-area {
+  min-height: 0 !important;
+  box-sizing: border-box;
+}
