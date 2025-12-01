@@ -723,91 +723,242 @@ function placeCardInStackInstant(el, data) {
 }
 
 
-// ---- Focus Note: Live-Editing für Owner & Gäste --------------------------
 function initFocusNoteLive() {
   const editable = document.getElementById('focus-note-editable');
   const display  = document.getElementById('focus-note-display');
   if (!editable || !display) return;
 
-  // Editor öffnen, wenn auf Anzeige geklickt wird
-  display.addEventListener('click', () => {
-    // nur wenn Editieren erlaubt ist
-    if (!editable.isContentEditable) return;
+  const area    = editable.closest('.focus-note-area') || document.querySelector('.focus-note-area') || null;
+  const titleEl = (area && (area.querySelector('.focus-note-title, .desc-title, h2'))) ||
+                  document.getElementById('focus-note-title') || null;
 
-    display.style.display  = 'none';
-    editable.style.display = 'block';
-
-    // Caret ans Ende setzen
-    const sel = window.getSelection();
-    const rng = document.createRange();
-    rng.selectNodeContents(editable);
-    rng.collapse(false);
-    sel.removeAllRanges(); sel.addRange(rng);
-    editable.focus();
-  });
-
-  // Editor schließen auf Blur oder Enter (ohne Shift)
-  function closeEditor(){ editable.style.display = 'none'; display.style.display = 'flex'; }
-  editable.addEventListener('keydown', (e) => {
-    // Enter erzeugt einen normalen Absatz – NICHT beenden
-    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
-      // nichts tun → Browser fügt Zeilenumbruch ein
-      return;
-    }
-    // Optional: STRG/⌘+Enter beendet Editieren
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      editable.blur();
-    }
-  });
-  editable.addEventListener('blur', closeEditor);
-
-  // Platzhalter-Text
   const PH = 'Schreiben sie hier die Focus Note der Sitzung rein';
 
-  // Anti-Echo beim Anwenden entgegengenommener Updates
+  // ---------- Lock-Hilfen ---------------------------------------------------
+  const LEASE_MS = 8000;
+
+  function isFocusLockedForMe() {
+    if (!area) return false;
+    const locked = area.dataset.locked === '1';
+    const by     = area.dataset.lockedBy || '';
+    const until  = parseInt(area.dataset.lockedUntil || '0', 10) || 0;
+    const now    = Date.now();
+
+    if (!locked || !until || now > until) {
+      delete area.dataset.locked;
+      delete area.dataset.lockedBy;
+      delete area.dataset.lockedUntil;
+      return false;
+    }
+    const me = (window.RT && RT.uid) ? String(RT.uid) : '';
+    return !!locked && !!by && by !== me;
+  }
+
+  function acquireFocusLock() {
+    if (!area) return;
+    if (isFocusLockedForMe()) return;
+
+    const me = (window.RT && RT.uid) ? String(RT.uid) : '';
+    area.dataset.locked      = '1';
+    area.dataset.lockedBy    = me;
+    area.dataset.lockedUntil = String(Date.now() + LEASE_MS);
+
+    if (typeof sendRT === 'function') {
+      sendRT({
+        t: 'focus_lock',
+        by: me,
+        lease: LEASE_MS,
+        ts: Date.now()
+      });
+    }
+
+    clearInterval(window.__focusLockRenewTimer);
+    window.__focusLockRenewTimer = setInterval(() => {
+      if (!area.dataset.locked) {
+        clearInterval(window.__focusLockRenewTimer);
+        window.__focusLockRenewTimer = null;
+        return;
+      }
+      const now  = Date.now();
+      const until = parseInt(area.dataset.lockedUntil || '0', 10) || 0;
+      if (!until || (until - now) < (LEASE_MS / 2)) {
+        area.dataset.lockedUntil = String(now + LEASE_MS);
+        if (typeof sendRT === 'function') {
+          sendRT({
+            t: 'focus_lock',
+            by: me,
+            lease: LEASE_MS,
+            ts: Date.now()
+          });
+        }
+      }
+    }, 3000);
+  }
+
+  function releaseFocusLock(reason = 'blur') {
+    if (!area) return;
+    const me = (window.RT && RT.uid) ? String(RT.uid) : '';
+    if (area.dataset.lockedBy && area.dataset.lockedBy !== me) return;
+
+    delete area.dataset.locked;
+    delete area.dataset.lockedBy;
+    delete area.dataset.lockedUntil;
+
+    clearInterval(window.__focusLockRenewTimer);
+    window.__focusLockRenewTimer = null;
+
+    if (typeof sendRT === 'function') {
+      sendRT({
+        t: 'focus_unlock',
+        by: me,
+        reason,
+        ts: Date.now()
+      });
+    }
+  }
+
+  // ---------- Editor öffnen/schließen --------------------------------------
+  function openEditor() {
+    if (!editable.isContentEditable) return;
+    if (isFocusLockedForMe()) return;
+
+    acquireFocusLock();
+
+    display.style.display = 'none';
+    editable.style.display = 'block';
+
+    const range = document.createRange();
+    range.selectNodeContents(editable);
+    range.collapse(false);
+    const sel = window.getSelection();
+    if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+
+    editable.focus();
+  }
+
+  function closeEditor() {
+    editable.style.display = 'none';
+    display.style.display  = 'flex';
+  }
+
+  display.addEventListener('click', () => {
+    openEditor();
+  });
+
+  editable.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeEditor();
+      releaseFocusLock('escape');
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      editable.blur();
+      closeEditor();
+      releaseFocusLock('submit');
+      return;
+    }
+  });
+
+  editable.addEventListener('focus', () => {
+    if (isFocusLockedForMe()) {
+      editable.blur();
+      return;
+    }
+    acquireFocusLock();
+  });
+
+  editable.addEventListener('blur', () => {
+    closeEditor();
+    releaseFocusLock('body-blur');
+  });
+
+  if (titleEl && titleEl.isContentEditable) {
+    titleEl.addEventListener('focus', () => {
+      if (isFocusLockedForMe()) {
+        titleEl.blur();
+        return;
+      }
+      acquireFocusLock();
+    });
+    titleEl.addEventListener('blur', () => {
+      releaseFocusLock('title-blur');
+    });
+  }
+
+  window.addEventListener('beforeunload', () => {
+    releaseFocusLock('unload');
+  });
+
+  // ---------- Anti-Echo + Apply aus RT --------------------------------------
   let setByRemote = false;
-  window.__ccSetFocusNote = (txt) => {
+
+  window.__ccSetFocusNote = (payload) => {
     setByRemote = true;
-    const t = (txt || '');
-    editable.textContent = t;
-    const trimmed = t.trim();
-    display.textContent = trimmed || PH;
-    display.classList.toggle('has-content', !!trimmed);
-    queueMicrotask(() => { setByRemote = false; });
+    try {
+      const isObj = payload && typeof payload === 'object';
+      const body  = isObj ? (payload.body ?? payload.content ?? '') : String(payload || '');
+      const title = isObj ? (payload.title ?? '') : (titleEl ? (titleEl.textContent || '') : '');
+
+      if (titleEl && typeof title === 'string') {
+        titleEl.textContent = title;
+      }
+
+      editable.textContent = body || '';
+      const trimmed = (body || '').trim();
+      display.textContent = trimmed || PH;
+      display.classList.toggle('has-content', !!trimmed);
+    } finally {
+      queueMicrotask(() => { setByRemote = false; });
+    }
   };
 
-  // Beim Tippen: lokal die Anzeige spiegeln + nach 100ms senden
+  // ---------- Live-Emit von Titel + Text ------------------------------------
   let deb;
-  const emit = () => {
+
+  function emit() {
     if (setByRemote) return;
-    const txt = editable.textContent || '';
-    const trimmed = txt.trim();
+
+    const body  = editable.textContent || '';
+    const trimmed = body.trim();
+    const title = titleEl ? (titleEl.textContent || '') : '';
+
     display.textContent = trimmed || PH;
     display.classList.toggle('has-content', !!trimmed);
 
-    saveCurrentBoardState('focusNote');
+    if (typeof saveCurrentBoardState === 'function') {
+      saveCurrentBoardState('focusNote');
+    }
 
     clearTimeout(deb);
     deb = setTimeout(() => {
       if (typeof sendRT === 'function') {
-        // Owner & Gäste senden beide – Server broadcastet an alle anderen
-        sendRT({ t:'focus_update', content: txt, prio: (typeof RT_PRI==='function'? RT_PRI():1), ts: Date.now() });
+        const payload = {
+          t: 'focus_update',
+          title,
+          body,
+          content: body, // Backwards-Kompatibilität
+          prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
+          ts: Date.now()
+        };
+        sendRT(payload);
       }
     }, 100);
-  };
+  }
 
-  // Alle relevanten Eingabewege abdecken (echtes Live-Typing)
-  ['input','beforeinput','keyup','paste','cut','compositionend'].forEach(evt => {
+  const liveEvents = ['input','beforeinput','keyup','paste','cut','compositionend'];
+  liveEvents.forEach(evt => {
     editable.addEventListener(evt, emit);
-    // bei jeder Eingabe zusätzlich Autosave (debounced)
-    editable.addEventListener('input', () => {
-      clearTimeout(deb);
-      deb = setTimeout(emit, 120);
-    });
-    editable.addEventListener('blur', emit);
   });
+
+  if (titleEl && titleEl.isContentEditable) {
+    liveEvents.forEach(evt => {
+      titleEl.addEventListener(evt, emit);
+    });
+  }
 }
+
 
 // -------- Presence / Cursor UI (baut auf RT aus Schritt 2 auf) --------
 const Presence = (() => {
@@ -1257,19 +1408,103 @@ async function initRealtime(config) {
     }
     
     if (m.t === 'focus_update') {
+      const payload = {
+        title: (typeof m.title === 'string') ? m.title : '',
+        body:  (typeof m.body  === 'string')
+          ? m.body
+          : (typeof m.content === 'string' ? m.content : '')
+      };
+
       if (typeof window.__ccSetFocusNote === 'function') {
-        window.__ccSetFocusNote(String(m.content || ''));
+        window.__ccSetFocusNote(payload);
       } else {
-        const el = document.getElementById('focus-note-editable');
-        const t  = String(m.content || '');
-        if (el) el.innerText = t;
-        const disp = document.getElementById('focus-note-display');
-        if (disp) disp.textContent = t || 'Schreiben sie hier die Focus Note der Sitzung rein';
+        const editable = document.getElementById('focus-note-editable');
+        const display  = document.getElementById('focus-note-display');
+        const area     = document.querySelector('.focus-note-area') || null;
+        const titleEl  = (area && (area.querySelector('.focus-note-title, .desc-title, h2'))) ||
+                         document.getElementById('focus-note-title');
+
+        if (editable) editable.textContent = payload.body || '';
+
+        const PH = 'Schreiben sie hier die Focus Note der Sitzung rein';
+        const trimmed = (payload.body || '').trim();
+        if (display) {
+          display.textContent = trimmed || PH;
+          display.classList.toggle('has-content', !!trimmed);
+        }
+
+        if (titleEl && typeof payload.title === 'string') {
+          titleEl.textContent = payload.title;
+        }
       }
+
       // Owner persistiert den neuen Stand (Teilnehmer-Änderung)
       try { if (typeof isOwner === 'function' && isOwner()) saveCurrentBoardState('rt'); } catch {}
       return;
     }
+
+    // FocusNote-Locking (damit nur ein Nutzer gleichzeitig editieren kann)
+    if (m.t === 'focus_lock') {
+      const area     = document.querySelector('.focus-note-area');
+      const editable = document.getElementById('focus-note-editable');
+      const titleEl  = (area && (area.querySelector('.focus-note-title, .desc-title, h2'))) ||
+                       document.getElementById('focus-note-title');
+
+      if (!area) return;
+
+      const lease = (typeof m.lease === 'number' && m.lease > 0) ? m.lease : 8000;
+
+      area.dataset.locked      = '1';
+      area.dataset.lockedBy    = String(m.by || '');
+      area.dataset.lockedUntil = String(Date.now() + lease);
+
+      if (editable) {
+        editable.setAttribute('data-locked', '1');
+        editable.blur();
+      }
+      if (titleEl && titleEl.isContentEditable) {
+        titleEl.setAttribute('data-locked', '1');
+        titleEl.blur();
+      }
+
+      clearTimeout(area._focusLockExpireTimer);
+      area._focusLockExpireTimer = setTimeout(() => {
+        delete area.dataset.locked;
+        delete area.dataset.lockedBy;
+        delete area.dataset.lockedUntil;
+
+        if (editable) editable.removeAttribute('data-locked');
+        if (titleEl && titleEl.isContentEditable) {
+          titleEl.removeAttribute('data-locked');
+        }
+      }, lease + 1000);
+
+      return;
+    }
+
+    if (m.t === 'focus_unlock') {
+      const area     = document.querySelector('.focus-note-area');
+      const editable = document.getElementById('focus-note-editable');
+      const titleEl  = (area && (area.querySelector('.focus-note-title, .desc-title, h2'))) ||
+                       document.getElementById('focus-note-title');
+
+      if (!area) return;
+
+      delete area.dataset.locked;
+      delete area.dataset.lockedBy;
+      delete area.dataset.lockedUntil;
+
+      clearTimeout(area._focusLockExpireTimer);
+      area._focusLockExpireTimer = null;
+
+      if (editable) editable.removeAttribute('data-locked');
+      if (titleEl && titleEl.isContentEditable) {
+        titleEl.removeAttribute('data-locked');
+      }
+
+      return;
+    }
+
 
     
     if (m.t === 'card_move') {
@@ -4160,137 +4395,157 @@ document.addEventListener('DOMContentLoaded', async function() {
     
   // Funktion zum Starten des Ziehens eines neuen Notizzettels
   function startDragNewNote(e) {
-    try { e.preventDefault(); } catch (_) {}
+    const block     = e.currentTarget;
+    const boardArea = document.querySelector('.board-area');
+    const notesWrap = document.querySelector('.notes-container') || boardArea;
+    if (!boardArea || !notesWrap) return;
 
-    // 1) Quelle (Notizblock) robust ermitteln
-    const src =
-      (e.currentTarget && e.currentTarget.closest && e.currentTarget.closest('.notizzettel-box')) ||
-      (e.target && e.target.closest && e.target.closest('.notizzettel-box')) ||
-      e.currentTarget || e.target;
+    const stackRect  = block.getBoundingClientRect();
+    const boardRect  = boardArea.getBoundingClientRect();
+    const sBoard     = parseFloat(boardArea.dataset.scale || '1') || 1;
 
-    if (!src) return;
-
-    // 2) Ziel-Container ermitteln (wo die Notizen leben)
-    const notesWrap =
-      document.getElementById('notes-container') ||
-      document.querySelector('.notes-container');
-    if (!notesWrap) return;
-
-    // 3) Farben aus dem Block holen (CSS Variablen -> Fallback auf computed background/border)
-    const cs = getComputedStyle(src);
-    const bgVar  = (cs.getPropertyValue('--note-bg')     || '').trim();
-    const brVar  = (cs.getPropertyValue('--note-border') || '').trim();
-    const bgBase = bgVar || (cs.backgroundColor || '#ffff99'); // Fallback (altes Gelb)
-    const brBase = brVar || (cs.borderColor    || '#e6e673');
-
-    // 4) Notiz-Element erzeugen
-    const noteEl = document.createElement('div');
-    noteEl.className = 'notiz';
-    // Eindeutige ID vergeben, falls noch keine vorhanden ist
-    if (!noteEl.id) {
-      noteEl.id = 'note-' +
-        Date.now().toString(36) + '-' +
-        Math.random().toString(36).slice(2, 7);
-    }
-    // Variablen UND direkte Styles setzen (für alte CSS, die noch feste Farben nutzt)
-    noteEl.style.setProperty('--note-bg', bgBase);
-    noteEl.style.setProperty('--note-border', brBase);
-    noteEl.style.backgroundColor = bgBase;
-    noteEl.style.borderColor     = brBase;
-
-    // Content: editierbarer Bereich
-    const content = document.createElement('div');
-    content.className = 'notiz-content';
-
-    // WICHTIG: neuer Zettel startet NICHT im Edit-Modus
-    content.setAttribute('contenteditable', 'false');
-    content.setAttribute('spellcheck', 'true');
-
-    // Sichtbarer Platzhalter-Text für neue Notizen
-    const PLACEHOLDER_TEXT = 'Schreiben sie hier ihren Text.';
-    content.textContent = PLACEHOLDER_TEXT;
-
-    // Optional: data-placeholder für CSS (falls du :empty:before o.ä. nutzt)
-    if (!content.getAttribute('data-placeholder')) {
-      content.setAttribute('data-placeholder', PLACEHOLDER_TEXT);
-    }
-
-    noteEl.appendChild(content);
-
-    // 5) Erste Position beim Abziehen: Maus-/Touch-Position
-    const isTouch = e.type && e.type.startsWith && e.type.startsWith('touch');
-    const getPoint = (ev) => {
-      const t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]) || ev;
-      return { x: t.clientX, y: t.clientY };
+    // Startposition (Mitte des Blocks) unskaliert in Board-Koordinaten
+    const start = {
+      x: (stackRect.left - boardRect.left) / sBoard + (stackRect.width  / (2 * sBoard)),
+      y: (stackRect.top  - boardRect.top ) / sBoard + (stackRect.height / (2 * sBoard))
     };
-    const start = getPoint(e);
 
-    // Note in den DOM hängen, damit Maße bekannt sind
-    notesWrap.appendChild(noteEl);
-    noteEl.style.position = 'absolute';
-    noteEl.style.zIndex = '100';
+    // 1) Neues Notiz-Element anlegen
+    const note = document.createElement('div');
+    const id   = 'note-' + newId();
+    note.id = id;
+    note.className = 'notiz';
+    note.innerHTML = `
+      <div class="notiz-inner">
+        <div class="notiz-header">
+          <span class="notiz-title">Notiz</span>
+          <button class="notiz-delete" type="button" aria-label="Notiz löschen">&times;</button>
+        </div>
+        <div class="notiz-content" contenteditable="true"></div>
+        <div class="notiz-footer">
+          <span class="notiz-counter">0 / 200</span>
+        </div>
+      </div>
+    `;
 
-    // Direkt alle Handler/AutoGrow/etc. an die neue Notiz hängen
-    try { if (typeof attachNoteResizeObserver === 'function') attachNoteResizeObserver(noteEl); } catch {}
-    try { if (typeof attachNoteAutoGrow === 'function') attachNoteAutoGrow(noteEl); } catch {}
-    try { if (typeof setupNoteEditingHandlers === 'function') setupNoteEditingHandlers(noteEl); } catch {}
-    try { if (typeof enhanceDraggableNote === 'function') enhanceDraggableNote(noteEl); } catch {}
+    // Farbe vom Block übernehmen
+    const inner = note.querySelector('.notiz-inner');
+    if (inner) inner.style.backgroundColor = getComputedStyle(block).backgroundColor;
 
-    const wrapRect = notesWrap.getBoundingClientRect();
-    const srcRect  = src.getBoundingClientRect();
+    // Z-Index ganz nach oben
+    note.style.zIndex = String(getHighestInteractiveZIndex() + 1);
 
-    // Griffposition beibehalten:
-    // Note wird zuerst genau dort platziert, wo der Block gerade liegt.
-    // Dadurch ist der Abstand Maus ↔ Zettel derselbe wie Maus ↔ Block.
-    let left = srcRect.left - wrapRect.left + notesWrap.scrollLeft;
-    let top  = srcRect.top  - wrapRect.top  + notesWrap.scrollTop;
+    // Direkt ins Notiz-Container hängen
+    notesWrap.appendChild(note);
 
-    noteEl.style.left = left + 'px';
-    noteEl.style.top  = top  + 'px';
+    // Editier-/Drag-Handler wie bei bestehenden Notizen
+    setupNoteEditingHandlers(note);
+    if (typeof makeDraggable === 'function') {
+      makeDraggable(note);          // ruft intern enhanceDraggableNote für .notiz auf
+    }
 
-    // 6) Drag-Logik
+    // 2) Drag ab dem "abgezogenen" Block
     let last = { x: start.x, y: start.y };
+    let dragging = true;
+    let rtTick = 0;
 
-    const onMove = (ev) => {
-      const p = getPoint(ev);
-      const dx = p.x - last.x;
-      const dy = p.y - last.y;
-      left += dx;
-      top  += dy;
-      noteEl.style.left = left + 'px';
-      noteEl.style.top  = top  + 'px';
-      last = p;
-      try { ev.preventDefault(); } catch (_) {}
-    };
+    function broadcastNoteMove(leftPx, topPx) {
+      if (typeof sendRT !== 'function') return;
 
-    const onUp = (ev) => {
-      // Cleanup Listener
-      window.removeEventListener(isTouch ? 'touchmove' : 'pointermove', onMove, { capture: true });
-      window.removeEventListener(isTouch ? 'touchend'  : 'pointerup',   onUp,   { capture: true });
-      window.removeEventListener(isTouch ? 'touchcancel':'pointercancel', onUp, { capture: true });
+      const boardArea = document.querySelector('.board-area');
+      if (!boardArea) return;
+      const s   = parseFloat(boardArea.dataset.scale || '1') || 1;
+      const stageRect  = getStageRect();
+      const parentRect = notesWrap.getBoundingClientRect();
 
-      // KEIN automatischer Edit-Start mehr – Nutzer muss explizit doppelklicken
+      // Parent-lokale → Stage-Pixel (unkaliert)
+      const pxStage = ((parentRect.left - stageRect.left) / s) + leftPx;
+      const pyStage = ((parentRect.top  - stageRect.top ) / s) + topPx;
 
-      // Optional: Autosave, falls vorhanden
-      try {
-        if (typeof scheduleAutosave === 'function') scheduleAutosave('note:add');
-        else if (typeof saveBoardStateDebounced === 'function') saveBoardStateDebounced();
-        else if (typeof saveBoardState === 'function') saveBoardState();
-      } catch {}
-
-      try { ev.preventDefault(); } catch (_) {}
-    };
-
-    // Listener registrieren
-    window.addEventListener(isTouch ? 'touchmove' : 'pointermove', onMove, { capture: true, passive: false });
-    window.addEventListener(isTouch ? 'touchend'  : 'pointerup',   onUp,   { capture: true });
-    window.addEventListener(isTouch ? 'touchcancel':'pointercancel', onUp, { capture: true });
-
-    // Für Pointer-Events: Capture sicherstellen (optional)
-    if (noteEl.setPointerCapture && e.pointerId != null) {
-      try { noteEl.setPointerCapture(e.pointerId); } catch {}
+      const { nx, ny } = toNorm(pxStage, pyStage);
+      sendRT({
+        t:  'note_move',
+        id: note.id,
+        nx,
+        ny,
+        prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
+        ts: Date.now()
+      });
     }
+
+    function onMove(ev) {
+      if (!dragging) return;
+      ev.preventDefault();
+
+      const sx = getScaleX(), sy = getScaleY();
+      const curX = (ev.clientX - boardRect.left) / sx;
+      const curY = (ev.clientY - boardRect.top)  / sy;
+
+      const dx = curX - start.x;
+      const dy = curY - start.y;
+
+      const left = last.x + dx;
+      const top  = last.y + dy;
+
+      note.style.position = 'absolute';
+      note.style.left = left + 'px';
+      note.style.top  = top  + 'px';
+
+      last = { x: left, y: top };
+
+      // während des Ziehens ~30/s note_move senden
+      const now = performance.now();
+      if (now - rtTick >= 33) {
+        rtTick = now;
+        broadcastNoteMove(left, top);
+      }
+    }
+
+    function onUp() {
+      if (!dragging) return;
+      dragging = false;
+
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+
+      // finalen Stand persistieren
+      if (typeof saveCurrentBoardState === 'function') {
+        saveCurrentBoardState('note:new');
+      }
+
+      // einmalig note_create broadcasten (falls Peers die Note noch nicht haben)
+      if (typeof sendRT === 'function') {
+        const boardArea = document.querySelector('.board-area');
+        if (boardArea) {
+          const s   = parseFloat(boardArea.dataset.scale || '1') || 1;
+          const stageRect  = getStageRect();
+          const parentRect = notesWrap.getBoundingClientRect();
+          const leftPx = parseFloat(note.style.left) || last.x;
+          const topPx  = parseFloat(note.style.top)  || last.y;
+
+          const pxStage = ((parentRect.left - stageRect.left) / s) + leftPx;
+          const pyStage = ((parentRect.top  - stageRect.top ) / s) + topPx;
+
+          const { nx, ny } = toNorm(pxStage, pyStage);
+
+          sendRT({
+            t:  'note_create',
+            id: note.id,
+            nx,
+            ny,
+            prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
+            ts: Date.now()
+          });
+        }
+      }
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+
+    e.preventDefault();
   }
+
 
 
 
