@@ -723,6 +723,7 @@ function placeCardInStackInstant(el, data) {
 }
 
 
+// ---- Focus Note: Live-Editing für Owner & Gäste --------------------------
 function initFocusNoteLive() {
   const editable = document.getElementById('focus-note-editable');
   const display  = document.getElementById('focus-note-display');
@@ -795,7 +796,7 @@ function initFocusNoteLive() {
     }, 3000);
   }
 
-  function releaseFocusLock(reason = 'blur') {
+  function releaseFocusLock(reason) {
     if (!area) return;
     const me = (window.RT && RT.uid) ? String(RT.uid) : '';
     if (area.dataset.lockedBy && area.dataset.lockedBy !== me) return;
@@ -811,20 +812,20 @@ function initFocusNoteLive() {
       sendRT({
         t: 'focus_unlock',
         by: me,
-        reason,
+        reason: reason || 'blur',
         ts: Date.now()
       });
     }
   }
 
   // ---------- Editor öffnen/schließen --------------------------------------
-  function openEditor() {
+  function openEditorBody() {
     if (!editable.isContentEditable) return;
     if (isFocusLockedForMe()) return;
 
     acquireFocusLock();
 
-    display.style.display = 'none';
+    display.style.display  = 'none';
     editable.style.display = 'block';
 
     const range = document.createRange();
@@ -836,26 +837,27 @@ function initFocusNoteLive() {
     editable.focus();
   }
 
-  function closeEditor() {
+  function closeEditorBody() {
     editable.style.display = 'none';
     display.style.display  = 'flex';
   }
 
+  // Anzeige -> Editor
   display.addEventListener('click', () => {
-    openEditor();
+    openEditorBody();
   });
 
   editable.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      closeEditor();
+      closeEditorBody();
       releaseFocusLock('escape');
       return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
       editable.blur();
-      closeEditor();
+      closeEditorBody();
       releaseFocusLock('submit');
       return;
     }
@@ -870,7 +872,7 @@ function initFocusNoteLive() {
   });
 
   editable.addEventListener('blur', () => {
-    closeEditor();
+    closeEditorBody();
     releaseFocusLock('body-blur');
   });
 
@@ -920,44 +922,49 @@ function initFocusNoteLive() {
   function emit() {
     if (setByRemote) return;
 
-    const body  = editable.textContent || '';
+    const body    = editable.textContent || '';
     const trimmed = body.trim();
-    const title = titleEl ? (titleEl.textContent || '') : '';
+    const title   = titleEl ? (titleEl.textContent || '') : '';
 
     display.textContent = trimmed || PH;
     display.classList.toggle('has-content', !!trimmed);
 
-    if (typeof saveCurrentBoardState === 'function') {
-      saveCurrentBoardState('focusNote');
+    try {
+      if (typeof saveCurrentBoardState === 'function') {
+        saveCurrentBoardState('focusNote');
+      }
+    } catch (e) {
+      console.warn('FocusNote autosave (RT) failed', e);
     }
 
     clearTimeout(deb);
     deb = setTimeout(() => {
       if (typeof sendRT === 'function') {
-        const payload = {
+        sendRT({
           t: 'focus_update',
           title,
           body,
-          content: body, // Backwards-Kompatibilität
+          content: body,
           prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
           ts: Date.now()
-        };
-        sendRT(payload);
+        });
       }
     }, 100);
   }
 
-  const liveEvents = ['input','beforeinput','keyup','paste','cut','compositionend'];
-  liveEvents.forEach(evt => {
+  ['input','beforeinput','keyup','paste','cut','compositionend'].forEach(evt => {
     editable.addEventListener(evt, emit);
   });
+  editable.addEventListener('blur', emit);
 
   if (titleEl && titleEl.isContentEditable) {
-    liveEvents.forEach(evt => {
+    ['input','beforeinput','keyup','paste','cut','compositionend'].forEach(evt => {
       titleEl.addEventListener(evt, emit);
     });
+    titleEl.addEventListener('blur', emit);
   }
 }
+
 
 
 // -------- Presence / Cursor UI (baut auf RT aus Schritt 2 auf) --------
@@ -1407,6 +1414,7 @@ async function initRealtime(config) {
       return;
     }
     
+    // FocusNote: Text + Titel + Locking
     if (m.t === 'focus_update') {
       const payload = {
         title: (typeof m.title === 'string') ? m.title : '',
@@ -1494,16 +1502,17 @@ async function initRealtime(config) {
       delete area.dataset.lockedBy;
       delete area.dataset.lockedUntil;
 
-      clearTimeout(area._focusLockExpireTimer);
-      area._focusLockExpireTimer = null;
-
       if (editable) editable.removeAttribute('data-locked');
       if (titleEl && titleEl.isContentEditable) {
         titleEl.removeAttribute('data-locked');
       }
 
+      clearTimeout(area._focusLockExpireTimer);
+      area._focusLockExpireTimer = null;
+
       return;
     }
+
 
 
     
@@ -4412,7 +4421,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // 1) Neues Notiz-Element anlegen
     const note = document.createElement('div');
-    const id   = 'note-' + newId();
+    const id   = 'note-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
     note.id = id;
     note.className = 'notiz';
     note.innerHTML = `
