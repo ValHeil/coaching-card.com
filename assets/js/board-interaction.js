@@ -1130,7 +1130,8 @@ async function initRealtime(config) {
 
 
   RT.ws.onmessage = (ev) => {
-    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    let m; 
+    try { m = JSON.parse(ev.data); } catch { return; }
 
     // Cursor/Präsenz:
     if (m.t === 'hello') {
@@ -1271,6 +1272,56 @@ async function initRealtime(config) {
       return;
     }
 
+    // --- Live-Updates für DescriptionBoxen --------------------------------
+    if (m.t === 'desc_update') {
+      // Eigene Echos ignorieren, damit der Cursor nicht springt
+      if (m.idFrom && window.RT && m.idFrom === RT.uid) return;
+
+      const idx = (typeof m.idx === 'number' ? m.idx : -1);
+      if (idx < 0) return;
+
+      const nodes = Array.from(document.querySelectorAll('.board-description-box'));
+      const el    = nodes[idx];
+      if (!el) return;
+
+      const headerEl = el.querySelector('.desc-title');
+      const bodyEl   = headerEl ? headerEl.nextElementSibling : el.children[1];
+
+      if (m.part === 'title' && headerEl && typeof m.text === 'string') {
+        headerEl.textContent = m.text;
+      } else if (m.part === 'body' && bodyEl && typeof m.text === 'string') {
+        bodyEl.textContent = m.text;
+      }
+
+      return;
+    }
+
+    // --- Live-Updates für Cardholder --------------------------------------
+    if (m.t === 'cardholder_update') {
+      // Eigene Echos ignorieren
+      if (m.idFrom && window.RT && m.idFrom === RT.uid) return;
+
+      const idx = (typeof m.idx === 'number' ? m.idx : -1);
+      if (idx < 0) return;
+
+      const nodes = Array.from(document.querySelectorAll('.board-cardholder'));
+      const el    = nodes[idx];
+      if (!el) return;
+
+      const headerEl =
+        el.querySelector('.bb-ch-header, .desc-title, .ch-title, .ch-header');
+      const bodyEl =
+        el.querySelector('.bb-ch-desc, .ch-desc, .desc-content') ||
+        (headerEl ? headerEl.nextElementSibling : null);
+
+      if (m.part === 'title' && headerEl && typeof m.text === 'string') {
+        headerEl.textContent = m.text;
+      } else if (m.part === 'body' && bodyEl && typeof m.text === 'string') {
+        bodyEl.textContent = m.text;
+      }
+
+      return;
+    }
     
     if (m.t === 'card_move') {
       RTFrame.enqueueCard(m);
@@ -2965,10 +3016,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       space.dataset.dropzone = 'cards'; // Hook für deine DnD-Logik
 
       // Editierbarkeit laut Builder-Flags
-      const makeEditable = (node, allowed, defaultText) => {
-        if (!allowed) return;
+      const makeEditable = (node, allowed, defaultText, part) => {
+        if (!allowed || !node) return;
+
         node.setAttribute('contenteditable', 'true');
         node.dataset.default = (defaultText || '').trim();
+
         let clearedOnce = false;
         node.addEventListener('focus', () => {
           // Einmaliges Auto-Löschen: nur wenn noch der Admin-Text drin steht
@@ -2977,16 +3030,49 @@ document.addEventListener('DOMContentLoaded', async function() {
             clearedOnce = true;
           }
         });
-        // Autosave/Sync (falls vorhanden)
+
+        // --- Autosave wie bisher ---
         ['input','keyup','paste','cut','blur'].forEach(ev => {
           node.addEventListener(ev, () => {
             try { if (typeof debouncedSave === 'function') debouncedSave(); } catch {}
           });
         });
+
+        // --- NEU: Realtime-Sync für Cardholder-Text ---
+        if (part === 'title' || part === 'body') {
+          let rtDeb = null;
+
+          const emitRT = () => {
+            clearTimeout(rtDeb);
+            rtDeb = setTimeout(() => {
+              if (typeof sendRT !== 'function') return;
+
+              // Index dieses Cardholders ermitteln (ordnungsgemäß wie bei captureAllCardholders)
+              const list = Array.from(document.querySelectorAll('.board-cardholder'));
+              const idx  = list.indexOf(el);
+              if (idx === -1) return;
+
+              sendRT({
+                t: 'cardholder_update',
+                idx,
+                part,                        // 'title' oder 'body'
+                text: node.textContent || '',
+                prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
+                ts: Date.now()
+              });
+            }, 100); // leichter Delay, um Tastenschläge zu bündeln
+          };
+
+          ['input','keyup','paste','cut','compositionend'].forEach(ev => {
+            node.addEventListener(ev, emitRT);
+          });
+        }
       };
 
-      makeEditable(title, !!p.titleUserEditable, title.textContent);
-      makeEditable(desc,  !!p.bodyUserEditable,  desc.textContent);
+      // part-Parameter übergeben, damit der Handler weiß, was er sendet
+      makeEditable(title, !!p.titleUserEditable, title.textContent, 'title');
+      makeEditable(desc,  !!p.bodyUserEditable,  desc.textContent,  'body');
+
 
       // Zusammenbauen
       top.appendChild(title);
@@ -3135,20 +3221,62 @@ document.addEventListener('DOMContentLoaded', async function() {
       const defaultTitle = title.textContent;
       const defaultBody  = content.textContent;
 
+      // --- NEU: Realtime-Sync für DescriptionBox-Titel ---
       if (p.titleUserEditable) {
-        title.setAttribute('contenteditable', 'true');
-        setupOneTimeClear(title, defaultTitle);
-        ['input','keyup','paste','cut','blur'].forEach(ev =>
-          title.addEventListener(ev, () => { try { debouncedSave(); } catch {} })
-        );
+        let rtDebTitle = null;
+
+        const emitDescTitleRT = () => {
+          clearTimeout(rtDebTitle);
+          rtDebTitle = setTimeout(() => {
+            if (typeof sendRT !== 'function') return;
+
+            const list = Array.from(document.querySelectorAll('.board-description-box'));
+            const idx  = list.indexOf(el);
+            if (idx === -1) return;
+
+            sendRT({
+              t: 'desc_update',
+              idx,
+              part: 'title',
+              text: title.textContent || '',
+              prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
+              ts: Date.now()
+            });
+          }, 100);
+        };
+
+        ['input','keyup','paste','cut','compositionend'].forEach(ev => {
+          title.addEventListener(ev, emitDescTitleRT);
+        });
       }
+
+      // --- NEU: Realtime-Sync für DescriptionBox-Body ---
       if (p.bodyUserEditable) {
-        content.setAttribute('contenteditable', 'true');
-        content.style.cursor = 'text';
-        setupOneTimeClear(content, defaultBody);
-        ['input','keyup','paste','cut','blur'].forEach(ev =>
-          content.addEventListener(ev, () => { try { debouncedSave(); } catch {} })
-        );
+        let rtDebBody = null;
+
+        const emitDescBodyRT = () => {
+          clearTimeout(rtDebBody);
+          rtDebBody = setTimeout(() => {
+            if (typeof sendRT !== 'function') return;
+
+            const list = Array.from(document.querySelectorAll('.board-description-box'));
+            const idx  = list.indexOf(el);
+            if (idx === -1) return;
+
+            sendRT({
+              t: 'desc_update',
+              idx,
+              part: 'body',
+              text: content.textContent || '',
+              prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
+              ts: Date.now()
+            });
+          }, 100);
+        };
+
+        ['input','keyup','paste','cut','compositionend'].forEach(ev => {
+          content.addEventListener(ev, emitDescBodyRT);
+        });
       }
 
       el.appendChild(title);
