@@ -3016,16 +3016,23 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!allowed || !node) return;
 
         node.setAttribute('contenteditable', 'true');
-        node.dataset.default = (defaultText || '').trim();
+        node.dataset.default     = (defaultText || '').trim();
+        node.dataset.placeholder = node.dataset.default;  // für Klarheit gleichsetzen
 
-        let clearedOnce = false;
+        // Beim Fokussieren: Placeholder entfernen
         node.addEventListener('focus', () => {
-          // Einmaliges Auto-Löschen: nur wenn noch der Admin-Text drin steht
-          if (!clearedOnce && node.textContent.trim() === node.dataset.default) {
+          if (node.textContent.trim() === node.dataset.placeholder) {
             node.textContent = '';
-            clearedOnce = true;
           }
         });
+
+        // Beim Verlassen: Wenn leer gelassen → wieder Placeholder zeigen
+        node.addEventListener('blur', () => {
+          if (node.textContent.trim() === '') {
+            node.textContent = node.dataset.placeholder;
+          }
+        });
+
 
         // --- Autosave wie bisher ---
         ['input','keyup','paste','cut','blur'].forEach(ev => {
@@ -3158,126 +3165,60 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Titel
       const title = document.createElement('div');
       title.className = 'desc-title';
-      title.textContent = (p.title ?? p.heading ?? '').trim() || 'Überschrift';
-      title.style.fontWeight = '700';
-      title.style.lineHeight = '1.25';
-      title.style.whiteSpace = 'pre-wrap';
-      title.style.wordBreak  = 'break-word';
-      title.style.textAlign  = p.titleAlign || p.textAlign || 'center';
-
-      title.style.background = 'transparent';
+      title.textContent = (p.heading ?? p.title ?? '').trim() || 'Überschrift';
       title.style.outline = 'none';
-      title.style.border = 'none';
       title.style.boxShadow = 'none';
+      title.style.border = 'none';
+      title.style.textAlign = ['left','center','right'].includes(p.textAlign) ? p.textAlign : 'center';
+      title.dataset.default = title.textContent; // für Placeholder-Backup
 
-      // Schrift-Props aus dem Builder (global)
-      if (p.fontSize)   title.style.fontSize   = p.fontSize + 'px';
-      if (p.fontFamily) title.style.fontFamily = p.fontFamily;
-      if (p.fontColor)  title.style.color      = p.fontColor;
+      // Body
+      const body = document.createElement('div');
+      body.className = 'desc-content';
+      body.textContent = (p.text ?? p.body ?? '').trim() || 'Beschreibung';
+      body.style.whiteSpace = 'pre-wrap';
+      body.style.wordBreak = 'break-word';
+      body.style.overflowWrap = 'anywhere';
+      body.style.textAlign = ['left','center','right'].includes(p.textAlign) ? p.textAlign : 'center';
+      body.style.marginTop = '6px';
+      body.style.flex = '1 1 auto';
+      body.dataset.default = body.textContent;     // für Placeholder-Backup
 
-      // Body (transparentes, feldfüllendes Textfeld)
-      const content = document.createElement('div');
-      content.className = 'desc-content';
-      content.textContent = (p.body ?? p.text ?? '').trim() || 'Beschreibung';
-      content.style.flex = '1 1 auto';
-      content.style.minHeight = '0';          // wichtig für flex + overflow
-      content.style.whiteSpace = 'pre-wrap';
-      content.style.wordBreak  = 'break-word';
-      content.style.overflow   = 'auto';
-      content.style.textAlign  = p.bodyAlign || p.textAlign || 'center';
-      content.style.background = 'transparent';
-      content.style.outline    = 'none';
-      content.style.border     = 'none';
+      // Schrift-Eigenschaften
+      if (p.fontSize)   { title.style.fontSize = body.style.fontSize = p.fontSize + 'px'; }
+      if (p.fontFamily) { title.style.fontFamily = body.style.fontFamily = p.fontFamily; }
+      if (p.fontColor)  { title.style.color = body.style.color = p.fontColor; }
+      if (p.bold)       { title.style.fontWeight = body.style.fontWeight = '700'; }
+      if (p.italic)     { title.style.fontStyle  = body.style.fontStyle  = 'italic'; }
+      if (p.underline)  { title.style.textDecoration = body.style.textDecoration = 'underline'; }
 
-      content.style.display = 'flex';
-      content.style.flexDirection = 'column';
-      content.style.justifyContent = 'center';
-      content.style.alignItems = 'stretch';
-      
-      // Schrift-Props spiegeln
-      if (p.fontSize)   content.style.fontSize   = p.fontSize + 'px';
-      if (p.fontFamily) content.style.fontFamily = p.fontFamily;
-      if (p.fontColor)  content.style.color      = p.fontColor;
-
-      // === Optionale Bearbeitbarkeit wie bei Cardholder ===
-      function setupOneTimeClear(node, defaultVal) {
-        let clearedOnce = false;
-        node.addEventListener('focus', () => {
-          const cur = (node.textContent || '').trim();
-          if (!clearedOnce && cur === (defaultVal || '')) {
-            node.textContent = '';
-            clearedOnce = true;
-          }
+      // Placeholder-Backup-Handler (wie bei Cardholdern)
+      function attachPh(el){
+        if (!el) return;
+        const ph = (el.dataset.default || '').trim();
+        el.addEventListener('focus', () => {
+          if (el.textContent.trim() === ph) el.textContent = '';
         });
-        node.addEventListener('input', () => {
-          const cur = (node.textContent || '').trim();
-          if (cur && cur !== (defaultVal || '')) clearedOnce = true;
-        });
-      }
-      const defaultTitle = title.textContent;
-      const defaultBody  = content.textContent;
-
-      // --- NEU: Realtime-Sync für DescriptionBox-Titel ---
-      if (p.titleUserEditable) {
-        let rtDebTitle = null;
-
-        const emitDescTitleRT = () => {
-          clearTimeout(rtDebTitle);
-          rtDebTitle = setTimeout(() => {
-            if (typeof sendRT !== 'function') return;
-
-            const nodes = Array.from(document.querySelectorAll('.board-cardholder'));
-            const idx   = nodes.indexOf(parentEl);
-
-            if (idx === -1) return;
-
-            sendRT({ 
-              t: 'cardholder_update', 
-              idx, 
-              part, 
-              text: node.textContent, 
-              prio: (typeof RT_PRI==='function' ? RT_PRI() : 1), 
-              ts: Date.now()
-            });
-          }, 100);
-        };
-
-        ['input','keyup','paste','cut','compositionend'].forEach(ev => {
-          title.addEventListener(ev, emitDescTitleRT);
+        el.addEventListener('blur', () => {
+          if (el.textContent.trim() === '') el.textContent = ph;
         });
       }
 
-      // --- NEU: Realtime-Sync für DescriptionBox-Body ---
-      if (p.bodyUserEditable) {
-        let rtDebBody = null;
+      // Editierbarkeit laut Builder-Flags
+      const canEditTitle = !!p.titleUserEditable;
+      const canEditBody  = !!p.bodyUserEditable;
+      if (canEditTitle) { title.setAttribute('contenteditable','true'); title.setAttribute('spellcheck','true'); attachPh(title); }
+      if (canEditBody)  { body.setAttribute('contenteditable','true');  body.setAttribute('spellcheck','true'); attachPh(body); }
 
-        const emitDescBodyRT = () => {
-          clearTimeout(rtDebBody);
-          rtDebBody = setTimeout(() => {
-            if (typeof sendRT !== 'function') return;
+      // Autosave bei Eingaben/Blur (wie Cardholder)
+      ['input','keyup','paste','cut','blur'].forEach(ev => {
+        if (canEditTitle) title.addEventListener(ev, () => { try { debouncedSave && debouncedSave(); } catch {} });
+        if (canEditBody)  body.addEventListener(ev,  () => { try { debouncedSave && debouncedSave(); } catch {} });
+      });
 
-            const list = Array.from(document.querySelectorAll('.board-description-box'));
-            const idx  = list.indexOf(el);
-            if (idx === -1) return;
-
-            sendRT({
-              t: 'desc_update',
-              idx,
-              part: 'body',
-              text: content.textContent || '',
-              prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
-              ts: Date.now()
-            });
-          }, 100);
-        };
-
-        ['input','keyup','paste','cut','compositionend'].forEach(ev => {
-          content.addEventListener(ev, emitDescBodyRT);
-        });
-      }
-
+      // Zusammenbauen
       el.appendChild(title);
-      el.appendChild(content);
+      el.appendChild(body);
 
       // Platzieren gemäß w.x/w.y/w.w/w.h
       place(el, w);
@@ -6165,11 +6106,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       const headerEl = el.querySelector('.bb-ch-header, .desc-title, .ch-title, .ch-header');
       const bodyEl   = el.querySelector('.bb-ch-desc, .ch-desc, .desc-content')
                     || (headerEl ? headerEl.nextElementSibling : null);
+      const tRaw = (headerEl?.textContent || '').trim();
+      const tDef = (headerEl?.dataset?.default || '').trim();
+      const bDef = (bodyEl?.dataset?.default   || '').trim();
 
       out.push({
         idx,
-        title: (headerEl?.textContent || '').trim(),
-        body:  (bodyEl?.textContent   || '').trim()
+        title: (headerEl?.isContentEditable && tRaw === tDef) ? '' : tRaw,
+        body:  (bodyEl?.isContentEditable   && bRaw === bDef) ? '' : bRaw
       });
     });
     return out;
@@ -6418,10 +6362,15 @@ document.addEventListener('DOMContentLoaded', async function() {
       const titleEl = el.querySelector('.desc-title');
       // Inhalt ist im Rendering das nächste Geschwister nach dem Titel
       const bodyEl  = titleEl ? titleEl.nextElementSibling : el.children[1];
+      const tRaw = (titleEl?.textContent || '').trim();
+      const bRaw = (bodyEl?.textContent  || '').trim();
+      const tDef = (titleEl?.dataset?.default || '').trim();
+      const bDef = (bodyEl?.dataset?.default  || '').trim();
+
       out.push({
         idx,
-        title: (titleEl?.textContent || '').trim(),
-        body:  (bodyEl?.textContent  || '').trim()
+        title: (titleEl?.isContentEditable && tRaw === tDef) ? '' : tRaw,
+        body:  (bodyEl?.isContentEditable  && bRaw === bDef) ? '' : bRaw
       });
     });
     return out;
@@ -6452,6 +6401,14 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (tEditable) {
               titleEl.setAttribute('contenteditable', 'true');
               titleEl.setAttribute('spellcheck', 'true');
+              const ph = (titleEl.dataset.default || titleEl.textContent || '').trim();
+              titleEl.dataset.default = ph;
+              titleEl.addEventListener('focus', () => {
+                if (titleEl.textContent.trim() === ph) titleEl.textContent = '';
+              });
+              titleEl.addEventListener('blur', () => {
+                if (titleEl.textContent.trim() === '') titleEl.textContent = ph;
+              });
             } else {
               titleEl.removeAttribute('contenteditable');
             }
@@ -6460,6 +6417,14 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (bEditable) {
               bodyEl.setAttribute('contenteditable', 'true');
               bodyEl.setAttribute('spellcheck', 'true');
+              const ph = (bodyEl.dataset.default || bodyEl.textContent || '').trim();
+              bodyEl.dataset.default = ph;
+              bodyEl.addEventListener('focus', () => {
+                if (bodyEl.textContent.trim() === ph) bodyEl.textContent = '';
+              });
+              bodyEl.addEventListener('blur', () => {
+                if (bodyEl.textContent.trim() === '') bodyEl.textContent = ph;
+              });
             } else {
               bodyEl.removeAttribute('contenteditable');
             }
