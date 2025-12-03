@@ -768,7 +768,9 @@ function initFocusNoteLive() {
   });
 
   // Platzhalter-Text
-  const PH = 'Schreiben sie hier die Focus Note der Sitzung rein';
+  const PH = editable.dataset?.placeholder
+        || editable.dataset?.default
+        || 'Schreiben sie hier die Focus Note der Sitzung rein';
 
   // Anti-Echo beim Anwenden entgegengenommener Updates
   let setByRemote = false;
@@ -2776,6 +2778,13 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       bodyDisplay.textContent  = initialBody;
       bodyEditable.textContent = initialBody || placeholder;
+
+      // data-default für beide Varianten setzen, damit restoreFocusNote sofort etwas hat
+      bodyDisplay.dataset.default  = initialBody || placeholder;
+      bodyEditable.dataset.default = initialBody || placeholder;
+
+      // Optional (optische Konsistenz): auch die Display-Seite mit Fallback füllen
+      bodyDisplay.textContent = initialBody || placeholder;
 
       // Wrapper, damit Body mittig in der Box sitzt (.focus-note-content)
       const contentWrap = document.createElement('div');
@@ -6470,7 +6479,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (bodyEditable) bodyEditable.textContent = (typeof body === 'string') ? body : '';
     if (bodyDisplay) {
       const bRaw  = (typeof body === 'string') ? body : '';
-      const bShow = bRaw.trim() === '' ? (bodyDisplay.dataset?.default || bodyEditable?.dataset?.default || '') : bRaw;
+      // nutzt data-placeholder und hat harte-Default-Text
+      const ph = bodyDisplay.dataset?.default
+              || bodyEditable?.dataset?.default
+              || bodyEditable?.dataset?.placeholder
+              || 'Schreiben sie hier die Focus Note der Sitzung rein';
+      const bShow = bRaw.trim() === '' ? ph : bRaw;
       bodyDisplay.textContent = bShow;
       bodyDisplay.classList.toggle('has-content', bRaw.trim() !== '');
     }
