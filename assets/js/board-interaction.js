@@ -1263,20 +1263,21 @@ async function initRealtime(config) {
     }
     
     if (m.t === 'focus_update') {
-      const wrap = document.querySelector('.focus-note-area');
-      if (!wrap) return;
+      const list = document.querySelectorAll('.focus-note-area');
+      const el   = list[Number(m.idx)] || document.querySelector('.focus-note-area');
+      if (!el) return;
 
       if (m.part === 'title') {
-        const node = wrap.querySelector('.focus-note-title, .desc-title, h2');
+        const node = el.querySelector('.focus-note-title, .desc-title, h2');
         if (!node) return;
         const raw = String(m.text || '');
         node.textContent = raw.trim() === '' ? (node.dataset?.default || '') : raw;
       } else {
-        const ed   = document.getElementById('focus-note-editable');
-        const disp = document.getElementById('focus-note-display');
+        const ed   = el.querySelector('#focus-note-editable, .focus-note-editable');
+        const disp = el.querySelector('#focus-note-display, .focus-note-display');
         const raw  = String(m.text || '');
-        const show = raw.trim() === '' ? ((ed && ed.dataset && ed.dataset.default) || (disp && disp.dataset && disp.dataset.default) || '') : raw;
-        if (ed)   ed.textContent   = raw;
+        const show = raw.trim() === '' ? ((ed?.dataset?.default) || (disp?.dataset?.default) || '') : raw;
+        if (ed)   ed.textContent = raw;
         if (disp) {
           disp.textContent = show;
           disp.classList.toggle('has-content', raw.trim() !== '');
@@ -1296,8 +1297,7 @@ async function initRealtime(config) {
       const idx = Number.isFinite(m.idx) ? Number(m.idx) : -1;
       if (idx < 0) return;
 
-      // C2a: auch FocusNote-Container in die Liste aufnehmen
-      const list = document.querySelectorAll('.board-description-box, .focus-note-area');
+      const list = document.querySelectorAll('.board-description-box');
       const el   = list[idx];
       if (!el) return;
 
@@ -1325,8 +1325,8 @@ async function initRealtime(config) {
       const ch   = (idx >= 0 && idx < list.length) ? list[idx] : null;
       if (!ch) return;
       const node = (m.part === 'title')
-        ? ch.querySelector('.ch-title')
-        : ch.querySelector('.ch-desc');
+        ? (ch.querySelector('.bb-ch-header, .desc-title, .ch-title, .ch-header'))
+        : (ch.querySelector('.bb-ch-desc, .desc-content, .ch-desc'));
       if (!node) return;
 
       // NEU: leere Texte → Standardtext aus dataset.default anzeigen
@@ -2904,7 +2904,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const rtEmitFocus = (part) => {
         try {
           // FokusNote in die gleiche Index-Liste wie DescriptionBoxen nehmen
-          const nodes = Array.from(document.querySelectorAll('.board-description-box, .focus-note-area'));
+          const nodes = Array.from(document.querySelectorAll('.focus-note-area'));
           const idx = nodes.indexOf(el);             // "el" ist der FocusNote-Container aus dem Builder
           if (idx < 0) return;
 
@@ -2915,9 +2915,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
           // Gleicher Kanal wie DescriptionBoxen, damit Empfangslogik einheitlich bleibt
           sendRT({
-            t: 'desc_update',
+            t: 'focus_update',
             idx,
-            part,                   // 'title' | 'body'
+            part,      // 'title' | 'body'
             text,
             prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
             ts: Date.now()
@@ -6215,12 +6215,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     const out = [];
     document.querySelectorAll('.board-cardholder').forEach((el, idx) => {
       const headerEl = el.querySelector('.bb-ch-header, .desc-title, .ch-title, .ch-header');
-      const bodyEl   = el.querySelector('.bb-ch-desc, .ch-desc, .desc-content')
+      const bodyEl   = el.querySelector('.bb-ch-desc, .ch-desc, .ch-content, .desc-content')
                     || (headerEl ? headerEl.nextElementSibling : null);
       const tRaw = (headerEl?.textContent || '').trim();
+      const bRaw = (bodyEl?.textContent   || '').trim();   // ← FEHLTE!
       const tDef = (headerEl?.dataset?.default || '').trim();
       const bDef = (bodyEl?.dataset?.default   || '').trim();
-      const bRaw = (bodyEl?.textContent || '').trim();
 
       out.push({
         idx,
@@ -6230,6 +6230,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
     return out;
   }
+
 
   function restoreCardholders(items, perms) {
     if (!Array.isArray(items)) return;
@@ -6244,8 +6245,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         : (el.querySelector('.bb-ch-desc, .ch-desc, .desc-content') || el.children[1]);
 
       // Inhalt wiederherstellen
-      if (headerEl && typeof d.title === 'string') headerEl.textContent = d.title;
-      if (bodyEl   && typeof d.body  === 'string') bodyEl.textContent  = d.body;
+      if (headerEl) {
+        const tRaw = (typeof d.title === 'string') ? d.title : '';
+        const tDef = (headerEl.dataset?.default || headerEl.textContent || '').trim();
+        headerEl.textContent = tRaw.trim() === '' ? tDef : tRaw;
+      }
+      if (bodyEl) {
+        const bRaw = (typeof d.body === 'string') ? d.body : '';
+        const bDef = (bodyEl.dataset?.default || bodyEl.textContent || '').trim();
+        bodyEl.textContent = bRaw.trim() === '' ? bDef : bRaw;
+      }
 
       // Edit-Flags anwenden
       if (Array.isArray(perms)) {
