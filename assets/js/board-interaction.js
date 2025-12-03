@@ -4402,6 +4402,30 @@ document.addEventListener('DOMContentLoaded', async function() {
     noteEl.style.position = 'absolute';
     noteEl.style.zIndex = '100';
 
+    // Bühne & Normalisierung
+    const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
+    const parent = noteEl.parentElement || document.querySelector('.board-area') || document.body;
+    const parentRect = parent.getBoundingClientRect();
+    const stageRect  = getStageRect();
+    const pxStage = ((parentRect.left - stageRect.left) / s) + (parseFloat(noteEl.style.left)||0);
+    const pyStage = ((parentRect.top  - stageRect.top ) / s) + (parseFloat(noteEl.style.top)||0);
+    const { nx, ny } = toNorm(pxStage, pyStage);
+
+    // initiale Erzeugung an alle
+    sendRT({
+      t: 'note_create',
+      id: noteEl.id,
+      nx, ny,
+      z: noteEl.style.zIndex || '',
+      w: noteEl.offsetWidth,
+      h: noteEl.offsetHeight,
+      color: getComputedStyle(noteEl).getPropertyValue('--note-bg') || noteEl.style.backgroundColor || '',
+      content: '' // leer zum Start
+    });
+
+    // und optional sofort der erste move-Tick (macht die Position *sofort* stabil)
+    sendRT({ t: 'note_move', id: noteEl.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
+
     // Direkt alle Handler/AutoGrow/etc. an die neue Notiz hängen
     try { if (typeof attachNoteResizeObserver === 'function') attachNoteResizeObserver(noteEl); } catch {}
     try { if (typeof attachNoteAutoGrow === 'function') attachNoteAutoGrow(noteEl); } catch {}
@@ -4409,16 +4433,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     try { if (typeof enhanceDraggableNote === 'function') enhanceDraggableNote(noteEl); } catch {}
 
     const wrapRect = notesWrap.getBoundingClientRect();
-    const srcRect  = src.getBoundingClientRect();
 
-    // Griffposition beibehalten:
-    // Note wird zuerst genau dort platziert, wo der Block gerade liegt.
-    // Dadurch ist der Abstand Maus ↔ Zettel derselbe wie Maus ↔ Block.
-    let left = srcRect.left - wrapRect.left + notesWrap.scrollLeft;
-    let top  = srcRect.top  - wrapRect.top  + notesWrap.scrollTop;
-
-    noteEl.style.left = left + 'px';
-    noteEl.style.top  = top  + 'px';
+    // Startposition: direkt unter dem Cursor (statt Block-Ecke),
+    // dadurch "klebt" der Zettel von Anfang an an der Griffposition.
+    let left = start.x - wrapRect.left + notesWrap.scrollLeft - (noteEl.offsetWidth  / 2);
+    let top  = start.y - wrapRect.top  + notesWrap.scrollTop  - (noteEl.offsetHeight / 2);
+ 
+    noteEl.style.left = Math.round(left) + 'px';
+    noteEl.style.top  = Math.round(top)  + 'px';
 
     // 6) Drag-Logik
     let last = { x: start.x, y: start.y };
@@ -4511,7 +4533,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           prio: RT_PRI(),
           ts: Date.now()
         });
-      }, 120);
+      }, 60);
     });
 
     // Doppelklick zum Bearbeiten
@@ -6139,7 +6161,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const perms = [];
     const nodes = Array.from(document.querySelectorAll('.board-cardholder'));
     nodes.forEach((el, idx) => {
-      const headerEl = el.querySelector('.desc-title, .bb-ch-header, .ch-header');
+      const headerEl = el.querySelector('.desc-title, .bb-ch-header, .ch-title, .ch-header');
       const bodyEl   = headerEl
         ? headerEl.nextElementSibling
         : (el.querySelector('.bb-ch-desc, .ch-desc, .desc-content') || el.children[1]);
