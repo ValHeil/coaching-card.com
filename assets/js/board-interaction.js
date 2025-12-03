@@ -760,7 +760,12 @@ function initFocusNoteLive() {
       editable.blur();
     }
   });
-  editable.addEventListener('blur', closeEditor);
+
+  editable.addEventListener('blur', () => {
+    // letzte Änderung (inkl. ggf. Fallback) rausschicken
+    try { emit(); } catch {}
+    closeEditor();
+  });
 
   // Platzhalter-Text
   const PH = 'Schreiben sie hier die Focus Note der Sitzung rein';
@@ -1274,52 +1279,41 @@ async function initRealtime(config) {
 
     // --- Live-Updates für DescriptionBoxen --------------------------------
     if (m.t === 'desc_update') {
-      // Eigene Echos ignorieren, damit der Cursor nicht springt
-      if (m.idFrom && window.RT && m.idFrom === RT.uid) return;
-
-      const idx = (typeof m.idx === 'number' ? m.idx : -1);
-      if (idx < 0) return;
-
-      const nodes = Array.from(document.querySelectorAll('.board-description-box'));
-      const el    = nodes[idx];
+      const list = document.querySelectorAll('.board-description-box');
+      const el   = list[Number(m.idx)];
       if (!el) return;
 
-      const headerEl = el.querySelector('.desc-title');
-      const bodyEl   = headerEl ? headerEl.nextElementSibling : el.children[1];
+      const node = (m.part === 'title')
+        ? el.querySelector('.desc-title, .focus-note-title, h2')
+        : el.querySelector('.desc-body, .desc-content');
+      if (!node) return;
 
-      if (m.part === 'title' && headerEl && typeof m.text === 'string') {
-        headerEl.textContent = m.text;
-      } else if (m.part === 'body' && bodyEl && typeof m.text === 'string') {
-        bodyEl.textContent = m.text;
-      }
+      // leere Texte → Standardtext aus dataset.default anzeigen
+      const raw = String(m.text || '');
+      const trimmed = raw.trim();
+      node.textContent = trimmed === '' ? (node.dataset.default || '') : raw;
 
+      if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState('rt');
       return;
     }
 
     // --- Live-Updates für Cardholder --------------------------------------
     if (m.t === 'cardholder_update') {
-      // Eigene Echos ignorieren
-      if (m.idFrom && window.RT && m.idFrom === RT.uid) return;
+      const list = document.querySelectorAll('.cardholder');
+      const idx  = Number(m.idx);
+      const ch   = (idx >= 0 && idx < list.length) ? list[idx] : null;
+      if (!ch) return;
+      const node = (m.part === 'title')
+        ? ch.querySelector('.ch-title')
+        : ch.querySelector('.ch-desc');
+      if (!node) return;
 
-      const idx = (typeof m.idx === 'number' ? m.idx : -1);
-      if (idx < 0) return;
+      // NEU: leere Texte → Standardtext aus dataset.default anzeigen
+      const raw = String(m.text || '');
+      const trimmed = raw.trim();
+      node.textContent = trimmed === '' ? (node.dataset.default || '') : raw;
 
-      const nodes = Array.from(document.querySelectorAll('.board-cardholder'));
-      const el    = nodes[idx];
-      if (!el) return;
-
-      const headerEl =
-        el.querySelector('.bb-ch-header, .desc-title, .ch-title, .ch-header');
-      const bodyEl =
-        el.querySelector('.bb-ch-desc, .ch-desc, .desc-content') ||
-        (headerEl ? headerEl.nextElementSibling : null);
-
-      if (m.part === 'title' && headerEl && typeof m.text === 'string') {
-        headerEl.textContent = m.text;
-      } else if (m.part === 'body' && bodyEl && typeof m.text === 'string') {
-        bodyEl.textContent = m.text;
-      }
-
+      if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState('rt');
       return;
     }
     
@@ -3047,6 +3041,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (node.textContent.trim() === '') {
             node.textContent = node.dataset.placeholder;
           }
+          try { emitRT(); } catch {}
         });
 
 
@@ -3238,6 +3233,42 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (canEditTitle) title.addEventListener(ev, () => { try { debouncedSave && debouncedSave(); } catch {} });
         if (canEditBody)  body.addEventListener(ev,  () => { try { debouncedSave && debouncedSave(); } catch {} });
       });
+
+      // --- LIVE-SYNC: DescriptionBox broadcasten ---
+      const getDescIdx = () =>
+        Array.from(document.querySelectorAll('.board-description-box')).indexOf(el);
+
+      const emitDesc = (part) => {
+        const idx = getDescIdx();
+        if (idx < 0) return;
+
+        const txt = (part === 'title' ? (title.textContent || '') : (body.textContent || ''));
+        // Eigene UID mitsenden, damit Empfänger Echos filtern können
+        const idFrom = (window.RT && RT.uid) ? RT.uid : '';
+
+        if (typeof sendRT === 'function') {
+          sendRT({
+            t: 'desc_update',
+            idx,
+            part,                  // 'title' | 'body'
+            text: txt,
+            prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
+            ts: Date.now(),
+            idFrom
+          });
+        }
+      };
+
+      // Realtime während der Eingabe & nach Einfügen/Ausschneiden
+      ['input','keyup','paste','cut','compositionend'].forEach(ev => {
+        if (canEditTitle) title.addEventListener(ev, () => emitDesc('title'));
+        if (canEditBody)  body.addEventListener(ev,  () => emitDesc('body'));
+      });
+
+      // zusätzlich auf blur einmal „final“ senden
+      if (canEditTitle) title.addEventListener('blur', () => emitDesc('title'));
+      if (canEditBody)  body.addEventListener('blur',  () => emitDesc('body'));
+
 
       // Zusammenbauen
       el.appendChild(title);
