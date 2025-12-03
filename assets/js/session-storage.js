@@ -124,10 +124,10 @@ const SessionStorage = {
   
   // Lädt eine bestimmte Sitzung
   getSession: function(sessionId) {
-    const sessions = this.getAllSessions();
-    return sessions.find(session => session.id === sessionId) || null;
+    const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');
+    return sessions.find(s => String(s.id) === String(sessionId)) || null;
   },
-  
+    
   // Lädt eigene Sitzung aus LokalStorage
   getAllSessions: function() {
     const sessions = JSON.parse(localStorage.getItem('kartensets_sessions') || '[]');

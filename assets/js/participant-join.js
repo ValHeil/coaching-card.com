@@ -137,18 +137,25 @@ function showParticipantNamePrompt(session) {
 
 function joinSession(session) {
   try {
-    let currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-    const exists = session.participants?.find(p => p.id === currentUser.id);
+    const key = 'kartensets_sessions';
+    const sessions = JSON.parse(localStorage.getItem(key) || '[]');
+
+    let found = sessions.find(s => String(s.id) === String(session.id));
+    if (!found) {
+      found = { ...session, participants: [] };
+      sessions.push(found);
+    }
+
+    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const exists = (found.participants || []).some(p => p.id === currentUser.id);
     if (!exists) {
-      const participants = session.participants || [];
-      participants.push({ id: currentUser.id, name: currentUser.name, role: 'participant', joined: new Date().toISOString() });
-      const key = 'kartensets_sessions';
-      const sessions = JSON.parse(localStorage.getItem(key) || '[]');
-      const updated = sessions.map(s => String(s.id) === String(session.id)
-        ? { ...s, participants, lastEdited: new Date().toISOString() }
-        : s
-      );
-      localStorage.setItem(key, JSON.stringify(updated));
+      found.participants = [...(found.participants || []), {
+        id: currentUser.id,
+        name: currentUser.name,
+        role: 'participant',
+        joined: new Date().toISOString()
+      }];
+      localStorage.setItem(key, JSON.stringify(sessions));
     }
     console.log(`Benutzer ${currentUser.name} (${currentUser.id}) ist der Sitzung beigetreten`);
     return true;
@@ -157,6 +164,7 @@ function joinSession(session) {
     return false;
   }
 }
+
 
 function addParticipantNamePromptStyles() {
   if (!document.getElementById('participant-name-prompt-styles')) {
@@ -301,7 +309,6 @@ function handleSessionJoin() {
     const cur  = JSON.parse(localStorage.getItem('currentUser') || '{}');
     const name = cur?.name || url.get('n') || url.get('name') || '';
     if (name) {
-      // Sicherheitsnetz: falls noch keine ID existiert, eine stabile vergeben
       if (!cur?.id) {
         localStorage.setItem('currentUser', JSON.stringify({
           id: 'u-' + Math.random().toString(36).slice(2),
@@ -309,12 +316,22 @@ function handleSessionJoin() {
           role: 'participant'
         }));
       }
-      return true; // KEIN Prompt mehr anzeigen
+      // Sitzung im localStorage sicherstellen und Gast registrieren
+      const key = 'kartensets_sessions';
+      let list = JSON.parse(localStorage.getItem(key) || '[]');
+      let local = list.find(s => String(s.id) === String(sid));
+      if (!local) {
+        local = { id: sid, name: session.name || 'Sitzung', boardState: {}, participants: [] };
+        list.push(local);
+        localStorage.setItem(key, JSON.stringify(list));
+      }
+      joinSession(local); // jetzt wirklich eintragen
+      return true;
     }
-    return handleParticipantJoin(session); // nur wenn noch kein Name da ist
+    return handleParticipantJoin(session);
   }
-  return true; // normales Öffnen ohne Prompt
 }
+
 
 // Exporte ins Window (wie gehabt)
 window.handleSessionJoin = handleSessionJoin;
