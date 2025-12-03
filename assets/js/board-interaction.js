@@ -1263,43 +1263,64 @@ async function initRealtime(config) {
     }
     
     if (m.t === 'focus_update') {
-      if (typeof window.__ccSetFocusNote === 'function') {
-        window.__ccSetFocusNote(String(m.content || ''));
+      const wrap = document.querySelector('.focus-note-area');
+      if (!wrap) return;
+
+      if (m.part === 'title') {
+        const node = wrap.querySelector('.focus-note-title, .desc-title, h2');
+        if (!node) return;
+        const raw = String(m.text || '');
+        node.textContent = raw.trim() === '' ? (node.dataset?.default || '') : raw;
       } else {
-        const el = document.getElementById('focus-note-editable');
-        const t  = String(m.content || '');
-        if (el) el.innerText = t;
+        const ed   = document.getElementById('focus-note-editable');
         const disp = document.getElementById('focus-note-display');
-        if (disp) disp.textContent = t || 'Schreiben sie hier die Focus Note der Sitzung rein';
+        const raw  = String(m.text || '');
+        const show = raw.trim() === '' ? ((ed && ed.dataset && ed.dataset.default) || (disp && disp.dataset && disp.dataset.default) || '') : raw;
+        if (ed)   ed.textContent   = raw;
+        if (disp) {
+          disp.textContent = show;
+          disp.classList.toggle('has-content', raw.trim() !== '');
+        }
       }
-      // Owner persistiert den neuen Stand (Teilnehmer-Änderung)
+
       try { if (typeof isOwner === 'function' && isOwner()) saveCurrentBoardState('rt'); } catch {}
       return;
     }
 
+
     // --- Live-Updates für DescriptionBoxen --------------------------------
     if (m.t === 'desc_update') {
-      const list = document.querySelectorAll('.board-description-box');
-      const el   = list[Number(m.idx)];
+      // Eigene Echos ignorieren (falls vorhanden)
+      if (m.idFrom && window.RT && m.idFrom === RT.uid) return;
+
+      const idx = Number.isFinite(m.idx) ? Number(m.idx) : -1;
+      if (idx < 0) return;
+
+      // C2a: auch FocusNote-Container in die Liste aufnehmen
+      const list = document.querySelectorAll('.board-description-box, .focus-note-area');
+      const el   = list[idx];
       if (!el) return;
 
+      // Sowohl DescriptionBox als auch FocusNote abdecken
       const node = (m.part === 'title')
         ? el.querySelector('.desc-title, .focus-note-title, h2')
-        : el.querySelector('.desc-body, .desc-content');
+        : el.querySelector('.desc-body, .desc-content, #focus-note-editable, .focus-note-editable');
       if (!node) return;
 
-      // leere Texte → Standardtext aus dataset.default anzeigen
+      // C2b: Leere Texte -> auf Standardtext (dataset.default) zurückfallen
       const raw = String(m.text || '');
       const trimmed = raw.trim();
       node.textContent = trimmed === '' ? (node.dataset.default || '') : raw;
 
-      if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState('rt');
+      // (optional, aber sinnvoll) lokalen Snapshot anstoßen
+      try { saveCurrentBoardState('rt'); } catch {}
       return;
     }
 
+
     // --- Live-Updates für Cardholder --------------------------------------
     if (m.t === 'cardholder_update') {
-      const list = document.querySelectorAll('.cardholder');
+      const list = document.querySelectorAll('.board-cardholder, .cardholder');
       const idx  = Number(m.idx);
       const ch   = (idx >= 0 && idx < list.length) ? list[idx] : null;
       if (!ch) return;
@@ -2878,6 +2899,37 @@ document.addEventListener('DOMContentLoaded', async function() {
           bodyEditable.addEventListener(ev, trigger);
         });
       }
+
+      // ---  Realtime-Emit für FocusNote (Titel & Body) ---------------------
+      const rtEmitFocus = (part) => {
+        try {
+          // FokusNote in die gleiche Index-Liste wie DescriptionBoxen nehmen
+          const nodes = Array.from(document.querySelectorAll('.board-description-box, .focus-note-area'));
+          const idx = nodes.indexOf(el);             // "el" ist der FocusNote-Container aus dem Builder
+          if (idx < 0) return;
+
+          const text =
+            part === 'title'
+              ? (title.textContent || '')
+              : (bodyEditable.textContent || '');
+
+          // Gleicher Kanal wie DescriptionBoxen, damit Empfangslogik einheitlich bleibt
+          sendRT({
+            t: 'desc_update',
+            idx,
+            part,                   // 'title' | 'body'
+            text,
+            prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
+            ts: Date.now()
+          });
+        } catch (e) { console.warn('[focusNote rt emit]', e); }
+      };
+
+      // bei Eingabe & Blur senden (wie beim Autosave, nur zusätzlich)
+      ['input','blur'].forEach(ev => {
+        title.addEventListener(ev, () => rtEmitFocus('title'));
+        bodyEditable.addEventListener(ev, () => rtEmitFocus('body'));
+      });
 
       // DOM: Titel + Wrapper mit Body einsetzen
       contentWrap.appendChild(canEditBody ? bodyEditable : bodyDisplay);
@@ -6379,11 +6431,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     const body  = state.body  ?? '';
 
     // Inhalt immer zurückschreiben
-    if (titleEl)      titleEl.textContent = title;
-    if (bodyEditable) bodyEditable.textContent = body;
+    if (titleEl) {
+      const tRaw = (typeof title === 'string') ? title : '';
+      const tShow = tRaw.trim() === '' ? (titleEl.dataset?.default || titleEl.textContent || '') : tRaw;
+      titleEl.textContent = tShow;
+    }
+    if (bodyEditable) bodyEditable.textContent = (typeof body === 'string') ? body : '';
     if (bodyDisplay) {
-      bodyDisplay.textContent = body;
-      bodyDisplay.classList.toggle('has-content', !!body);
+      const bRaw  = (typeof body === 'string') ? body : '';
+      const bShow = bRaw.trim() === '' ? (bodyDisplay.dataset?.default || bodyEditable?.dataset?.default || '') : bRaw;
+      bodyDisplay.textContent = bShow;
+      bodyDisplay.classList.toggle('has-content', bRaw.trim() !== '');
     }
 
     // Gespeicherte Edit-Flags anwenden (falls vorhanden)
@@ -6447,8 +6505,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       const bodyEl  = titleEl ? titleEl.nextElementSibling : el.children[1];
 
       // Inhalt
-      if (titleEl && typeof d.title === 'string') titleEl.textContent = d.title;
-      if (bodyEl  && typeof d.body  === 'string') bodyEl.textContent  = d.body;
+      if (titleEl) {
+        const tRaw = (typeof d.title === 'string') ? d.title : '';
+        titleEl.textContent = tRaw.trim() === '' ? (titleEl.dataset?.default || '') : tRaw;
+      }
+      if (bodyEl) {
+        const bRaw = (typeof d.body === 'string') ? d.body : '';
+        bodyEl.textContent = bRaw.trim() === '' ? (bodyEl.dataset?.default || '') : bRaw;
+      }
 
       // Edit-Flags
       if (Array.isArray(perms)) {
