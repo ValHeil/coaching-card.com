@@ -1322,6 +1322,9 @@ async function initRealtime(config) {
 
     // --- Live-Updates für Cardholder --------------------------------------
     if (m.t === 'cardholder_update') {
+      // Eigene Echos ignorieren (wie bei desc_update)
+      if (m.idFrom && window.RT && m.idFrom === RT.uid) return;
+
       const list = document.querySelectorAll('.board-cardholder, .cardholder');
       const idx  = Number(m.idx);
       const ch   = (idx >= 0 && idx < list.length) ? list[idx] : null;
@@ -1331,7 +1334,6 @@ async function initRealtime(config) {
         : (ch.querySelector('.bb-ch-desc, .desc-content, .ch-desc'));
       if (!node) return;
 
-      // NEU: leere Texte → Standardtext aus dataset.default anzeigen
       const raw = String(m.text || '');
       const trimmed = raw.trim();
       node.textContent = trimmed === '' ? (node.dataset.default || '') : raw;
@@ -1339,6 +1341,7 @@ async function initRealtime(config) {
       if (typeof saveCurrentBoardState === 'function') saveCurrentBoardState('rt');
       return;
     }
+
     
     if (m.t === 'card_move') {
       RTFrame.enqueueCard(m);
@@ -3122,10 +3125,11 @@ document.addEventListener('DOMContentLoaded', async function() {
             rtDeb = setTimeout(() => {
               if (typeof sendRT !== 'function') return;
 
-              // Index dieses Cardholders ermitteln (ordnungsgemäß wie bei captureAllCardholders)
               const list = Array.from(document.querySelectorAll('.board-cardholder'));
               const idx  = list.indexOf(el);
               if (idx === -1) return;
+
+              const idFrom = (window.RT && RT.uid) ? RT.uid : '';
 
               sendRT({
                 t: 'cardholder_update',
@@ -3133,7 +3137,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                 part,                        // 'title' oder 'body'
                 text: node.textContent || '',
                 prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
-                ts: Date.now()
+                ts: Date.now(),
+                idFrom                       // <- NEU: eigene UID mitsenden
               });
             }, 100); // leichter Delay, um Tastenschläge zu bündeln
           };
