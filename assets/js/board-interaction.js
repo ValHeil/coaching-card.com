@@ -6467,26 +6467,36 @@ document.addEventListener('DOMContentLoaded', async function() {
       return;
     }
 
-    const title = state.title ?? '';
-    const body  = state.body  ?? '';
+    const titleE1 = state.title ?? '';
+    const bodyEl  = state.body  ?? '';
 
-    // Inhalt immer zurückschreiben
-    if (titleEl) {
-      const tRaw = (typeof title === 'string') ? title : '';
-      const tShow = tRaw.trim() === '' ? (titleEl.dataset?.default || titleEl.textContent || '') : tRaw;
-      titleEl.textContent = tShow;
+    if (titleE1) {
+      const tRaw = (typeof d.title === 'string') ? d.title : '';
+      const hasDefault = !!(titleEl.dataset && titleEl.dataset.default);
+      const current = (titleEl.textContent || '').trim();
+
+      if (tRaw.trim() === '' && !hasDefault && current !== '') {
+        // Nichts überschreiben – Template-Text behalten
+      } else {
+        titleEl.textContent = tRaw.trim() === ''
+          ? (titleEl.dataset?.default || current)
+          : tRaw;
+      }
     }
-    if (bodyEditable) bodyEditable.textContent = (typeof body === 'string') ? body : '';
-    if (bodyDisplay) {
-      const bRaw  = (typeof body === 'string') ? body : '';
-      // nutzt data-placeholder und hat harte-Default-Text
-      const ph = bodyDisplay.dataset?.default
-              || bodyEditable?.dataset?.default
-              || bodyEditable?.dataset?.placeholder
-              || 'Schreiben sie hier die Focus Note der Sitzung rein';
-      const bShow = bRaw.trim() === '' ? ph : bRaw;
-      bodyDisplay.textContent = bShow;
-      bodyDisplay.classList.toggle('has-content', bRaw.trim() !== '');
+
+
+    if (bodyEl) {
+      const bRaw = (typeof d.body === 'string') ? d.body : '';
+      const hasDefault = !!(bodyEl.dataset && bodyEl.dataset.default);
+      const current = (bodyEl.textContent || '').trim();
+
+      if (bRaw.trim() === '' && !hasDefault && current !== '') {
+        // Nichts überschreiben – Template-Text behalten
+      } else {
+        bodyEl.textContent = bRaw.trim() === ''
+          ? (bodyEl.dataset?.default || current)
+          : bRaw;
+      }
     }
 
     // Gespeicherte Edit-Flags anwenden (falls vorhanden)
