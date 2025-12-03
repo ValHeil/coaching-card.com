@@ -2804,13 +2804,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
       // Editierbarkeit laut Widget-Flags
-      const canEditTitle = (typeof asBool === 'function')
-        ? asBool(p.titleUserEditable)
-        : !!p.titleUserEditable;
+      const canEditTitle = (typeof asBool==='function') ? asBool(p.titleUserEditable) : !!p.titleUserEditable;
+      const canEditBody  = (typeof asBool==='function') ? asBool(p.bodyUserEditable)  : !!p.bodyUserEditable;
 
-      const canEditBody = (typeof asBool === 'function')
-        ? asBool(p.bodyUserEditable)
-        : !!p.bodyUserEditable;
 
       // Body: Umschalten zwischen Display/Editable
       if (canEditBody) {
@@ -3038,7 +3034,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           });
         });
 
-        // --- NEU: Realtime-Sync für Cardholder-Text ---
+        // --- Realtime-Sync für Cardholder-Text ---
         if (part === 'title' || part === 'body') {
           let rtDeb = null;
 
@@ -3090,8 +3086,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                         || (typeof desc !== 'undefined' ? desc : null);
 
       // Flags robust auswerten (true/"true"/1):
-      const canEditTitle = typeof asBool === 'function' ? asBool(p.titleUserEditable) : !!p.titleUserEditable;
-      const canEditBody  = typeof asBool === 'function' ? asBool(p.bodyUserEditable)  : !!p.bodyUserEditable;
+      const canEditTitle = (typeof asBool==='function') ? asBool(p.titleUserEditable) : !!p.titleUserEditable;
+      const canEditBody  = (typeof asBool==='function') ? asBool(p.bodyUserEditable)  : !!p.bodyUserEditable;
 
       if (canEditTitle && chTitle) {
         // sicherstellen, dass editierbar
@@ -3230,16 +3226,17 @@ document.addEventListener('DOMContentLoaded', async function() {
           rtDebTitle = setTimeout(() => {
             if (typeof sendRT !== 'function') return;
 
-            const list = Array.from(document.querySelectorAll('.board-description-box'));
-            const idx  = list.indexOf(el);
+            const nodes = Array.from(document.querySelectorAll('.board-cardholder'));
+            const idx   = nodes.indexOf(parentEl);
+
             if (idx === -1) return;
 
-            sendRT({
-              t: 'desc_update',
-              idx,
-              part: 'title',
-              text: title.textContent || '',
-              prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
+            sendRT({ 
+              t: 'cardholder_update', 
+              idx, 
+              part, 
+              text: node.textContent, 
+              prio: (typeof RT_PRI==='function' ? RT_PRI() : 1), 
               ts: Date.now()
             });
           }, 100);
