@@ -2854,6 +2854,22 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (canEditTitle) setupOneTimeClear(title,       defaultTitle);
       if (canEditBody)  setupOneTimeClear(bodyEditable, defaultBody);
 
+      // Fallback: leeres Feld -> Standardtext wiederherstellen (und beim Fokus wieder ausblenden)
+      function setupFallback(node, defaultVal) {
+        const def = (defaultVal || '').trim();
+        node.dataset.default = def; // wichtig fürs Capture, s.u.
+        node.addEventListener('focus', () => {
+          if ((node.textContent || '').trim() === def) node.textContent = '';
+        });
+        node.addEventListener('blur', () => {
+          if ((node.textContent || '').trim() === '') node.textContent = def;
+        });
+      }
+
+      if (canEditTitle) setupFallback(title,       defaultTitle);
+      if (canEditBody)  setupFallback(bodyEditable, defaultBody);
+
+
       // AUTOSAVE: FocusNote – Änderungen triggern Save
       if (typeof saveCurrentBoardState === 'function') {
         const trigger = () => {
@@ -3172,16 +3188,23 @@ document.addEventListener('DOMContentLoaded', async function() {
       title.style.textAlign = ['left','center','right'].includes(p.textAlign) ? p.textAlign : 'center';
       title.dataset.default = title.textContent; // für Placeholder-Backup
 
-      // Body
+      // Body (transparentes, feldfüllendes Textfeld)
       const body = document.createElement('div');
       body.className = 'desc-content';
+      // Wichtig: bevorzugt die Builder-Schlüssel (text/heading) – body/title bleibt Fallback
       body.textContent = (p.text ?? p.body ?? '').trim() || 'Beschreibung';
+      body.style.flex = '0 0 auto';
+      body.style.marginTop = 'auto';
+      body.style.marginBottom = 'auto';
+
+      body.style.minHeight = '0';
       body.style.whiteSpace = 'pre-wrap';
-      body.style.wordBreak = 'break-word';
-      body.style.overflowWrap = 'anywhere';
-      body.style.textAlign = ['left','center','right'].includes(p.textAlign) ? p.textAlign : 'center';
-      body.style.marginTop = '6px';
-      body.style.flex = '1 1 auto';
+      body.style.wordBreak  = 'break-word';
+      body.style.overflow   = 'visible';
+      body.style.textAlign  = p.bodyAlign || p.textAlign || 'center';
+      body.style.background = 'transparent';
+      body.style.outline    = 'none';
+      body.style.border     = 'none';
       body.dataset.default = body.textContent;     // für Placeholder-Backup
 
       // Schrift-Eigenschaften
@@ -6086,14 +6109,19 @@ document.addEventListener('DOMContentLoaded', async function() {
       (display  && display.style.display !== 'none') ? display :
       (titleEl ? titleEl.nextElementSibling : wrap.querySelector('.desc-content, #focus-note-editable, #focus-note-display'));
 
-    const title = (titleEl?.textContent || '').trim();
-    const raw   = (bodyEl?.textContent  || '').trim();
+    const titleRaw = (titleEl?.textContent || '').trim();
+    const bodyRaw  = (bodyEl?.textContent  || '').trim();
 
-    // Platzhalter nicht mitschreiben
+    const tDef = (titleEl?.dataset?.default || '').trim();
+    const bDef = (bodyEl?.dataset?.default  || '').trim();
+
+    // auch alten Placeholder weiterhin abfangen
     const placeholder =
       editable?.dataset?.placeholder ||
       'Schreiben sie hier die Focus Note der Sitzung rein';
-    const body = (raw === placeholder ? '' : raw);
+
+    const title = (titleEl?.isContentEditable && titleRaw === tDef) ? '' : titleRaw;
+    const body  = ((bodyEl?.isContentEditable && bodyRaw === bDef) || bodyRaw === placeholder) ? '' : bodyRaw;
 
     return { title, body };
   }
