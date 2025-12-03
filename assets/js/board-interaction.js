@@ -6168,6 +6168,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const tRaw = (headerEl?.textContent || '').trim();
       const tDef = (headerEl?.dataset?.default || '').trim();
       const bDef = (bodyEl?.dataset?.default   || '').trim();
+      const bRaw = (bodyEl?.textContent || '').trim();
 
       out.push({
         idx,
