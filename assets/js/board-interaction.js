@@ -1434,7 +1434,7 @@ async function initRealtime(config) {
         el.dataset.color = m.color;
         el.style.setProperty('--note-bg', m.color);
         // Wenn kein fertiger Randton kommt, dunkel aus Farbe ableiten:
-        el.style.setProperty('--note-border', shadeHex(m.color, -18));
+        el.style.setProperty('--note-border', darken(m.color, 18));
         el.style.backgroundColor = m.color; // Fallback
       }
       if (typeof m.content === 'string') setNoteText(el, m.content);
@@ -4423,6 +4423,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     };
     const start = getPoint(e);
 
+    // Startposition unter dem Cursor (UNskaliert)
+    const wrapRect  = notesWrap.getBoundingClientRect();
+    const s         = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+
+    noteEl.style.position = 'absolute';
+    noteEl.style.left  = Math.round((start.x - wrapRect.left)  / s - noteEl.offsetWidth  / 2) + 'px';
+    noteEl.style.top   = Math.round((start.y - wrapRect.top)   / s - noteEl.offsetHeight / 2) + 'px';
+
     // Sofort: Auswahl deaktivieren + Grab-Cursor + Zettel nach ganz vorn
     document.body.classList.add('ccs-no-select');
     document.onselectstart = () => false;
@@ -4432,36 +4440,40 @@ document.addEventListener('DOMContentLoaded', async function() {
     let _rtTick = 0;
 
     // Bühne & Normalisierung
-    const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
-    const parent = noteEl.parentElement || document.querySelector('.board-area') || document.body;
-    const parentRect = parent.getBoundingClientRect();
-    const stageRect  = getStageRect();
-    const pxStage = ((parentRect.left - stageRect.left) / s) + (parseFloat(noteEl.style.left)||0);
-    const pyStage = ((parentRect.top  - stageRect.top ) / s) + (parseFloat(noteEl.style.top)||0);
-    const { nx, ny } = toNorm(pxStage, pyStage);
+    {
+      const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+      const parent    = noteEl.parentElement || document.querySelector('.board-area') || document.body;
+      const parentRect= parent.getBoundingClientRect();
+      const stageRect = getStageRect();
 
-    // initiale Erzeugung an alle
-    sendRT({
-      t: 'note_create',
-      id: noteEl.id,
-      nx, ny,
-      z: noteEl.style.zIndex || '',
-      w: noteEl.offsetWidth,
-      h: noteEl.offsetHeight,
-      color: getComputedStyle(noteEl).getPropertyValue('--note-bg') || noteEl.style.backgroundColor || '',
-      content: '' // leer zum Start
-    });
+      const px = parseFloat(noteEl.style.left) || 0;
+      const py = parseFloat(noteEl.style.top)  || 0;
 
-    // und optional sofort der erste move-Tick (macht die Position *sofort* stabil)
-    sendRT({ t: 'note_move', id: noteEl.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
+      const pxStage = ((parentRect.left - stageRect.left) / s) + px;
+      const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
+      const { nx, ny } = toNorm(pxStage, pyStage);
+
+      // Erzeugung an alle – jetzt mit korrekter Startposition
+      sendRT({
+        t: 'note_create',
+        id: noteEl.id,
+        nx, ny,
+        z: noteEl.style.zIndex || '',
+        w: noteEl.offsetWidth,
+        h: noteEl.offsetHeight,
+        color: getComputedStyle(noteEl).getPropertyValue('--note-bg') || noteEl.style.backgroundColor || '',
+        content: '' // leer zum Start
+      });
+
+      // erster move-Tick sofort hinterher, damit das Bild bei Zuschauern stabil ist
+      sendRT({ t:'note_move', id: noteEl.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
+    }
 
     // Direkt alle Handler/AutoGrow/etc. an die neue Notiz hängen
     try { if (typeof attachNoteResizeObserver === 'function') attachNoteResizeObserver(noteEl); } catch {}
     try { if (typeof attachNoteAutoGrow === 'function') attachNoteAutoGrow(noteEl); } catch {}
     try { if (typeof setupNoteEditingHandlers === 'function') setupNoteEditingHandlers(noteEl); } catch {}
     try { if (typeof enhanceDraggableNote === 'function') enhanceDraggableNote(noteEl); } catch {}
-
-    const wrapRect = notesWrap.getBoundingClientRect();
 
     // Startposition: direkt unter dem Cursor (statt Block-Ecke),
     // dadurch "klebt" der Zettel von Anfang an an der Griffposition.
