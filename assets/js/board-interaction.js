@@ -4439,31 +4439,56 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Note in den DOM hängen, damit Maße bekannt sind
     notesWrap.appendChild(noteEl);
     noteEl.style.position = 'absolute';
-    noteEl.style.zIndex = '100';
+    noteEl.style.zIndex = String(Math.max(getHighestZIndex() + 1, 1200));
 
-    // Bühne & Normalisierung
-    const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
-    const parent = noteEl.parentElement || document.querySelector('.board-area') || document.body;
-    const parentRect = parent.getBoundingClientRect();
-    const stageRect  = getStageRect();
-    const pxStage = ((parentRect.left - stageRect.left) / s) + (parseFloat(noteEl.style.left)||0);
-    const pyStage = ((parentRect.top  - stageRect.top ) / s) + (parseFloat(noteEl.style.top)||0);
-    const { nx, ny } = toNorm(pxStage, pyStage);
+    // --- Scale/Geometrie holen ---
+    const boardEl   = document.querySelector('.board-area') || document.body;
+    const s         = parseFloat(boardEl?.dataset.scale || '1') || 1;
+    const parent    = noteEl.parentElement || boardEl;
+    const parentRect= parent.getBoundingClientRect();
+    const srcRect   = (src && src.getBoundingClientRect) ? src.getBoundingClientRect() : parentRect;
+
+    // Klickpunkt innerhalb der Quelle als Anteil (0..1)
+    const clamp = (v,min,max)=>Math.max(min, Math.min(max,v));
+    const rx = clamp( (start.x - srcRect.left) / (srcRect.width  || 1), 0, 1 );
+    const ry = clamp( (start.y - srcRect.top ) / (srcRect.height || 1), 0, 1 );
+
+    // Nach dem Append sind Maße bekannt
+    const noteW = noteEl.offsetWidth  || 180;
+    const noteH = noteEl.offsetHeight || 180;
+
+    // Unskalierte Startposition so setzen, dass der Cursor relativ (rx/ry) im Zettel liegt
+    const leftUnscaled = ((start.x - parentRect.left) / s) - rx * noteW;
+    const topUnscaled  = ((start.y - parentRect.top ) / s) - ry * noteH;
+
+    noteEl.style.left = Math.round(leftUnscaled) + 'px';
+    noteEl.style.top  = Math.round(topUnscaled)  + 'px';
+
+    // Ganz wichtig: Grab-Offsets für die folgende Move-Phase setzen
+    let offsetX = rx * noteW;
+    let offsetY = ry * noteH;
+
+    // -> Erstzustand an alle senden (in Stage-Normalform)
+    const stageRect = getStageRect();
+    const pxStage = ((parentRect.left - stageRect.left) / s) + leftUnscaled;
+    const pyStage = ((parentRect.top  - stageRect.top ) / s) + topUnscaled;
 
     // initiale Erzeugung an alle
     sendRT({
       t: 'note_create',
       id: noteEl.id,
-      nx, ny,
+      nx: toNorm(pxStage, pyStage).nx,
+      ny: toNorm(pxStage, pyStage).ny,
       z: noteEl.style.zIndex || '',
-      w: noteEl.offsetWidth,
-      h: noteEl.offsetHeight,
+      w: noteW,
+      h: noteH,
       color: getComputedStyle(noteEl).getPropertyValue('--note-bg') || noteEl.style.backgroundColor || '',
       content: '' // leer zum Start
     });
 
-    // und optional sofort der erste move-Tick (macht die Position *sofort* stabil)
-    sendRT({ t: 'note_move', id: noteEl.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
+    // und sofort einen ersten move-Tick
+    sendRT({ t:'note_move', id: noteEl.id, nx: toNorm(pxStage, pyStage).nx, ny: toNorm(pxStage, pyStage).ny, prio: RT_PRI(), ts: Date.now() });
+
 
     // Direkt alle Handler/AutoGrow/etc. an die neue Notiz hängen
     try { if (typeof attachNoteResizeObserver === 'function') attachNoteResizeObserver(noteEl); } catch {}
@@ -4475,8 +4500,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Start: Zettel direkt unter dem Cursor, aber mit "Grab-Offset" exakt da, wo geklickt wurde:
     const rect0 = noteEl.getBoundingClientRect();
-    let offsetX = (start.x - rect0.left);
-    let offsetY = (start.y - rect0.top);
 
     // In unskalierten px für style.left/top umrechnen
     let left = (start.x - parentRect.left + notesWrap.scrollLeft) - (offsetX);
@@ -4509,13 +4532,14 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     let last = { x: start.x, y: start.y };
     const onMove = (ev) => {
-      const p = getPoint(ev);
-      const dx = p.x - last.x;
-      const dy = p.y - last.y;
-      left += dx; top += dy;
-      noteEl.style.left = left + 'px';
-      noteEl.style.top  = top  + 'px';
-      last = p;
+      ev.preventDefault();
+      const t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]) || ev;
+      const curXu = (t.clientX - parentRect.left) / s;
+      const curYu = (t.clientY - parentRect.top ) / s;
+      const newX  = Math.round(curXu - offsetX);
+      const newY  = Math.round(curYu - offsetY);
+      noteEl.style.left = newX + 'px';
+      noteEl.style.top  = newY + 'px';
       emitMove();
       try { ev.preventDefault(); } catch {}
     };
