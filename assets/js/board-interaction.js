@@ -215,7 +215,21 @@ function normalizeTemplate(raw) {
   return { worldW, worldH, bgColor, bgImage, widgets };
 }
 
-
+// ---- Color helper: shadeHex (negativ = abdunkeln, positiv = aufhellen)
+function shadeHex(hex, amt) {
+  const h = String(hex || '').replace('#', '');
+  const s = h.length === 3 ? h.split('').map(c => c + c).join('') : h.padEnd(6, '0');
+  let r = parseInt(s.slice(0,2), 16) || 0;
+  let g = parseInt(s.slice(2,4), 16) || 0;
+  let b = parseInt(s.slice(4,6), 16) || 0;
+  const d = Math.round(2.55 * Math.abs(amt));
+  if (amt < 0) { r = r - d; g = g - d; b = b - d; } else { r = r + d; g = g + d; b = b + d; }
+  r = Math.max(0, Math.min(255, r));
+  g = Math.max(0, Math.min(255, g));
+  b = Math.max(0, Math.min(255, b));
+  const toHex = n => n.toString(16).padStart(2, '0');
+  return '#' + toHex(r) + toHex(g) + toHex(b);
+}
 
 function isNoteFull(notiz, content, anticipateExtraLine) {
   try {
@@ -641,8 +655,8 @@ function ensureNoteEl(id) {
   }
 
   try {
-    if (typeof enhanceDraggableNote === 'function') {
-      enhanceDraggableNote(noteEl);
+    if (typeof makeDraggable === 'function') {
+      makeDraggable(noteEl);
     }
   } catch (e) {
     console.warn('[ensureNoteEl] makeDraggable Fehler', e);
@@ -1434,7 +1448,7 @@ async function initRealtime(config) {
         el.dataset.color = m.color;
         el.style.setProperty('--note-bg', m.color);
         // Wenn kein fertiger Randton kommt, dunkel aus Farbe ableiten:
-        el.style.setProperty('--note-border', darken(m.color, 18));
+        el.style.setProperty('--note-border', shadeHex(m.color, -18));
         el.style.backgroundColor = m.color; // Fallback
       }
       if (typeof m.content === 'string') setNoteText(el, m.content);
@@ -1493,17 +1507,6 @@ async function initRealtime(config) {
       if (m.h) el.style.height = Math.round(m.h) + 'px';
 
       // Beim Owner aktuellen Zustand persistieren (wie gehabt)
-      if (isOwner && isOwner()) { saveCurrentBoardState?.('rt'); }
-      return;
-    }
-
-    if (m.t === 'note_size') {
-      if (!shouldApply(m.id, m.prio || 1)) return;
-      const { el } = ensureNoteEl(m.id);
-      if (typeof m.w === 'number') el.style.width  = Math.round(m.w) + 'px';
-      if (typeof m.h === 'number') el.style.height = Math.round(m.h) + 'px';
-      // AutoGrow danach einmal anstoßen, damit Textfluss/Scroll-Flag sauber sind
-      if (el._autoGrowRecalc) el._autoGrowRecalc();
       if (isOwner && isOwner()) { saveCurrentBoardState?.('rt'); }
       return;
     }
@@ -2053,23 +2056,24 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (rect.width > max.width) {
             entry.target.style.width = max.width + 'px';
             changed = true;
+            if (changed) {
+              debouncedSave();
+              const wNow = parseFloat(noteEl.style.width)  || null;
+              const hNow = parseFloat(noteEl.style.height) || null;
+              sendRT({ t:'note_update', id: noteEl.id, w: wNow, h: hNow, prio: RT_PRI(), ts: Date.now() });
+            }
           }
           if (rect.height > max.height) {
             entry.target.style.height = max.height + 'px';
             changed = true;
+            if (changed) {
+              debouncedSave();
+              const wNow = parseFloat(noteEl.style.width)  || null;
+              const hNow = parseFloat(noteEl.style.height) || null;
+              sendRT({ t:'note_update', id: noteEl.id, w: wNow, h: hNow, prio: RT_PRI(), ts: Date.now() });
+            }
           }
         });
-        if (changed) {
-          // sehr kleiner Debounce, damit Autolayout/Clamp nicht gespammt wird
-          clearTimeout(noteEl._rtSizeDeb);
-          const W = Math.round(w);
-          const H = Math.round(h);
-          noteEl._rtSizeDeb = setTimeout(() => {
-            try {
-              sendRT({ t: 'note_size', id: noteEl.id, w: W, h: H, prio: RT_PRI(), ts: Date.now() });
-            } catch (e) { /* optional: console.warn */ }
-          }, 40);
-        }
         if (changed) debouncedSave();
       });
       ro.observe(noteEl);
@@ -2229,29 +2233,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         const wasFull = noteIsFull;
 
         // 1) Platzhalter erkennen und NICHT zum Messen benutzen
-        const rawText = ((content.innerText || content.textContent || '') + '')
-          .replace(/\u200B/g, ''); // zero-width chars raus
-
-        const placeholder = content.getAttribute('data-placeholder');
-        const isPlaceholder = placeholder &&
-          rawText.trim() === placeholder.trim();
-
+        const rawText = ((content.innerText || content.textContent || '') + '').replace(/\u200B/g, ''); // zero-width raus
+        const placeholder   = content.getAttribute('data-placeholder');
+        const isPlaceholder = placeholder && rawText.trim() === placeholder.trim();
         if (isPlaceholder) {
-          // Neuer Zettel: einfach bei der Ausgangsgröße bleiben
+          // Neuer Zettel: bei Ausgangsgröße bleiben
           const targetW = Math.max(minW, Math.min(max.width,  currentW || minW));
           const targetH = Math.max(minH, Math.min(max.height, currentH || minH));
           noteEl.style.width  = targetW + 'px';
           noteEl.style.height = targetH + 'px';
           noteEl._autoGrowInProgress = false;
-
-          clearTimeout(noteEl._rtSizeDebGrow);
-          const W = Math.round(targetW);
-          const H = Math.round(targetH);
-          noteEl._rtSizeDebGrow = setTimeout(() => {
-            try {
-              sendRT({ t:'note_size', id: noteEl.id, w: W, h: H, prio: RT_PRI(), ts: Date.now() });
-            } catch {}
-          }, 50);
           return;
         }
 
@@ -2295,16 +2286,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         // "Roh"-Zielhöhe (ungeclamped) berechnen
         const rawTargetH = Math.ceil(content.scrollHeight + padY);
 
-        // >>> NEU: harter Schutz, damit keine leere Zusatzzeile stehen bleibt <<<
-        // Wenn die Note bereits als „voll“ markiert war und der neue Inhalt
-        // jetzt über die Maximalhöhe hinaus gehen würde, machen wir die
-        // letzte Änderung rückgängig (Enter oder Buchstabe wird visuell
-        // zurückgenommen).
+        // Harte Rücknahme, falls Note vorher "voll" war und jetzt über max wachsen würde
         if (wasFull && rawTargetH > max.height && lastSafeHTML) {
           if (content.innerHTML !== lastSafeHTML) {
             content.innerHTML = lastSafeHTML;
-
-            // Cursor wieder ans Ende setzen
+            // Cursor ans Ende setzen
             try {
               const sel = window.getSelection && window.getSelection();
               if (sel) {
@@ -2315,8 +2301,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 sel.addRange(range);
               }
             } catch {}
-
-            // Mit dem zurückgesetzten Inhalt noch einmal sauber rechnen
+            // Mit zurückgesetztem Inhalt erneut rechnen
             requestAnimationFrame(recalc);
           }
           return;
@@ -2329,26 +2314,23 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Aktuellen "Voll"-Status basierend auf Inhaltshöhe bestimmen
         const fullNow = rawTargetH >= max.height - 0.5;
 
-        // Haben wir in diesem Recalc zum ersten Mal das Höhen-Limit erreicht?
+        // Erstes Erreichen der Max-Höhe in dieser Runde?
         const hitMaxHeightNow = fullNow && currentH < max.height - 1;
-        if (hitMaxHeightNow) {
-          // Hinweis direkt an der Notiz
-          if (typeof showNoteFullWarning === 'function') {
-            showNoteFullWarning(noteEl);
-          }
+        if (hitMaxHeightNow && typeof showNoteFullWarning === 'function') {
+          showNoteFullWarning(noteEl);
         }
 
         // Flag + Toast nur bei Statuswechsel setzen
         if (fullNow && !noteIsFull) {
           noteIsFull = true;
-          noteEl.dataset.noteHeightFull = '1'; // wird von isNoteFull() benutzt
+          noteEl.dataset.noteHeightFull = '1';
           showNoteLimitMessage();
         } else if (!fullNow && noteIsFull) {
           noteIsFull = false;
           delete noteEl.dataset.noteHeightFull;
         }
 
-        // "sicheren" Inhalt merken, solange alles in die Note passt
+        // „Sicheren“ Inhalt merken, solange alles reinpasst
         if (rawTargetH <= max.height) {
           lastSafeHTML = content.innerHTML;
         }
@@ -2361,7 +2343,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           noteEl.style.height = targetH + 'px';
         }
 
-        // Bei Max-Höhe: Scroll erlauben, sonst einfach wachsen lassen
+        // Bei Max-Höhe: Scroll erlauben, sonst wachsen lassen
         if (rawTargetH > max.height) {
           noteEl.style.overflowY = 'auto';
         } else {
@@ -2372,6 +2354,37 @@ document.addEventListener('DOMContentLoaded', async function() {
         content.style.whiteSpace   = 'pre-wrap';
         content.style.wordBreak    = 'break-word';
         content.style.overflowWrap = 'anywhere';
+
+        // === NEU: Auto-Grow-Größe an alle synchronisieren ======================
+        // Nur der aktive Editor broadcastet (vermeidet Echo-Schleifen bei Remote-Updates)
+        const iEdit = noteEl.classList?.contains('is-editing') ||
+                      (noteEl.dataset.lockedBy && window.RT && String(noteEl.dataset.lockedBy) === String(RT.uid));
+
+        if (iEdit && typeof window.sendRT === 'function') {
+          // Zu sendende unskalierte Zielwerte bestimmen (Style bevorzugen, sonst messen)
+          const wSend = Math.round(parseFloat(noteEl.style.width)  || (noteEl.getBoundingClientRect().width  / sx));
+          const hSend = Math.round(parseFloat(noteEl.style.height) || (noteEl.getBoundingClientRect().height / sy));
+
+          const last = noteEl._lastAutoGrowSent || { w: 0, h: 0, t: 0 };
+          const changed = (Math.abs(wSend - last.w) > 1) || (Math.abs(hSend - last.h) > 1);
+
+          const now = Date.now();
+          // Leicht drosseln, damit nicht jeder Pixelwurf gesendet wird
+          if (changed && (now - last.t > 60)) {
+            noteEl._lastAutoGrowSent = { w: wSend, h: hSend, t: now };
+            const prio = (typeof RT_PRI === 'function') ? RT_PRI() : 1;
+            window.sendRT({
+              t: 'note_update',
+              id: noteEl.id,
+              w: wSend,
+              h: hSend,
+              prio,
+              ts: now
+            });
+          }
+        }
+        // =======================================================================
+
       } catch (err) {
         console.error('[NOTE AUTOGROW] Fehler bei recalc()', err);
       } finally {
@@ -4423,51 +4436,34 @@ document.addEventListener('DOMContentLoaded', async function() {
     };
     const start = getPoint(e);
 
-    // Startposition unter dem Cursor (UNskaliert)
-    const wrapRect  = notesWrap.getBoundingClientRect();
-    const s         = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
-
+    // Note in den DOM hängen, damit Maße bekannt sind
+    notesWrap.appendChild(noteEl);
     noteEl.style.position = 'absolute';
-    noteEl.style.left  = Math.round((start.x - wrapRect.left)  / s - noteEl.offsetWidth  / 2) + 'px';
-    noteEl.style.top   = Math.round((start.y - wrapRect.top)   / s - noteEl.offsetHeight / 2) + 'px';
-
-    // Sofort: Auswahl deaktivieren + Grab-Cursor + Zettel nach ganz vorn
-    document.body.classList.add('ccs-no-select');
-    document.onselectstart = () => false;
-    document.body.style.cursor = 'grabbing';
-    noteEl.style.zIndex = String(getHighestZIndex() + 1);
-    // Tick-Zeitstempel für Live-RT während des ersten Abziehens
-    let _rtTick = 0;
+    noteEl.style.zIndex = '100';
 
     // Bühne & Normalisierung
-    {
-      const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
-      const parent    = noteEl.parentElement || document.querySelector('.board-area') || document.body;
-      const parentRect= parent.getBoundingClientRect();
-      const stageRect = getStageRect();
+    const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
+    const parent = noteEl.parentElement || document.querySelector('.board-area') || document.body;
+    const parentRect = parent.getBoundingClientRect();
+    const stageRect  = getStageRect();
+    const pxStage = ((parentRect.left - stageRect.left) / s) + (parseFloat(noteEl.style.left)||0);
+    const pyStage = ((parentRect.top  - stageRect.top ) / s) + (parseFloat(noteEl.style.top)||0);
+    const { nx, ny } = toNorm(pxStage, pyStage);
 
-      const px = parseFloat(noteEl.style.left) || 0;
-      const py = parseFloat(noteEl.style.top)  || 0;
+    // initiale Erzeugung an alle
+    sendRT({
+      t: 'note_create',
+      id: noteEl.id,
+      nx, ny,
+      z: noteEl.style.zIndex || '',
+      w: noteEl.offsetWidth,
+      h: noteEl.offsetHeight,
+      color: getComputedStyle(noteEl).getPropertyValue('--note-bg') || noteEl.style.backgroundColor || '',
+      content: '' // leer zum Start
+    });
 
-      const pxStage = ((parentRect.left - stageRect.left) / s) + px;
-      const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
-      const { nx, ny } = toNorm(pxStage, pyStage);
-
-      // Erzeugung an alle – jetzt mit korrekter Startposition
-      sendRT({
-        t: 'note_create',
-        id: noteEl.id,
-        nx, ny,
-        z: noteEl.style.zIndex || '',
-        w: noteEl.offsetWidth,
-        h: noteEl.offsetHeight,
-        color: getComputedStyle(noteEl).getPropertyValue('--note-bg') || noteEl.style.backgroundColor || '',
-        content: '' // leer zum Start
-      });
-
-      // erster move-Tick sofort hinterher, damit das Bild bei Zuschauern stabil ist
-      sendRT({ t:'note_move', id: noteEl.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
-    }
+    // und optional sofort der erste move-Tick (macht die Position *sofort* stabil)
+    sendRT({ t: 'note_move', id: noteEl.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
 
     // Direkt alle Handler/AutoGrow/etc. an die neue Notiz hängen
     try { if (typeof attachNoteResizeObserver === 'function') attachNoteResizeObserver(noteEl); } catch {}
@@ -4475,78 +4471,74 @@ document.addEventListener('DOMContentLoaded', async function() {
     try { if (typeof setupNoteEditingHandlers === 'function') setupNoteEditingHandlers(noteEl); } catch {}
     try { if (typeof enhanceDraggableNote === 'function') enhanceDraggableNote(noteEl); } catch {}
 
-    // Startposition: direkt unter dem Cursor (statt Block-Ecke),
-    // dadurch "klebt" der Zettel von Anfang an an der Griffposition.
-    let left = start.x - wrapRect.left + notesWrap.scrollLeft - (noteEl.offsetWidth  / 2);
-    let top  = start.y - wrapRect.top  + notesWrap.scrollTop  - (noteEl.offsetHeight / 2);
- 
+    const wrapRect = notesWrap.getBoundingClientRect();
+
+    // Start: Zettel direkt unter dem Cursor, aber mit "Grab-Offset" exakt da, wo geklickt wurde:
+    const rect0 = noteEl.getBoundingClientRect();
+    let offsetX = (start.x - rect0.left);
+    let offsetY = (start.y - rect0.top);
+
+    // In unskalierten px für style.left/top umrechnen
+    let left = (start.x - parentRect.left + notesWrap.scrollLeft) - (offsetX);
+    let top  = (start.y - parentRect.top  + notesWrap.scrollTop ) - (offsetY);
+
+    // initial positionieren
     noteEl.style.left = Math.round(left) + 'px';
     noteEl.style.top  = Math.round(top)  + 'px';
 
-    // 6) Drag-Logik
-    let last = { x: start.x, y: start.y };
+    // jetzt ERST die korrekte Normal-Position berechnen & senden:
+    (function sendCreateSnapshot(){
+      const pxStage = ((parentRect.left - stageRect.left) / s) + left;
+      const pyStage = ((parentRect.top  - stageRect.top ) / s) + top;
+      const { nx, ny } = toNorm(pxStage, pyStage);
+      // Farbe etc. mitgeben – Empfänger kann sofort rendern
+      sendRT({ t:'note_create', id: noteEl.id, nx, ny, color: bgBase, prio: RT_PRI(), ts: Date.now() });
+    })();
 
+    // Live-RT Move (gedrosselt ~30fps)
+    let lastEmit = 0;
+    function emitMove() {
+      const now = performance.now();
+      if (now - lastEmit < 33) return;
+      lastEmit = now;
+      const pxStage = ((parentRect.left - stageRect.left) / s) + left;
+      const pyStage = ((parentRect.top  - stageRect.top ) / s) + top;
+      const { nx, ny } = toNorm(pxStage, pyStage);
+      sendRT({ t:'note_move', id: noteEl.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
+    }
+
+    let last = { x: start.x, y: start.y };
     const onMove = (ev) => {
       const p = getPoint(ev);
       const dx = p.x - last.x;
       const dy = p.y - last.y;
-      left += dx;
-      top  += dy;
+      left += dx; top += dy;
       noteEl.style.left = left + 'px';
       noteEl.style.top  = top  + 'px';
       last = p;
-      try { ev.preventDefault(); } catch (_) {}
-      
-      // ~30/s Position als Normalform an alle senden (auch beim ersten Abziehen)
-      const now = performance.now();
-      if (now - _rtTick >= 33) {
-        _rtTick = now;
-        const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
-        const parentRect = (noteEl.parentElement || document.querySelector('.board-area') || document.body).getBoundingClientRect();
-        const stageRect  = getStageRect();
-        const pxStage = ((parentRect.left - stageRect.left) / s) + left;
-        const pyStage = ((parentRect.top  - stageRect.top ) / s) + top;
-        const { nx, ny } = toNorm(pxStage, pyStage);
-        sendRT({ t:'note_move', id: noteEl.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
-      }
+      emitMove();
+      try { ev.preventDefault(); } catch {}
     };
 
     const onUp = (ev) => {
-
-      // Auswahl wieder zulassen + Cursor zurück
-      document.body.classList.remove('ccs-no-select');
-      document.onselectstart = null;
-      document.body.style.removeProperty('cursor');
-
-      // Cleanup Listener
       window.removeEventListener(isTouch ? 'touchmove' : 'pointermove', onMove, { capture: true });
       window.removeEventListener(isTouch ? 'touchend'  : 'pointerup',   onUp,   { capture: true });
       window.removeEventListener(isTouch ? 'touchcancel':'pointercancel', onUp, { capture: true });
 
-      // KEIN automatischer Edit-Start mehr – Nutzer muss explizit doppelklicken
+      // finaler Schnappschuss (wie bei bestehenden Notes)
+      const pxStage = ((parentRect.left - stageRect.left) / s) + left;
+      const pyStage = ((parentRect.top  - stageRect.top ) / s) + top;
+      const { nx, ny } = toNorm(pxStage, pyStage);
+      sendRT({ t:'note_move', id: noteEl.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
 
-      // Finalen Schnappschuss der Position senden (damit alle exakt gleich „landen“)
-      try {
-        const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
-        const parentRect = (noteEl.parentElement || document.querySelector('.board-area') || document.body).getBoundingClientRect();
-        const stageRect  = getStageRect();
-        const px = parseFloat(noteEl.style.left) || 0;
-        const py = parseFloat(noteEl.style.top)  || 0;
-        const pxStage = ((parentRect.left - stageRect.left) / s) + px;
-        const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
-        const { nx, ny } = toNorm(pxStage, pyStage);
-        sendRT({ t:'note_move', id: noteEl.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
-      } catch {}
-
-      // Optional: Autosave, falls vorhanden
       try {
         if (typeof scheduleAutosave === 'function') scheduleAutosave('note:add');
         else if (typeof saveBoardStateDebounced === 'function') saveBoardStateDebounced();
         else if (typeof saveBoardState === 'function') saveBoardState();
       } catch {}
-
-      try { ev.preventDefault(); } catch (_) {}
+      try { ev.preventDefault(); } catch {}
     };
+
 
     // Listener registrieren
     window.addEventListener(isTouch ? 'touchmove' : 'pointermove', onMove, { capture: true, passive: false });
@@ -4593,28 +4585,26 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (content.dataset.editHandlersAttached === '1') return;
     content.dataset.editHandlersAttached = '1';
 
-    let _rtNoteDeb = null;
+    // Smoother Text-Sync wie bei FocusNote/DescriptionBox:
+    const sendNoteUpdateDebounced = (() => {
+      let t;
+      return () => {
+        clearTimeout(t);
+        t = setTimeout(() => {
+          sendRT({
+            t: 'note_update',
+            id: notiz.id,
+            content: getNoteText(notiz),
+            prio: RT_PRI(),
+            ts: Date.now()
+          });
+        }, 60);
+      };
+    })();
 
-    // RT-Update beim Tippen (nur eigener Inhalt, nicht der Platzhalter)
-    content.addEventListener('input', () => {
-      clearTimeout(_rtNoteDeb);
-      _rtNoteDeb = setTimeout(() => {
-        sendRT({
-          t: 'note_update',
-          id: notiz.id,
-          content: getNoteText(notiz),
-          prio: RT_PRI(),
-          ts: Date.now()
-        });
-      }, 60);
-    });
-
-    ['beforeinput','keyup','paste','cut','compositionend'].forEach(ev => {
-      content.addEventListener(ev, () => {
-        // denselben Debounce wie bei 'input' nutzen:
-        content.dispatchEvent(new Event('input'));
-      });
-    });
+    // Alle relevanten Eingabewege abdecken (IME, Paste, Cut, Keyup usw.)
+    ['input', 'beforeinput', 'keyup', 'paste', 'cut', 'compositionend']
+      .forEach(evt => content.addEventListener(evt, sendNoteUpdateDebounced));
 
     // Doppelklick zum Bearbeiten
     notiz.addEventListener('dblclick', (e) => {
@@ -4783,10 +4773,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       }
     });
-
-
-
-
 
     // Bearbeitung beenden, wenn außerhalb geklickt wird
     function endEditing() {
