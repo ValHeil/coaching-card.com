@@ -4536,6 +4536,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const newY  = Math.round(curYu - offsetY);
       noteEl.style.left = newX + 'px';
       noteEl.style.top  = newY + 'px';
+      left = newX;
+      top  = newY;
       emitMove();
       try { ev.preventDefault(); } catch {}
     };
