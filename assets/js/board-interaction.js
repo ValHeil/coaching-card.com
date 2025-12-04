@@ -4473,23 +4473,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     const pxStage = ((parentRect.left - stageRect.left) / s) + leftUnscaled;
     const pyStage = ((parentRect.top  - stageRect.top ) / s) + topUnscaled;
 
-    // initiale Erzeugung an alle
-    sendRT({
-      t: 'note_create',
-      id: noteEl.id,
-      nx: toNorm(pxStage, pyStage).nx,
-      ny: toNorm(pxStage, pyStage).ny,
-      z: noteEl.style.zIndex || '',
-      w: noteW,
-      h: noteH,
-      color: getComputedStyle(noteEl).getPropertyValue('--note-bg') || noteEl.style.backgroundColor || '',
-      content: '' // leer zum Start
-    });
-
-    // und sofort einen ersten move-Tick
-    sendRT({ t:'note_move', id: noteEl.id, nx: toNorm(pxStage, pyStage).nx, ny: toNorm(pxStage, pyStage).ny, prio: RT_PRI(), ts: Date.now() });
-
-
     // Direkt alle Handler/AutoGrow/etc. an die neue Notiz hängen
     try { if (typeof attachNoteResizeObserver === 'function') attachNoteResizeObserver(noteEl); } catch {}
     try { if (typeof attachNoteAutoGrow === 'function') attachNoteAutoGrow(noteEl); } catch {}
@@ -4510,12 +4493,25 @@ document.addEventListener('DOMContentLoaded', async function() {
     noteEl.style.top  = Math.round(top)  + 'px';
 
     // jetzt ERST die korrekte Normal-Position berechnen & senden:
-    (function sendCreateSnapshot(){
+    (function sendCreateOnce() {
       const pxStage = ((parentRect.left - stageRect.left) / s) + left;
       const pyStage = ((parentRect.top  - stageRect.top ) / s) + top;
       const { nx, ny } = toNorm(pxStage, pyStage);
-      // Farbe etc. mitgeben – Empfänger kann sofort rendern
-      sendRT({ t:'note_create', id: noteEl.id, nx, ny, color: bgBase, prio: RT_PRI(), ts: Date.now() });
+
+      const createMsg = {
+        t: 'note_create',
+        id: noteEl.id,
+        nx, ny,
+        z: noteEl.style.zIndex || '',
+        w: noteEl.offsetWidth,
+        h: noteEl.offsetHeight,
+        color: bgBase,      // bereits ermittelte Basisfarbe verwenden
+        content: '',        // leer zum Start
+        prio: RT_PRI(),
+        ts: Date.now()
+      };
+
+      sendRT(createMsg);
     })();
 
     // Live-RT Move (gedrosselt ~30fps)
