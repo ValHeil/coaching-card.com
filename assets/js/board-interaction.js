@@ -6438,54 +6438,61 @@ document.addEventListener('DOMContentLoaded', async function() {
   function restoreFocusNote(state, perms) {
     if (!state) return;
 
-    const wrap         = document.querySelector('.focus-note-area');
-    const titleEl      = wrap?.querySelector('.focus-note-title, .desc-title, h2');
+    const wrap         = document.querySelector('.focus-note-area') || document.querySelector('.focus-note');
+    const titleEl      = wrap?.querySelector('.focus-note-title, .desc-title, h2') || document.getElementById('focus-note-title');
     const bodyEditable = document.getElementById('focus-note-editable');
     const bodyDisplay  = document.getElementById('focus-note-display');
 
-    // Backwards-Compat: früher war state nur der Body als String
+    // --- Backwards-Compat: früher war state nur der Body als String ---
     if (typeof state === 'string') {
+      const bodyText = state || '';
       if (bodyDisplay) {
-        bodyDisplay.textContent = state;
-        bodyDisplay.classList.toggle('has-content', !!state);
+        bodyDisplay.textContent = bodyText;
+        bodyDisplay.classList.toggle('has-content', !!bodyText.trim());
       }
-      if (bodyEditable) bodyEditable.textContent = state;
+      if (bodyEditable) bodyEditable.textContent = bodyText;
       return;
     }
 
-    const titleE1 = state.title ?? '';
-    const bodyEl  = state.body  ?? '';
+    // Ab hier: neues Format { title, body }
+    const titleText = (typeof state.title === 'string') ? state.title : '';
+    const bodyText  = (typeof state.body  === 'string') ? state.body  : '';
 
-    if (titleE1) {
-      const tRaw = (typeof d.title === 'string') ? d.title : '';
-      const hasDefault = !!(titleEl.dataset && titleEl.dataset.default);
-      const current = (titleEl.textContent || '').trim();
+    // -------- Titel wiederherstellen --------
+    if (titleEl) {
+      const defTitle = (titleEl.dataset && titleEl.dataset.default ? titleEl.dataset.default : '').trim();
+      const current  = (titleEl.textContent || '').trim();
+      const t        = titleText.trim();
 
-      if (tRaw.trim() === '' && !hasDefault && current !== '') {
-        // Nichts überschreiben – Template-Text behalten
-      } else {
-        titleEl.textContent = tRaw.trim() === ''
-          ? (titleEl.dataset?.default || current)
-          : tRaw;
+      // Falls nix gespeichert und kein default → bestehenden Template-Text lassen
+      if (!(t === '' && !defTitle && current !== '')) {
+        titleEl.textContent = (t === '' ? (defTitle || current) : t);
       }
     }
 
-
+    // -------- Body wiederherstellen --------
+    // Primär das Edit-Feld benutzen, ansonsten das Display-Feld
+    const bodyEl = bodyEditable || bodyDisplay || wrap?.querySelector('.desc-content');
     if (bodyEl) {
-      const bRaw = (typeof d.body === 'string') ? d.body : '';
-      const hasDefault = !!(bodyEl.dataset && bodyEl.dataset.default);
+      const defBody = (bodyEl.dataset && bodyEl.dataset.default ? bodyEl.dataset.default : '').trim();
       const current = (bodyEl.textContent || '').trim();
+      const b       = bodyText.trim();
 
-      if (bRaw.trim() === '' && !hasDefault && current !== '') {
-        // Nichts überschreiben – Template-Text behalten
-      } else {
-        bodyEl.textContent = bRaw.trim() === ''
-          ? (bodyEl.dataset?.default || current)
-          : bRaw;
+      if (!(b === '' && !defBody && current !== '')) {
+        const finalText = (b === '' ? (defBody || current) : b);
+
+        // Text in beide Varianten spiegeln
+        if (bodyEditable) bodyEditable.textContent = finalText;
+        if (bodyDisplay) {
+          bodyDisplay.textContent = finalText;
+          bodyDisplay.classList.toggle('has-content', !!finalText.trim());
+        } else {
+          bodyEl.textContent = finalText;
+        }
       }
     }
 
-    // Gespeicherte Edit-Flags anwenden (falls vorhanden)
+    // -------- gespeicherte Edit-Rechte anwenden --------
     if (perms && typeof perms === 'object') {
       const tEditable = !!perms.titleEditable;
       const bEditable = !!perms.bodyEditable;
@@ -6513,6 +6520,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }
   }
+
 
 
   function captureAllDescriptions() {
