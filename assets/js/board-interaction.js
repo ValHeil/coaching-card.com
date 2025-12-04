@@ -1099,6 +1099,65 @@ async function initRealtime(config) {
     if (el.style.top  !== top  + 'px') el.style.top  = top  + 'px';
   }
 
+  function applyIncomingNoteBox(m) {
+    // Box-Änderungen (w/h/color) pro Note separat arbitrieren
+    const key = `note_box:${m.id}`;
+    if (!shouldApply(key, m.prio || 1, m.ts || performance.now(), m.idFrom || null)) return;
+
+    const { el } = document.getElementById(m.id) ? { el: document.getElementById(m.id) } : ensureNoteEl(m.id);
+    if (m.w) el.style.width  = Math.round(m.w) + 'px';
+    if (m.h) el.style.height = Math.round(m.h) + 'px';
+    if (m.color) {
+      el.dataset.color = m.color;
+      el.style.setProperty('--note-bg', m.color);
+      el.style.setProperty('--note-border', (typeof shadeHex === 'function' ? shadeHex(m.color, -18) : m.color));
+      el.style.backgroundColor = m.color;
+    }
+    // Kein AutoGrow-Recalc nötig/gewünscht – verhindert Ping-Pong.
+    if (typeof isOwner === 'function' && isOwner()) { try { saveCurrentBoardState?.('rt'); } catch {} }
+  }
+
+  function applyIncomingNoteText(m) {
+    // Echo-Drop: wenn ich DIESE Notiz lokal editiere, keine Remote-Inhalte spiegeln
+    const isLocalEdit = (window.__isEditingNote === true && window.__editingNoteId === m.id);
+    if (isLocalEdit) return;
+
+    // Text-Änderungen separat arbitrieren → verdrängen Box-Frames nicht
+    const key = `note_text:${m.id}`;
+    if (!shouldApply(key, (m.prio || 1), m.ts || performance.now(), m.idFrom || null)) return;
+
+    const existing = document.getElementById(m.id);
+    const { el } = existing ? { el: existing } : ensureNoteEl(m.id);
+
+    if (typeof m.content === 'string') {
+      const getText = (typeof getNoteText === 'function')
+        ? () => getNoteText(el)
+        : () => (el.querySelector('.notiz-content')?.textContent || '');
+      const setText = (typeof setNoteText === 'function')
+        ? (txt) => setNoteText(el, txt)
+        : (txt) => { const c = el.querySelector('.notiz-content'); if (c) c.textContent = txt; };
+
+      const current = getText();
+      if (current !== m.content) {
+        setText(m.content);
+        // Sicherstellen, dass die Anzeige sofort passt (ohne Jitter):
+        if (el._autoGrowRecalc) { el._autoGrowRecalc(); }
+        else if (typeof attachNoteAutoGrow === 'function') { attachNoteAutoGrow(el); }
+      }
+    }
+
+    // Stiloptionen mitnehmen, aber Text bleibt führend
+    if (m.color) {
+      el.dataset.color = m.color;
+      el.style.setProperty('--note-bg', m.color);
+      el.style.setProperty('--note-border', (typeof shadeHex === 'function' ? shadeHex(m.color, -18) : m.color));
+      el.style.backgroundColor = m.color;
+    }
+
+    if (typeof isOwner === 'function' && isOwner()) { try { saveCurrentBoardState?.('rt'); } catch {} }
+  }
+
+
   function applyIncomingCursor(m) {
     const { width: worldW, height: worldH } = getWorldSize();
     const pxu = (typeof m.nx === 'number') ? m.nx * worldW : m.x;
@@ -1107,11 +1166,13 @@ async function initRealtime(config) {
     Presence.move(m.id, pxu, pyu, m.color, m.label);
   }
 
-  // 1b) Minimaler rAF-Batcher (neu), der NUR die Apply-Funktionen aufruft.
+  // 1b) Minimaler rAF-Batcher, der NUR die Apply-Funktionen aufruft.
   (function(){
-    const qCard   = new Map(); // id -> last payload
-    const qNote   = new Map(); // id -> last payload
-    const qCursor = new Map(); // id -> last payload
+    const qCard     = new Map(); // Karten-Moves
+    const qNoteMove = new Map(); // Notiz-Moves
+    const qNoteBox  = new Map(); // Notiz-Box (w/h/color)
+    const qNoteText = new Map(); // Notiz-Text
+    const qCursor   = new Map(); // Cursor
     let raf = 0;
 
     function schedule(){ if (raf) return; raf = requestAnimationFrame(flush); }
@@ -1121,33 +1182,37 @@ async function initRealtime(config) {
       window.__RT_APPLYING__ = true;
       document.documentElement.classList.add('rt-batch-apply');
 
-      // Karten zuerst (dein Apply)
-      qCard.forEach((m) => { try { applyIncomingCardMove(m); } catch(e){ console.warn(e); } });
+      // Reihenfolge: erst Moves, dann Box, dann Text (damit Text "gewinnt")
+      qCard.forEach((m)     => { try { applyIncomingCardMove(m); } catch(e){ console.warn(e); } });
       qCard.clear();
 
-      // Notizen
-      qNote.forEach((m) => { try { applyIncomingNoteMove(m); } catch(e){ console.warn(e); } });
-      qNote.clear();
+      qNoteMove.forEach((m) => { try { applyIncomingNoteMove(m); } catch(e){ console.warn(e); } });
+      qNoteMove.clear();
 
-      // Cursor zuletzt
-      qCursor.forEach((m) => { try { applyIncomingCursor(m); } catch(e){ console.warn(e); } });
+      qNoteBox.forEach((m)  => { try { applyIncomingNoteBox(m); } catch(e){ console.warn(e); } });
+      qNoteBox.clear();
+
+      qNoteText.forEach((m) => { try { applyIncomingNoteText(m); } catch(e){ console.warn(e); } });
+      qNoteText.clear();
+
+      qCursor.forEach((m)   => { try { applyIncomingCursor(m); } catch(e){ console.warn(e); } });
       qCursor.clear();
 
       document.documentElement.classList.remove('rt-batch-apply');
       window.__RT_APPLYING__ = false;
-      // Hinweis: boardStateUpdated wird in deinen Applys (Karte) ohnehin gefeuert.
-      // Ein Ereignis für alle gebündelten Änderungen
       document.dispatchEvent(new Event('boardStateUpdated'));
-      // Hinweis: boardStateUpdated wird in deinen Applys (Karte) ohnehin gefeuert.
     }
 
     // global nutzen
     window.RTFrame = {
       enqueueCard(m){ qCard.set(m.id, m); schedule(); },
-      enqueueNote(m){ qNote.set(m.id, m); schedule(); },
+      enqueueNote(m){ qNoteMove.set(m.id, m); schedule(); },   // bestehend: Moves
+      enqueueNoteBox(m){ qNoteBox.set(m.id, m); schedule(); }, // neu: Box
+      enqueueNoteText(m){ qNoteText.set(m.id, m); schedule(); }, // neu: Text
       enqueueCursor(m){ qCursor.set(m.id, m); schedule(); },
     };
   })();
+
 
 
   RT.ws.onmessage = (ev) => {
@@ -1463,53 +1528,15 @@ async function initRealtime(config) {
     }
 
     if (m.t === 'note_update') {
-      // Eigene Echos ignorieren, solange wir DIESE Notiz lokal editieren
-      const isLocalEdit =
-        (window.__isEditingNote === true && window.__editingNoteId === m.id);
-      L('UPDATE_RECV', { id: m.id, drop: isLocalEdit, len: (m.content||'').length });
-
-      if (isLocalEdit) return;
-
-      // Kollisionen/Prio beachten (wie gehabt)
-      if (!shouldApply(m.id, (m.prio || 1))) { L('UPDATE_DROPPED_BY_PRIO', { id: m.id }); return; }
-
-      // Notiz sicherstellen
-      const existing = document.getElementById(m.id);
-      const { el } = existing ? { el: existing } : ensureNoteEl(m.id);
-
-      // Text nur setzen, wenn er sich wirklich geändert hat
+      // Text-Updates vs. Box-Updates getrennt behandeln
       if (typeof m.content === 'string') {
-        const getText = (typeof getNoteText === 'function')
-          ? () => getNoteText(el)
-          : () => (el.querySelector('.notiz-content')?.textContent || '');
-        const setText = (typeof setNoteText === 'function')
-          ? (txt) => setNoteText(el, txt)
-          : (txt) => { const c = el.querySelector('.notiz-content'); if (c) c.textContent = txt; };
-
-        const current = getText();
-        if (current !== m.content) {
-          setText(m.content);
-          const current = getText();
-          if (current !== m.content) {
-            setText(m.content);
-
-            // neu: remote sofort neu vermessen (live AutoGrow)
-            if (el._autoGrowRecalc) { el._autoGrowRecalc(); }
-            else if (typeof attachNoteAutoGrow === 'function') { attachNoteAutoGrow(el); }
-          }
-          if (typeof attachNoteAutoGrow === 'function') attachNoteAutoGrow(el);
-        }
+        RTFrame.enqueueNoteText(m);
+      } else {
+        RTFrame.enqueueNoteBox(m);
       }
-
-      // Optionale Styles/Eigenschaften wie bisher übernehmen
-      if (m.color) { el.dataset.color = m.color; el.style.backgroundColor = m.color; }
-      if (m.w) el.style.width  = Math.round(m.w) + 'px';
-      if (m.h) el.style.height = Math.round(m.h) + 'px';
-
-      // Beim Owner aktuellen Zustand persistieren (wie gehabt)
-      if (isOwner && isOwner()) { saveCurrentBoardState?.('rt'); }
       return;
     }
+
 
     if (m.t === 'note_delete') {
       if (!shouldApply(m.id, m.prio || 1)) return;
@@ -2060,7 +2087,7 @@ document.addEventListener('DOMContentLoaded', async function() {
               debouncedSave();
               const wNow = parseFloat(noteEl.style.width)  || null;
               const hNow = parseFloat(noteEl.style.height) || null;
-              sendRT({ t:'note_update', id: noteEl.id, w: wNow, h: hNow, prio: RT_PRI(), ts: Date.now() });
+              sendRT({ t:'note_update', id: noteEl.id, w: wNow, h: hNow, prio: RT_PRI(), ts: Date.now(), idFrom: (window.RT && RT.uid) ? RT.uid : '' });
             }
           }
           if (rect.height > max.height) {
@@ -2070,7 +2097,7 @@ document.addEventListener('DOMContentLoaded', async function() {
               debouncedSave();
               const wNow = parseFloat(noteEl.style.width)  || null;
               const hNow = parseFloat(noteEl.style.height) || null;
-              sendRT({ t:'note_update', id: noteEl.id, w: wNow, h: hNow, prio: RT_PRI(), ts: Date.now() });
+              sendRT({ t:'note_update', id: noteEl.id, w: wNow, h: hNow, prio: RT_PRI(), ts: Date.now(), idFrom: (window.RT && RT.uid) ? RT.uid : '' });
             }
           }
         });
@@ -2355,7 +2382,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         content.style.wordBreak    = 'break-word';
         content.style.overflowWrap = 'anywhere';
 
-        // === NEU: Auto-Grow-Größe an alle synchronisieren ======================
+        // === Auto-Grow-Größe an alle synchronisieren ======================
         // Nur der aktive Editor broadcastet (vermeidet Echo-Schleifen bei Remote-Updates)
         const iEdit = noteEl.classList?.contains('is-editing') ||
                       (noteEl.dataset.lockedBy && window.RT && String(noteEl.dataset.lockedBy) === String(RT.uid));
@@ -2379,7 +2406,8 @@ document.addEventListener('DOMContentLoaded', async function() {
               w: wSend,
               h: hSend,
               prio,
-              ts: now
+              ts: now,
+              idFrom: (window.RT && RT.uid) ? RT.uid : ''
             });
           }
         }
@@ -4610,15 +4638,21 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Smoother Text-Sync wie bei FocusNote/DescriptionBox:
     const sendNoteUpdateDebounced = (() => {
       let t;
+      let lastSent = ''; // Dedupe: nur senden, wenn sich der Text wirklich änderte
       return () => {
         clearTimeout(t);
         t = setTimeout(() => {
+          const txt = getNoteText(notiz);
+          if (txt === lastSent) return;
+          lastSent = txt;
+          const idFrom = (window.RT && RT.uid) ? RT.uid : '';
           sendRT({
             t: 'note_update',
             id: notiz.id,
-            content: getNoteText(notiz),
+            content: txt,
             prio: RT_PRI(),
-            ts: Date.now()
+            ts: Date.now(),
+            idFrom
           });
         }, 60);
       };
