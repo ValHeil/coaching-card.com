@@ -641,8 +641,8 @@ function ensureNoteEl(id) {
   }
 
   try {
-    if (typeof makeDraggable === 'function') {
-      makeDraggable(noteEl);
+    if (typeof enhanceDraggableNote === 'function') {
+      enhanceDraggableNote(noteEl);
     }
   } catch (e) {
     console.warn('[ensureNoteEl] makeDraggable Fehler', e);
@@ -1497,6 +1497,17 @@ async function initRealtime(config) {
       return;
     }
 
+    if (m.t === 'note_size') {
+      if (!shouldApply(m.id, m.prio || 1)) return;
+      const { el } = ensureNoteEl(m.id);
+      if (typeof m.w === 'number') el.style.width  = Math.round(m.w) + 'px';
+      if (typeof m.h === 'number') el.style.height = Math.round(m.h) + 'px';
+      // AutoGrow danach einmal anstoßen, damit Textfluss/Scroll-Flag sauber sind
+      if (el._autoGrowRecalc) el._autoGrowRecalc();
+      if (isOwner && isOwner()) { saveCurrentBoardState?.('rt'); }
+      return;
+    }
+
     if (m.t === 'note_delete') {
       if (!shouldApply(m.id, m.prio || 1)) return;
       const note = document.getElementById(m.id);
@@ -2048,6 +2059,17 @@ document.addEventListener('DOMContentLoaded', async function() {
             changed = true;
           }
         });
+        if (changed) {
+          // sehr kleiner Debounce, damit Autolayout/Clamp nicht gespammt wird
+          clearTimeout(noteEl._rtSizeDeb);
+          const W = Math.round(w);
+          const H = Math.round(h);
+          noteEl._rtSizeDeb = setTimeout(() => {
+            try {
+              sendRT({ t: 'note_size', id: noteEl.id, w: W, h: H, prio: RT_PRI(), ts: Date.now() });
+            } catch (e) { /* optional: console.warn */ }
+          }, 40);
+        }
         if (changed) debouncedSave();
       });
       ro.observe(noteEl);
@@ -2221,6 +2243,15 @@ document.addEventListener('DOMContentLoaded', async function() {
           noteEl.style.width  = targetW + 'px';
           noteEl.style.height = targetH + 'px';
           noteEl._autoGrowInProgress = false;
+
+          clearTimeout(noteEl._rtSizeDebGrow);
+          const W = Math.round(targetW);
+          const H = Math.round(targetH);
+          noteEl._rtSizeDebGrow = setTimeout(() => {
+            try {
+              sendRT({ t:'note_size', id: noteEl.id, w: W, h: H, prio: RT_PRI(), ts: Date.now() });
+            } catch {}
+          }, 50);
           return;
         }
 
@@ -4392,10 +4423,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     };
     const start = getPoint(e);
 
-    // Note in den DOM hängen, damit Maße bekannt sind
-    notesWrap.appendChild(noteEl);
-    noteEl.style.position = 'absolute';
-    noteEl.style.zIndex = '100';
+    // Sofort: Auswahl deaktivieren + Grab-Cursor + Zettel nach ganz vorn
+    document.body.classList.add('ccs-no-select');
+    document.onselectstart = () => false;
+    document.body.style.cursor = 'grabbing';
+    noteEl.style.zIndex = String(getHighestZIndex() + 1);
+    // Tick-Zeitstempel für Live-RT während des ersten Abziehens
+    let _rtTick = 0;
 
     // Bühne & Normalisierung
     const s = parseFloat(document.querySelector('.board-area')?.dataset.scale || '1') || 1;
@@ -4450,15 +4484,47 @@ document.addEventListener('DOMContentLoaded', async function() {
       noteEl.style.top  = top  + 'px';
       last = p;
       try { ev.preventDefault(); } catch (_) {}
+      
+      // ~30/s Position als Normalform an alle senden (auch beim ersten Abziehen)
+      const now = performance.now();
+      if (now - _rtTick >= 33) {
+        _rtTick = now;
+        const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+        const parentRect = (noteEl.parentElement || document.querySelector('.board-area') || document.body).getBoundingClientRect();
+        const stageRect  = getStageRect();
+        const pxStage = ((parentRect.left - stageRect.left) / s) + left;
+        const pyStage = ((parentRect.top  - stageRect.top ) / s) + top;
+        const { nx, ny } = toNorm(pxStage, pyStage);
+        sendRT({ t:'note_move', id: noteEl.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
+      }
     };
 
     const onUp = (ev) => {
+
+      // Auswahl wieder zulassen + Cursor zurück
+      document.body.classList.remove('ccs-no-select');
+      document.onselectstart = null;
+      document.body.style.removeProperty('cursor');
+
       // Cleanup Listener
       window.removeEventListener(isTouch ? 'touchmove' : 'pointermove', onMove, { capture: true });
       window.removeEventListener(isTouch ? 'touchend'  : 'pointerup',   onUp,   { capture: true });
       window.removeEventListener(isTouch ? 'touchcancel':'pointercancel', onUp, { capture: true });
 
       // KEIN automatischer Edit-Start mehr – Nutzer muss explizit doppelklicken
+
+      // Finalen Schnappschuss der Position senden (damit alle exakt gleich „landen“)
+      try {
+        const s = parseFloat((document.querySelector('.board-area')?.dataset.scale) || '1') || 1;
+        const parentRect = (noteEl.parentElement || document.querySelector('.board-area') || document.body).getBoundingClientRect();
+        const stageRect  = getStageRect();
+        const px = parseFloat(noteEl.style.left) || 0;
+        const py = parseFloat(noteEl.style.top)  || 0;
+        const pxStage = ((parentRect.left - stageRect.left) / s) + px;
+        const pyStage = ((parentRect.top  - stageRect.top ) / s) + py;
+        const { nx, ny } = toNorm(pxStage, pyStage);
+        sendRT({ t:'note_move', id: noteEl.id, nx, ny, prio: RT_PRI(), ts: Date.now() });
+      } catch {}
 
       // Optional: Autosave, falls vorhanden
       try {
@@ -4529,6 +4595,13 @@ document.addEventListener('DOMContentLoaded', async function() {
           ts: Date.now()
         });
       }, 60);
+    });
+
+    ['beforeinput','keyup','paste','cut','compositionend'].forEach(ev => {
+      content.addEventListener(ev, () => {
+        // denselben Debounce wie bei 'input' nutzen:
+        content.dispatchEvent(new Event('input'));
+      });
     });
 
     // Doppelklick zum Bearbeiten
