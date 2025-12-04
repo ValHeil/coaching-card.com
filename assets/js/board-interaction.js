@@ -3090,8 +3090,44 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!allowed || !node) return;
 
         node.setAttribute('contenteditable', 'true');
+        node.setAttribute('spellcheck', 'true');
         node.dataset.default     = (defaultText || '').trim();
         node.dataset.placeholder = node.dataset.default;  // für Klarheit gleichsetzen
+
+        const isCardPart = (part === 'title' || part === 'body');
+        let rtDeb = null;
+
+        // --- Hilfsfunktionen -------------------------------------------------
+        const emitAutosave = () => {
+          try {
+            if (typeof debouncedSave === 'function') debouncedSave();
+          } catch {}
+        };
+
+        const emitRT = () => {
+          if (!isCardPart) return;
+          clearTimeout(rtDeb);
+          rtDeb = setTimeout(() => {
+            if (typeof sendRT !== 'function') return;
+
+            // Index dieses Cardholders im Board (wie bei desc_update)
+            const list = Array.from(document.querySelectorAll('.board-cardholder'));
+            const idx  = list.indexOf(el);
+            if (idx === -1) return;
+
+            const idFrom = (window.RT && RT.uid) ? RT.uid : '';
+
+            sendRT({
+              t: 'cardholder_update',
+              idx,
+              part,                        // 'title' oder 'body'
+              text: node.textContent || '',
+              prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
+              ts: Date.now(),
+              idFrom                       // eigene UID → Echo filtern
+            });
+          }, 60); // wie bei Notizen: schön flüssig
+        };
 
         // Beim Fokussieren: Placeholder entfernen
         node.addEventListener('focus', () => {
@@ -3100,54 +3136,24 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         });
 
-        // Beim Verlassen: Wenn leer gelassen → wieder Placeholder zeigen
+        // Beim Verlassen: leer → Placeholder, und einmal "final" senden
         node.addEventListener('blur', () => {
           if (node.textContent.trim() === '') {
             node.textContent = node.dataset.placeholder;
           }
-          try { emitRT(); } catch {}
+          emitRT();       // finaler Snap, wie bei DescriptionBox
+          emitAutosave(); // und speichern
         });
 
-
-        // --- Autosave wie bisher ---
-        ['input','keyup','paste','cut','blur'].forEach(ev => {
+        // Live während der Eingabe – exakt wie bei DescriptionBox
+        ['input','keyup','paste','cut','compositionend'].forEach(ev => {
           node.addEventListener(ev, () => {
-            try { if (typeof debouncedSave === 'function') debouncedSave(); } catch {}
+            emitRT();
+            emitAutosave();
           });
         });
-
-        // --- Realtime-Sync für Cardholder-Text ---
-        if (part === 'title' || part === 'body') {
-          let rtDeb = null;
-
-          const emitRT = () => {
-            clearTimeout(rtDeb);
-            rtDeb = setTimeout(() => {
-              if (typeof sendRT !== 'function') return;
-
-              const list = Array.from(document.querySelectorAll('.board-cardholder'));
-              const idx  = list.indexOf(el);
-              if (idx === -1) return;
-
-              const idFrom = (window.RT && RT.uid) ? RT.uid : '';
-
-              sendRT({
-                t: 'cardholder_update',
-                idx,
-                part,                        // 'title' oder 'body'
-                text: node.textContent || '',
-                prio: (typeof RT_PRI === 'function' ? RT_PRI() : 1),
-                ts: Date.now(),
-                idFrom                       // <- NEU: eigene UID mitsenden
-              });
-            }, 100); // leichter Delay, um Tastenschläge zu bündeln
-          };
-
-          ['input','keyup','paste','cut','compositionend'].forEach(ev => {
-            node.addEventListener(ev, emitRT);
-          });
-        }
       };
+
 
       // part-Parameter übergeben, damit der Handler weiß, was er sendet
       makeEditable(title, !!p.titleUserEditable, title.textContent, 'title');
@@ -3160,31 +3166,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       el.appendChild(top);
       el.appendChild(sep);
       el.appendChild(space);
-
-      // === AUTOSAVE: Cardholder – Änderungen triggern Save ===
-      // Versuche zuerst die erwarteten Knoten per Klasse zu finden,
-      // fallweise fallback auf lokale Variablen (title/content), falls vorhanden:
-      const chTitle   = el.querySelector('.bb-ch-header, .desc-title, .ch-header') 
-                        || (typeof title !== 'undefined' ? title : null);
-      const chContent = el.querySelector('.bb-ch-desc, .ch-desc, .desc-content') 
-                        || (typeof desc !== 'undefined' ? desc : null);
-
-      // Flags robust auswerten (true/"true"/1):
-      const canEditTitle = (typeof asBool==='function') ? asBool(p.titleUserEditable) : !!p.titleUserEditable;
-      const canEditBody  = (typeof asBool==='function') ? asBool(p.bodyUserEditable)  : !!p.bodyUserEditable;
-
-      if (canEditTitle && chTitle) {
-        // sicherstellen, dass editierbar
-        chTitle.setAttribute('contenteditable', 'true');
-        chTitle.addEventListener('input', () => saveCurrentBoardState('input'));
-        chTitle.addEventListener('blur',  () => saveCurrentBoardState('blur'));
-      }
-      if (canEditBody && chContent) {
-        chContent.setAttribute('contenteditable', 'true');
-        chContent.addEventListener('input', () => saveCurrentBoardState('input'));
-        chContent.addEventListener('blur',  () => saveCurrentBoardState('blur'));
-      }
-      // === /AUTOSAVE Cardholder ===
 
       // In den DOM & Größe begrenzen: Der Body darf NICHT höher werden als der obere Bereich
       place(el, w); // deine bestehende Platzierungsfunktion
