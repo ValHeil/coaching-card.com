@@ -407,7 +407,7 @@ function applySampleCardFromTemplate(tpl) {
   })();
 
 
-  // ► Neu: bgMap (format -> bgId) nutzen; Legacy: bgId als Fallback
+  //  bgMap (format -> bgId) nutzen; Legacy: bgId als Fallback
   const bgMap = gprop(sample, 'bgMap', null);
   let linkId = (bgMap && activeFmt && bgMap[activeFmt]) || gprop(sample, 'bgId', null);
   let box = linkId ? W.find(w => w.type === 'bgrect' && w.id === linkId) : null;
@@ -946,12 +946,10 @@ document.addEventListener('visibilitychange', () => {
 const DBG = { on: localStorage.DEBUG_NOTES === '1' };
 function L(tag, obj = {}) {
   if (!DBG.on) return;
-  try { console.log(`[NOTES] ${tag}`, obj); } catch {}
 }
 window.DEBUG_NOTES = function(on = true){
   DBG.on = !!on;
   localStorage.DEBUG_NOTES = on ? '1' : '0';
-  console.log('[NOTES] Debug ' + (on ? 'ON' : 'OFF'));
 };
 // ---------------------------------------------------------------------------
 
@@ -987,7 +985,7 @@ async function initRealtime(config) {
   u.searchParams.set('name',  RT.name);
   u.searchParams.set('role',  RT.role);
 
-  console.log('[RT] connecting ->', u.toString());
+
   RT.ws = new WebSocket(u.toString());
 
   RT.ws.onopen = () => {
@@ -1021,7 +1019,7 @@ async function initRealtime(config) {
       RT._reconnect.cursorAttached = true;
     }
 
-    // --- NEU: Gast wartet, bis Owner da ist
+    //  Gast wartet, bis Owner da ist
     try {
       if (RT.role === 'participant') {
         window.showWaitingForOwner && window.showWaitingForOwner('Warte auf den Ersteller …');
@@ -1207,8 +1205,8 @@ async function initRealtime(config) {
     window.RTFrame = {
       enqueueCard(m){ qCard.set(m.id, m); schedule(); },
       enqueueNote(m){ qNoteMove.set(m.id, m); schedule(); },   // bestehend: Moves
-      enqueueNoteBox(m){ qNoteBox.set(m.id, m); schedule(); }, // neu: Box
-      enqueueNoteText(m){ qNoteText.set(m.id, m); schedule(); }, // neu: Text
+      enqueueNoteBox(m){ qNoteBox.set(m.id, m); schedule(); }, //  Box
+      enqueueNoteText(m){ qNoteText.set(m.id, m); schedule(); }, // Text
       enqueueCursor(m){ qCursor.set(m.id, m); schedule(); },
     };
   })();
@@ -1253,7 +1251,7 @@ async function initRealtime(config) {
           restoreBoardState(state, { skipNotes: skipNotesNow, skipCards: skipCardsNow });
           document.dispatchEvent(new Event('boardStateUpdated'));
           window.__HAS_BOOTSTRAPPED__ = true;
-          window.__SUPPRESS_AUTOSAVE__ = false;                 // NEU: jetzt darf gespeichert werden
+          window.__SUPPRESS_AUTOSAVE__ = false;                 //  jetzt darf gespeichert werden
           window.__pauseSnapshotUntil  = Date.now() + 500;      // mini Puffer gegen Nachbeben
         } catch (e) { console.warn('[RT] state_full apply failed', e); }
       })();
@@ -1270,7 +1268,7 @@ async function initRealtime(config) {
       return;
     }
 
-    // --- NEU: Roster-Snapshot (kommt sofort nach hello) ---
+    // --- Roster-Snapshot (kommt sofort nach hello) ---
     if (m.t === 'roster') {
       if (RT.role === 'participant') {
         const hasOwner = Array.isArray(m.peers) && m.peers.some(p => p.role === 'owner');
@@ -1284,7 +1282,7 @@ async function initRealtime(config) {
       return;
     }
 
-    // --- NEU: Antwort auf owner_status? ---
+    // --- Antwort auf owner_status? ---
     if (m.t === 'owner_status') {
       if (RT.role === 'participant') {
         if (m.present) {
@@ -1324,7 +1322,7 @@ async function initRealtime(config) {
       return;
     }
 
-    // --- NEU: Der Owner beendet die Sitzung ---
+    // --- Der Owner beendet die Sitzung ---
     if (m.t === 'end_session') {
       if (RT.role !== 'owner') {
         RT._reconnect.stop = true;
@@ -1729,7 +1727,7 @@ function canonBoardSlug(s='') {
   // Legacy-Mappings weiter unterstützen:
   if (['problem-lösung','problem-loesung','problemlösung','problem','problem_loesung','board_problem_loesung'].includes(low)) return 'board1';
   if (['boardtest','testboard','board_test'].includes(low)) return 'boardTest';
-  // Neu: beliebige Slugs zulassen (sanitizen, kein Fallback auf board1)
+  // beliebige Slugs zulassen (sanitizen, kein Fallback auf board1)
   return raw
     .replace(/\s+/g, '-')          // Leerzeichen → Bindestrich
     .replace(/[^a-zA-Z0-9_-]/g, '')// unsichere Zeichen raus
@@ -1838,7 +1836,6 @@ async function loadSavedBoardState() {
       console.debug('[STATE] loaded version', window.__STATE_VERSION);
     } catch {}
     if (!state_b64) {
-      console.log('[DEBUG] Kein Zustand in der DB vorhanden – hebe Autosave-Gate auf.');
       // Gate für neue Sitzungen öffnen, damit Änderungen überhaupt gespeichert werden
       window.__SUPPRESS_AUTOSAVE__ = false;
       // kleine Schonfrist, damit das Board fertig initialisieren kann
@@ -4065,7 +4062,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Hover-Tracking für Karten einrichten
     function setupCardHoverTracking() {
-      console.log("[DEBUG] Richte Hover-Tracking ein...");
       
       // Alle vorherigen Event-Listener entfernen
       document.querySelectorAll('.card').forEach(card => {
@@ -4080,20 +4076,17 @@ document.addEventListener('DOMContentLoaded', async function() {
         card._isHovered = false;
       });
       
-      console.log("[DEBUG] Anzahl Karten für Hover-Tracking:", document.querySelectorAll('.card').length);
       
       // Neue Event-Listener für alle Karten einrichten
       document.querySelectorAll('.card').forEach(card => {
         // Neue Handler-Funktionen erstellen
         const enterHandler = () => {
-          console.log(`[DEBUG] Maus über Karte ${card.id}`);
           window.isHoveringCard = true;
           window.hoveredCard = card;
           card._isHovered = true;
         };
         
         const leaveHandler = () => {
-          console.log(`[DEBUG] Maus verlässt Karte ${card.id}`);
           window.isHoveringCard = false;
           window.hoveredCard = null;
           card._isHovered = false;
@@ -4121,12 +4114,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         // Neue Handler erstellen
         const stackEnterHandler = () => {
-          console.log("[DEBUG] Maus über Kartenstapel");
           window.isHoveringCard = true;
         };
         
         const stackLeaveHandler = () => {
-          console.log("[DEBUG] Maus verlässt Kartenstapel");
           // Nur zurücksetzen, wenn nicht über einer einzelnen Karte
           if (!window.hoveredCard) {
             window.isHoveringCard = false;
@@ -4150,7 +4141,6 @@ document.addEventListener('DOMContentLoaded', async function() {
           window.isHoveringStack = false;
         }, true);
         
-        console.log("[DEBUG] Hover-Tracking für Kartenstapel eingerichtet");
       }
 
       // Zusätzliche, robuste Erkennung via Mausbewegung (falls mouseenter nicht greift)
@@ -4171,8 +4161,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
       };
       document.addEventListener('mousemove', window._hoverMoveHandler, { passive: true });
-
-      console.log("[DEBUG] Hover-Tracking Setup abgeschlossen");
     }
     
     // Initial einrichten
@@ -4199,15 +4187,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         raf = requestAnimationFrame(maybeRebind);
       });
     })();
-
-
-    
-    // Debug-Ausgabe hinzufügen, um den Status zu überwachen
-    setInterval(() => {
-      if (window.isHoveringCard) {
-        console.log(`[DEBUG] Hover-Status: ${window.isHoveringCard}, Karte: ${window.hoveredCard ? window.hoveredCard.id : 'Stapel'}`);
-      }
-    }, 5000); // Alle 5 Sekunden, nur zu Debug-Zwecken
 
     // Tastaturverhalten überschreiben: nur bei Hover über Karte/Stapel aktiv
     document.addEventListener('keydown', (e) => {
@@ -4922,7 +4901,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     let isDragging = false, hasMoved = false;
     let offsetX = 0, offsetY = 0;   // Offsets in UNSKALIERTEN px (style.left/top)
-    let overTrash = false;          // <- NEU: Track, ob wir über dem Papierkorb sind
+    let overTrash = false;          // Track, ob wir über dem Papierkorb sind
     let _rtTick = 0;
 
     note.addEventListener('mousedown', (e) => {
@@ -5020,7 +4999,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       if (!hasMoved) L('FIRST_MOVE', { id: note.id }); // nur einmal
 
-      // --- NEU: Trash-Hitbox prüfen & Feedback setzen ---
+      // --- Trash-Hitbox prüfen & Feedback setzen ---
       const trash = document.querySelector('.trash-container');
       if (trash) {
         const tr = trash.getBoundingClientRect();
@@ -5072,7 +5051,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         trash.style.backgroundColor = '';
       }
 
-      // --- NEU: Wenn über dem Papierkorb -> löschen statt positionieren ---
+      // --- Wenn über dem Papierkorb -> löschen statt positionieren ---
       if (overTrash) {
         overTrash = false;
 
@@ -5172,11 +5151,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 
   const addTrashContainer = () => {
-    console.log("Erstelle Mülleimer...");
     
     // Zuerst alle vorhandenen Mülleimer entfernen
     document.querySelectorAll('.trash-container').forEach(trash => {
-      console.log("Entferne alten Mülleimer");
+
       trash.remove();
     });
     
@@ -5228,8 +5206,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       e.stopPropagation();
       
       const notiz = this;
-      console.log("Lösche Notiz per Klick:", notiz.id);
-      
+
       // Animation zum Verschwinden
       notiz.style.transition = 'all 0.3s ease';
       notiz.style.transform = 'scale(0.1) rotate(5deg)';
@@ -5254,7 +5231,6 @@ document.addEventListener('DOMContentLoaded', async function() {
           });
         }
         sendRT({ t: 'note_delete', id: notiz.id, prio: RT_PRI(), ts: Date.now() });
-        console.log("Notiz erfolgreich gelöscht!");
         
         // Aktuellen Board-Zustand speichern
         if (typeof saveCurrentBoardState === 'function') {
@@ -5356,7 +5332,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       this.style.transform = '';
       this.style.backgroundColor = '';
       
-      console.log("Drop auf Mülleimer erkannt");
       
       try {
         // Sicherstellen, dass dataTransfer existiert
@@ -5367,7 +5342,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         // Daten extrahieren
         const noteId = e.dataTransfer.getData('text/plain');
-        console.log("Extrahierte Notiz-ID:", noteId);
         
         if (!noteId) {
           console.error("Keine ID in dataTransfer gefunden");
@@ -5383,11 +5357,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         // Prüfen, ob es eine Notiz ist
         if (!noteElement.classList.contains('notiz')) {
-          console.log("Element ist keine Notiz, prüfe ob es eine Karte ist...");
           
           // Falls es eine Karte ist, spezielle Behandlung
           if (noteElement.classList.contains('card')) {
-            console.log("Karte kann nicht gelöscht werden, sie wird zum Stapel zurückgelegt");
             // Hier könnte man die Karte zurück zum Stapel legen, falls erwünscht
             returnCardToStack(noteElement);
             return;
@@ -5396,8 +5368,6 @@ document.addEventListener('DOMContentLoaded', async function() {
           console.error("Element ist weder Notiz noch Karte:", noteId);
           return;
         }
-        
-        console.log("Lösche Notizzettel durch Drop:", noteId);
         
         // Notiz löschen mit Animation
         noteElement.style.transition = 'all 0.3s ease';
@@ -5428,8 +5398,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             });
           }
           
-          console.log("Notiz erfolgreich gelöscht!");
-          
           // Aktuellen Board-Zustand speichern
           if (typeof saveCurrentBoardState === 'function') {
             saveCurrentBoardState();
@@ -5454,7 +5422,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Zum DOM hinzufügen
     document.body.appendChild(trashContainer);
-    console.log("Mülleimer erfolgreich erstellt mit verbesserter Drop-Funktionalität");
     
     // CSS für Tooltip und verbesserte Drag-and-Drop hinzufügen
     if (!document.getElementById('trash-tooltip-style')) {
@@ -5680,7 +5647,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     contextMenu.className = 'context-menu';
     contextMenu.style.left = `${event.clientX}px`;
     contextMenu.style.top  = `${event.clientY}px`;
-    // <<< NEU: sichtbar über allem
+    // sichtbar über allem
     contextMenu.style.zIndex = '2147483600';
     // (optional) Basestyles, falls deine CSS fehlt
     contextMenu.style.position = 'fixed';
@@ -5706,7 +5673,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     contextMenu.querySelector('.reset-card').addEventListener('click', () => {
       returnCardToStack(card);
-      // <<< NEU: Broadcast
+      // Broadcast
       sendRT({ t: 'card_sendback', id: card.id, prio: RT_PRI(), ts: Date.now() });
       contextMenu.remove();
     });
@@ -5822,7 +5789,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     if (element.__dragHandlersAttached) return;
     element.__dragHandlersAttached = true;
-    console.log("Mache Element draggable:", element.id || "Unbekanntes Element");
     
     // Für Notizen die bestehende Logik verwenden
     if (element.classList.contains('notiz')) {
@@ -5845,7 +5811,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       let isHoveringOverStack = false;
 
       let _rtRaf = null, _rtPending = false;
-      // NEU: simple Throttle + Delta-Gate
+      // simple Throttle + Delta-Gate
       let _lastSend = 0, _lastPx = 0, _lastPy = 0;
 
       const queueRTCardMove = () => {
@@ -5880,7 +5846,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
-        // Neue Drag-Session startet: alten Autosave abbrechen und Snapshots kurz pausieren
+        // Drag-Session startet: alten Autosave abbrechen und Snapshots kurz pausieren
         try { clearTimeout(_saveTimer); } catch {}
         window.__pauseSnapshotUntil = Date.now() + 800; // ~0.8s Puffer gegen Race
 
@@ -5975,7 +5941,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
 
-        // NEU: Drop über Stapel? -> zurück zum Stapel + RT-Broadcast
+        // Drop über Stapel? -> zurück zum Stapel + RT-Broadcast
         const cardStack = document.getElementById('card-stack');
         if (cardStack) {
           const cardRect  = element.getBoundingClientRect();
@@ -6256,7 +6222,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       notes:        captureAllNotes(),
       cards:        captureAllCards(),
       stack:        captureStackPosition(),
-      // NEU: Perms mitschreiben – so wissen wir beim Restore exakt, was gesetzt werden darf
+      // Perms mitschreiben – so wissen wir beim Restore exakt, was gesetzt werden darf
       perms: {
         focusNote:    readFocusNotePermsFromDOM(),
         cardholders:  readCardholderPermsFromDOM(),
@@ -6264,7 +6230,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       },
       timestamp:    new Date().toISOString()
     };
-    console.log("Erfasster Board-Zustand:", boardState);
     return boardState;
   }
   window.captureBoardState = captureBoardState;
@@ -6316,7 +6281,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Erfasst den Inhalt der Focus Note (unterstützt .focus-note-area und alte .focus-note)
   function captureFocusNote() {
-    // 1) Wrapper: neue Variante (.focus-note-area) bevorzugen
+    // 1) Wrapper: Variante (.focus-note-area) bevorzugen
     const wrap =
       document.querySelector('.focus-note-area') ||
       document.querySelector('.focus-note');
@@ -6461,7 +6426,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         width:  notiz.style.width  || '',
         height: notiz.style.height || '',
         zIndex: notiz.style.zIndex || '',
-        // neu: Farben & Variablen explizit sichern
+        // Farben & Variablen explizit sichern
         backgroundColor: bgColor,
         borderColor:     brColor,
         noteBg:          bgVar,
@@ -7549,13 +7514,7 @@ window.showLoadFailureOverlay = function(kind='board', slug=''){
 window.dumpNote = function(id){
   const el = document.getElementById(id);
   if (!el) return console.warn('dumpNote: not found', id);
-  console.log('[NOTES] DUMP', {
-    id,
-    left: el.style.left, top: el.style.top, z: el.style.zIndex,
-    locked: el.dataset.locked, by: el.dataset.lockedBy, until: el.dataset.lockedUntil,
-    isEditingClass: el.classList.contains('is-editing'),
-    contentEditable: !!el.querySelector('.notiz-content[contenteditable="true"]')
-  });
+
 };
 window.forceUnlockNote = function(id){
   const el = document.getElementById(id);
@@ -7563,5 +7522,4 @@ window.forceUnlockNote = function(id){
   delete el.dataset.locked; delete el.dataset.lockedBy; delete el.dataset.lockedUntil;
   el.classList.remove('is-editing');
   sendRT({ t:'note_unlock', id });
-  console.log('[NOTES] FORCE_UNLOCK', id);
 };
