@@ -3931,8 +3931,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         card.style.zIndex = i;
 
         card.innerHTML = `
-          <div class="card-front">
-            <img src="${deckPath}/card${i}.png" alt="Karte ${i}" style="width:100%;height:100%;object-fit:contain;">
+          <div class="card-front" style="padding:0; overflow:hidden;">
+            <img src="${deckPath}/card${i}.png" alt="Karte ${i}"
+              style="width:100%;height:100%;object-fit:cover;object-position:center;display:block;">
           </div>
           <div class="card-back" style="background-image:url('${deckPath}/card-back.png')">
             <div class="card-back-design"></div>
