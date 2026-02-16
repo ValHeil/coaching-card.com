@@ -2016,27 +2016,33 @@ function initializeParticipantJoin() {
         overflow: auto;
         border-radius: 16px;
         padding: 22px 22px 16px;
-        background: linear-gradient(180deg, #0b1220, #0b1326);
-        color: #e5e7eb;
-        border: 1px solid rgba(255,255,255,.08);
-        box-shadow: 0 30px 80px rgba(0,0,0,.55);
+
+        /* NEU: deine Box-Farbe */
+        background: #dbeccd;
+
+        /* NEU: Text für hellen Hintergrund */
+        color: #0f172a;
+
+        /* NEU: Border/Shadow passend */
+        border: 1px solid rgba(15, 23, 42, .14);
+        box-shadow: 0 30px 80px rgba(0,0,0,.35);
       }
-      #${OVERLAY_ID} h2{
-        margin: 0 0 10px;
-        font-size: 24px;
-        letter-spacing: .2px;
-      }
+
       #${OVERLAY_ID} .cc-help-sub{
         margin: 0 0 10px;
-        color: #cbd5e1;
+        color: rgba(15, 23, 42, .75);
       }
+
       #${OVERLAY_ID} ul{
         margin: 10px 0 0 18px;
         padding: 0;
-        color: #e5e7eb;
+        color: rgba(15, 23, 42, .9);
       }
+
       #${OVERLAY_ID} li{ margin: 7px 0; line-height: 1.45; }
-      #${OVERLAY_ID} li b{ color: #fff; }
+      #${OVERLAY_ID} li b{ color: #0f172a; }
+
+
       #${OVERLAY_ID} .cc-help-close{
         position: absolute;
         top: 14px;
@@ -2044,7 +2050,7 @@ function initializeParticipantJoin() {
         width: 34px;
         height: 34px;
         border-radius: 10px;
-        border: 2px solid rgba(255,255,255,.25);
+        border: 1px solid rgba(15, 23, 42, .18);
         background: rgba(240, 85, 81, .9);
         color: #fff;
         font-weight: 900;
@@ -2053,28 +2059,19 @@ function initializeParticipantJoin() {
       #${OVERLAY_ID} .cc-help-footer{
         margin-top: 14px;
         padding-top: 12px;
-        border-top: 1px solid rgba(255,255,255,.08);
+        border-top: 1px solid rgba(15, 23, 42, .14);
         display: flex;
         gap: 12px;
         align-items: center;
         justify-content: space-between;
         flex-wrap: wrap;
-        color: #cbd5e1;
+        color: rgba(15, 23, 42, .75);
         font-size: 14px;
       }
       #${OVERLAY_ID} .cc-help-footer label{
         display: inline-flex;
         gap: 10px;
         align-items: center;
-      }
-      #${OVERLAY_ID} .cc-help-ok{
-        border: 0;
-        background: #ff8581;
-        color: #fff;
-        font-weight: 800;
-        padding: 10px 14px;
-        border-radius: 10px;
-        cursor: pointer;
       }
     `;
     document.head.appendChild(st);
@@ -2150,8 +2147,6 @@ function initializeParticipantJoin() {
             <input id="cc-help-hide-next" type="checkbox" />
             Hilfe das nächste Mal nicht wieder anzeigen
           </label>
-
-          <button class="cc-help-ok" type="button" data-cc-help-close="1">Verstanden</button>
 
           <div>Du kannst diese Hilfe später über das <b>?</b> oben rechts wieder öffnen.</div>
         </div>
