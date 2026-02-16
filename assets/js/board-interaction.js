@@ -1948,6 +1948,304 @@ function initializeParticipantJoin() {
   }
 }
 
+/* === Hilfe-Modal (Onboarding) ============================================ */
+(function () {
+  const LS_KEY    = 'cc_help_hide_v1';
+  const STYLE_ID  = 'cc-help-styles';
+  const OVERLAY_ID= 'cc-help-overlay';
+  const BTN_ID    = 'cc-help-button';
+
+  let pendingAuto = false;
+  let mo = null;
+  let escAttached = false;
+
+  function lsGetHide() {
+    try { return localStorage.getItem(LS_KEY) === '1'; } catch { return false; }
+  }
+  function lsSetHide(v) {
+    try {
+      if (v) localStorage.setItem(LS_KEY, '1');
+      else localStorage.removeItem(LS_KEY);
+    } catch {}
+  }
+
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const st = document.createElement('style');
+    st.id = STYLE_ID;
+    st.textContent = `
+      html.modal-open, body.modal-open { overflow: hidden !important; }
+
+      /* ?-Button oben rechts */
+      #${BTN_ID}{
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,.25);
+        background: rgba(15, 23, 42, .75);
+        color: #fff;
+        font: 700 18px/36px system-ui, -apple-system, Segoe UI, Roboto, Arial;
+        cursor: pointer;
+        z-index: 2147483000;
+        box-shadow: 0 10px 30px rgba(0,0,0,.35);
+      }
+      #${BTN_ID}:hover{ background: rgba(15, 23, 42, .9); }
+
+      /* Overlay */
+      #${OVERLAY_ID}{
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        z-index: 2147483601;
+      }
+      #${OVERLAY_ID} .cc-help-backdrop{
+        position: absolute;
+        inset: 0;
+        background: rgba(0,0,0,.55);
+      }
+      #${OVERLAY_ID} .cc-help-modal{
+        position: relative;
+        width: min(780px, calc(100vw - 48px));
+        max-height: min(82vh, 760px);
+        overflow: auto;
+        border-radius: 16px;
+        padding: 22px 22px 16px;
+        background: linear-gradient(180deg, #0b1220, #0b1326);
+        color: #e5e7eb;
+        border: 1px solid rgba(255,255,255,.08);
+        box-shadow: 0 30px 80px rgba(0,0,0,.55);
+      }
+      #${OVERLAY_ID} h2{
+        margin: 0 0 10px;
+        font-size: 24px;
+        letter-spacing: .2px;
+      }
+      #${OVERLAY_ID} .cc-help-sub{
+        margin: 0 0 10px;
+        color: #cbd5e1;
+      }
+      #${OVERLAY_ID} ul{
+        margin: 10px 0 0 18px;
+        padding: 0;
+        color: #e5e7eb;
+      }
+      #${OVERLAY_ID} li{ margin: 7px 0; line-height: 1.45; }
+      #${OVERLAY_ID} li b{ color: #fff; }
+      #${OVERLAY_ID} .cc-help-close{
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        border: 2px solid rgba(255,255,255,.25);
+        background: rgba(240, 85, 81, .9);
+        color: #fff;
+        font-weight: 900;
+        cursor: pointer;
+      }
+      #${OVERLAY_ID} .cc-help-footer{
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(255,255,255,.08);
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        color: #cbd5e1;
+        font-size: 14px;
+      }
+      #${OVERLAY_ID} .cc-help-footer label{
+        display: inline-flex;
+        gap: 10px;
+        align-items: center;
+      }
+      #${OVERLAY_ID} .cc-help-ok{
+        border: 0;
+        background: #ff8581;
+        color: #fff;
+        font-weight: 800;
+        padding: 10px 14px;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+    `;
+    document.head.appendChild(st);
+  }
+
+  function ensureEscHandler() {
+    if (escAttached) return;
+    escAttached = true;
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (document.getElementById(OVERLAY_ID)) close();
+    });
+  }
+
+  function isBlockedNow() {
+    // andere Prompts/Overlays sollen Vorrang haben
+    if (document.getElementById('participant-name-prompt')) return true;
+    if (document.getElementById('session-password-prompt')) return true;
+    if (document.getElementById('owner-wait') || document.getElementById('owner-ended')) return true;
+    if (document.documentElement.classList.contains('owner-wait-active')) return true;
+    if (document.getElementById('load-failure-overlay')) return true;
+    return false;
+  }
+
+  function armObserver() {
+    if (mo) return;
+    mo = new MutationObserver(() => {
+      if (!pendingAuto) return;
+      if (lsGetHide()) { pendingAuto = false; return; }
+      if (!isBlockedNow()) {
+        pendingAuto = false;
+        open({ force: false });
+        try { mo.disconnect(); } catch {}
+        mo = null;
+      }
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+  }
+
+  function buildOverlay() {
+    ensureStyles();
+    ensureEscHandler();
+
+    let wrap = document.getElementById(OVERLAY_ID);
+    if (wrap) return wrap;
+
+    wrap = document.createElement('div');
+    wrap.id = OVERLAY_ID;
+    wrap.setAttribute('role', 'dialog');
+    wrap.setAttribute('aria-modal', 'true');
+
+    wrap.innerHTML = `
+      <div class="cc-help-backdrop" data-cc-help-close="1"></div>
+      <div class="cc-help-modal">
+        <button class="cc-help-close" type="button" title="Schließen" data-cc-help-close="1">×</button>
+
+        <h2>So funktioniert das Board</h2>
+        <p class="cc-help-sub">Kurze Einführung:</p>
+
+        <ul>
+          <li><b>Karten ziehen/ablegen:</b> Per Maus ziehen.</li>
+          <li>Auf eine Karte <b>rechtsklicken</b>, um Optionen zu öffnen.</li>
+          <li><b>Karte umdrehen:</b> Taste <b>F</b>.</li>
+          <li><b>Kartenstapel mischen:</b> Taste <b>M</b> oder Rechtsklick und „Karten mischen“.</li>
+          <li><b>Neue Notiz:</b> Notiz wie Karte vom Notizblock abziehen.</li>
+          <li><b>Notiz bearbeiten:</b> Doppelklick auf die Notiz und losschreiben.</li>
+          <li><b>Notiz löschen:</b> Notiz über den Mülleimer unten links ziehen (oder Mülleimer anklicken → Löschmodus).</li>
+          <li><b>Sitzung beenden:</b> Die Sitzung über den "Sitzung beenden" Knopf unten rechts verlassen, oder das Fenster/den Tab schließen</li>
+        </ul>
+
+        <div class="cc-help-footer">
+          <label>
+            <input id="cc-help-hide-next" type="checkbox" />
+            Hilfe das nächste Mal nicht wieder anzeigen
+          </label>
+
+          <button class="cc-help-ok" type="button" data-cc-help-close="1">Verstanden</button>
+
+          <div>Du kannst diese Hilfe später über das <b>?</b> oben rechts wieder öffnen.</div>
+        </div>
+      </div>
+    `;
+
+    // Close-Handler (Backdrop, X, Button)
+    wrap.querySelectorAll('[data-cc-help-close]').forEach(el => {
+      el.addEventListener('click', () => close());
+    });
+
+    document.body.appendChild(wrap);
+    return wrap;
+  }
+
+  function open({ force = false } = {}) {
+    if (!force && lsGetHide()) return false;
+
+    if (isBlockedNow()) {
+      pendingAuto = true;
+      armObserver();
+      return false;
+    }
+
+    const wrap = buildOverlay();
+    const cb = wrap.querySelector('#cc-help-hide-next');
+    if (cb) cb.checked = lsGetHide(); // Preference sichtbar machen
+
+    document.documentElement.classList.add('modal-open');
+    wrap.style.display = 'flex';
+    return true;
+  }
+
+  function close() {
+    const wrap = document.getElementById(OVERLAY_ID);
+    if (!wrap) return;
+
+    const cb = wrap.querySelector('#cc-help-hide-next');
+    lsSetHide(!!(cb && cb.checked));
+
+    try { wrap.remove(); } catch {}
+    document.documentElement.classList.remove('modal-open');
+
+    pendingAuto = false;
+    if (mo) { try { mo.disconnect(); } catch {} mo = null; }
+  }
+
+  function ensureButton() {
+    ensureStyles();
+    if (document.getElementById(BTN_ID)) return;
+
+    const b = document.createElement('button');
+    b.id = BTN_ID;
+    b.type = 'button';
+    b.textContent = '?';
+    b.title = 'Hilfe öffnen';
+    b.setAttribute('aria-label', 'Hilfe öffnen');
+    b.addEventListener('click', () => open({ force: true }));
+
+    document.body.appendChild(b);
+  }
+
+  function maybeAutoShow() {
+    ensureButton();
+    if (lsGetHide()) return;
+    if (document.getElementById(OVERLAY_ID)) return;
+    open({ force: false });
+  }
+
+  // Bonus: Wenn der Gast-Warteoverlay verschwindet, versuchen wir nochmal automatisch
+  (function hookOwnerWait() {
+    if (window.__CC_HELP_HOOKED__) return;
+    window.__CC_HELP_HOOKED__ = true;
+    const orig = window.hideWaitingForOwner;
+    if (typeof orig === 'function') {
+      window.hideWaitingForOwner = function () {
+        const r = orig.apply(this, arguments);
+        if (pendingAuto) maybeAutoShow();
+        return r;
+      };
+    }
+  })();
+
+  // kleines API für Debug/Reset in der Konsole
+  window.ccHelp = {
+    open: () => open({ force: true }),
+    close,
+    ensureButton,
+    maybeAutoShow,
+    reset: () => lsSetHide(false),
+  };
+})();
+
+
 document.addEventListener('DOMContentLoaded', async function() {
   window.__SUPPRESS_AUTOSAVE__ = true;        // Save bis zum ersten Snapshot unterdrücken
   window.__pauseSnapshotUntil  = Date.now() + 1500; // kleine zusätzliche Schonfrist
@@ -7259,6 +7557,22 @@ document.addEventListener('DOMContentLoaded', async function() {
     debouncedSave();
   });
 
+   try {
+    window.ccHelp && window.ccHelp.ensureButton && window.ccHelp.ensureButton();
+
+    const triggerHelp = () => {
+      try { window.ccHelp && window.ccHelp.maybeAutoShow && window.ccHelp.maybeAutoShow(); } catch {}
+    };
+
+    // erst zeigen, wenn Karten/Board-DOM da ist (wir nutzen deine waitForCards()-Logik)
+    if (typeof waitForCards === 'function') {
+      waitForCards(5000).then(() => setTimeout(triggerHelp, 250));
+    } else {
+      setTimeout(triggerHelp, 900);
+    }
+  } catch (e) {
+    console.warn('[help] init failed', e);
+  }
 
   window.addEventListener('beforeunload', function () {
     try {
