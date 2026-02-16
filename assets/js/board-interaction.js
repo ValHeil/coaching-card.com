@@ -2148,7 +2148,7 @@ function initializeParticipantJoin() {
             Hilfe das nächste Mal nicht wieder anzeigen
           </label>
 
-          <div>Du kannst diese Hilfe später über das <b>?</b> oben rechts wieder öffnen.</div>
+          <div>Sie können diese Hilfe später über das <b>?</b> oben rechts wieder öffnen.</div>
         </div>
       </div>
     `;
