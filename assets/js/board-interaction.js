@@ -3688,69 +3688,66 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
 
 
-    // --- notepad: Bereich für Notizen (aus dem Builder), inkl. Farbe/Rahmen
-    tpl.widgets
-      .filter(w => w.type === 'notepad' || w.type === 'bb-notepad')
-      .forEach(w => {
-        const p = (typeof prop === 'function') ? prop(w) : (w.props || w); // robust
-        // vorhandenen Container nehmen oder neu erstellen
-        let el = document.getElementById('notes-container') || document.querySelector('.notes-container');
-        const isNew = !el;
-        if (!el) {
-          el = document.createElement('div');
-          el.id = 'notes-container';
-          el.className = 'notizzettel-box notes-container tpl-node';
-        } else {
-          // vorhandenen Container sicher als Notizzettel-Box markieren
-          el.classList.add('notizzettel-box', 'notes-container', 'tpl-node');
-        }
+    // --- notepad: Bereich für Notizen aus dem Builder
+    const notepadWidgets = (tpl.widgets || []).filter(w =>
+      w.type === 'notepad' || w.type === 'bb-notepad'
+    );
 
-        // Optik aus Template-Props
-        el.style.borderRadius = (p.radius != null ? p.radius : 12) + 'px';
-        el.style.background   = p.background || p.color || 'rgba(255,248,220,0.5)'; // sanftes Gelb als Default
-        if (p.borderStyle || p.borderWidth || p.borderColor) {
-          el.style.borderStyle = p.borderStyle || 'solid';
-          el.style.borderWidth = (p.borderWidth || 0) + 'px';
-          el.style.borderColor = p.borderColor || 'rgba(0,0,0,0.08)';
-        } else {
-          el.style.boxShadow = '0 0 0 1px rgba(0,0,0,0.06) inset';
-        }
+    if (notepadWidgets.length > 1) {
+      console.warn('[TPL] Mehrere Notepad-Widgets gefunden. Es wird nur das erste verwendet:', notepadWidgets);
+    }
 
-        const bg = (w.props?.color) || (w.props?.background) || '#ffff99';
-        const border = darken(bg, 18);
-        el.style.setProperty('--note-bg', bg);
-        el.style.setProperty('--note-border', border);
+    const w = notepadWidgets[0];
 
-        // Fallback für Alt-CSS)
-        el.style.backgroundColor = bg;
-        el.style.borderColor = border;
+    if (w) {
+      const p = (typeof prop === 'function') ? prop(w) : (w.props || w);
 
-        // Position/Größe laut Template (mit Fallback auf feste Notiz-Maße)
-        w.w = (typeof w.w === 'number' && w.w > 0) ? w.w : 200;
-        w.h = (typeof w.h === 'number' && w.h > 0) ? w.h : 200;
+      let el = document.getElementById('notes-container') || document.querySelector('.notes-container');
+      const isNew = !el;
 
-        // CSS-Variablen so setzen, dass abgezogene Zettel
-        // genau so groß starten wie der Block
-        el.style.setProperty('--note-w', w.w + 'px');
-        el.style.setProperty('--note-h', w.h + 'px');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'notes-container';
+        el.className = 'notizzettel-box notes-container tpl-node';
+      } else {
+        el.classList.add('notizzettel-box', 'notes-container', 'tpl-node');
+      }
 
-        place(el, w);
+      el.style.borderRadius = (p.radius != null ? p.radius : 12) + 'px';
 
-        // Erst jetzt anhängen (falls neu)
-        if (isNew) area.appendChild(el);
+      const bg = (w.props?.color) || (w.props?.background) || p.background || p.color || '#ffff99';
+      const border = darken(bg, 18);
 
-        el.dataset.role = 'notepad';
-        el.setAttribute('draggable', 'false');
+      el.style.setProperty('--note-bg', bg);
+      el.style.setProperty('--note-border', border);
+      el.style.backgroundColor = bg;
+      el.style.borderColor = border;
+
+      w.w = (typeof w.w === 'number' && w.w > 0) ? w.w : 200;
+      w.h = (typeof w.h === 'number' && w.h > 0) ? w.h : 200;
+
+      el.style.setProperty('--note-w', w.w + 'px');
+      el.style.setProperty('--note-h', w.h + 'px');
+
+      place(el, w);
+
+      if (isNew || !el.parentNode) {
+        area.appendChild(el);
+      }
+
+      el.dataset.role = 'notepad';
+      el.setAttribute('draggable', 'false');
+
+      // Listener nur einmal anhängen
+      if (!el.__noteInit) {
         el.addEventListener('dragstart', e => e.preventDefault());
 
-        // Nur wenn auf den Hintergrund des Blocks geklickt wird (nicht auf eine vorhandene Notiz)
         el.addEventListener('mousedown', (e) => {
           if (e.button !== 0) return;
-          if (e.target.closest('.notiz, .note')) return; // nicht auslösen, wenn man eine existierende Notiz anklickt
-          startDragNewNote(e); // erzeugt & zieht einen neuen Notizzettel aus genau diesem Container
+          if (e.target.closest('.notiz, .note')) return;
+          startDragNewNote(e);
         });
 
-        // Touch-Support: erzeugt ein „Mausäquivalent“ mit button=0
         el.addEventListener('touchstart', (e) => {
           e.preventDefault();
           const t = e.touches && e.touches[0];
@@ -3765,17 +3762,19 @@ document.addEventListener('DOMContentLoaded', async function() {
           });
         }, { passive:false });
 
-        el.style.cursor = 'grab'; // visuelles Feedback
         el.__noteInit = true;
-      });
+      }
 
-      // Sicherheit: existierende Notizen in den Container umhängen
-      document.querySelectorAll('.notiz').forEach(n => { if (!el.contains(n)) el.appendChild(n); });
-      
+      el.style.cursor = 'grab';
+
+      // Existierende Notizen in den Container umhängen
+      document.querySelectorAll('.notiz').forEach(n => {
+        if (!el.contains(n)) el.appendChild(n);
+      });
+    }
   }
 
   
-
   // Board anhand der aktuellen window.boardType/window.deck neu aufbauen
   window.rebuildBoard = function() {
     const area = document.querySelector('.board-area');
